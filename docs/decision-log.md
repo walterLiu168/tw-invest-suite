@@ -236,3 +236,69 @@ dy_pct = dy if dy > 0.5 else dy * 100
 
 **Trade-off**:
 - 剛好 0.5 視為百分比（罕見）
+
+---
+
+## D012: 法人表格視覺重構
+
+**日期**：2026-08-16
+
+**Context**:
+原本純 markdown 表格，0 值混雜，沒視覺化。
+
+**Decision**:
+改成 HTML 卡片式 + 彩色 cell + 內嵌 bar + 多日彙總。
+
+**Why**:
+- 一眼看出「哪些日子大買/大賣」
+- 多日彙總（5/10/20）放在最上面當 summary
+- 合計欄 amber 高亮
+- 大買/大賣日（>60% 最大絕對值）整列背景 highlight
+- 0 cell 顯示 "0"（不再是空白），看起來不雜亂
+
+**Trade-off**:
+- 程式碼多 ~50 行
+- HTML 變長
+
+---
+
+## D013: 觀察重點卡片化
+
+**日期**：2026-08-16
+
+**Context**:
+原本純 bullet list，閱讀吃力。
+
+**Decision**:
+5 個維度（動能/法人/估值/品質/營收）各一張卡，auto-fit 網格。
+
+**Why**:
+- 一眼看到 5 個維度狀態
+- 顏色編碼（紅/綠/灰）對應情緒
+- 每張卡內含「白話說明」
+
+**Trade-off**:
+- 沒有資料的維度不出現卡（不會顯示空卡）
+- 行動裝置會自動換行
+
+---
+
+## D014: render batch 拆 chunks
+
+**日期**：2026-08-16
+
+**Context**:
+1,962 隻全跑 ~52 分鐘，超過 bash 工具的 30 分鐘上限。
+
+**Decision**:
+切成 4 個 chunk（每 ~491 隻），每個 chunk 跑 ~15 分鐘。並行 4 個 background task。
+
+**Why**:
+- 每 chunk 都能在 30 min 內完成
+- 4 個並行 = 總時間仍 ~15 min（不是 60 min）
+- 0 fail / 1962 done
+
+**Trade-off**:
+- 4 個 python process 同時跑，DB 連線數增加
+- 用 `render_chunk.py` 取代 `render_only.py` 的全跑模式
+
