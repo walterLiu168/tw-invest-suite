@@ -302,3 +302,32 @@ dy_pct = dy if dy > 0.5 else dy * 100
 - 4 個 python process 同時跑，DB 連線數增加
 - 用 `render_chunk.py` 取代 `render_only.py` 的全跑模式
 
+---
+
+## D015: Pattern 顏色翻成台灣慣例
+
+**日期**：2026-08-16
+
+**Context**:
+之前 pattern 顏色用美股慣例（up=綠、down=紅），但 user 明確要求台灣慣例（up=紅、down=綠）。
+
+**Decision**:
+全部翻過來：
+- `pattern_classifier.py` PATTERNS dict：3 個 uptrend 改 red、3 個 downtrend 改 green
+- `build_patterns_html.py` CSS：.pos 用 var(--red)、.neg 用 var(--green)、.win-high = var(--red)、.verdict.win = 紅底、.verdict.lose = 綠底
+- `analyze.html` chip 結果表：.pos = var(--red)、.neg = var(--green)
+- `render_ticker_html.py` 舊 fallback：.up/.down, .pos/.neg, .zen-bullish/.zen-bearish, .tag-green/.tag-red 全部翻
+
+**Why**:
+- 台股投資人看「紅=漲、綠=跌」
+- 之後別人不會誤以為我們搞錯
+
+**Trade-off**:
+- 類別名 `tag-green` / `tag-red` 仍保留（語意是「好/壞」），但底色是反的 — 加註解說明
+- 之後新增 pattern 時要記得：up→red、down→green
+
+**驗證**:
+- `pattern_classifier.py` 開頭加註解提醒
+- Build-Thesis 也是用同樣邏輯（🟢 多頭 = 紅、🔴 空頭 = 綠）— 在 thesis 訊息也用
+- 截圖確認 patterns.html 上 8039 當日 +9.22% 是紅、long_drawdown 表 -73.57% 是綠
+
