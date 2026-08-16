@@ -10,6 +10,10 @@ from pathlib import Path
 
 
 CSS = """
+/* 台灣顏色慣例（與美股相反）：
+   --red  = 紅色 (用於「上漲/正面/多頭」)
+   --green = 綠色 (用於「下跌/負面/空頭」)
+   變數名跟顏色值一致，selector 自行選擇正確變數 */
 :root { --bg:#0a0e1a; --panel:#131b2e; --ink:#e6ecf5; --muted:#8aa0c0; --acc:#5fb1ff; --green:#58d68d; --red:#ec7063; --amber:#f5b041; --purple:#bc8cff; --cyan:#39c5cf; --border:#1f2942; }
 * { box-sizing: border-box; }
 body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif; line-height: 1.6; }
@@ -33,21 +37,24 @@ body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-fam
 .bt-card .label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.4px; }
 .bt-card .val { font-size: 1.4rem; font-weight: 700; margin-top: 4px; }
 .bt-card .sub { color: var(--muted); font-size: 0.7rem; margin-top: 2px; }
-.win-high { color: var(--green); }
-.win-low { color: var(--red); }
+/* 高勝率 = 正面 = 紅 / 低勝率 = 負面 = 綠 (台灣) */
+.win-high { color: var(--red); }
+.win-low { color: var(--green); }
 .stock-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.88rem; margin-top: 12px; background: rgba(0,0,0,0.15); border-radius: 6px; overflow: hidden; }
 .stock-table th { background: rgba(255,255,255,0.04); color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.4px; padding: 8px 10px; text-align: right; }
 .stock-table th:first-child, .stock-table td:first-child { text-align: left; }
 .stock-table td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); text-align: right; }
 .stock-table tr:last-child td { border-bottom: none; }
 .stock-table tr:hover { background: rgba(95,177,255,0.05); }
-.stock-table td.pos { color: var(--green); font-weight: 600; }
-.stock-table td.neg { color: var(--red); font-weight: 600; }
+/* 漲 = 紅 / 跌 = 綠 (台灣) */
+.stock-table td.pos { color: var(--red); font-weight: 600; }
+.stock-table td.neg { color: var(--green); font-weight: 600; }
 .stock-table a { color: var(--acc); text-decoration: none; font-weight: 600; }
 .stock-table a:hover { text-decoration: underline; }
 .verdict { padding: 12px 16px; border-radius: 8px; margin: 12px 0; font-size: 0.95rem; line-height: 1.7; }
-.verdict.win { background: rgba(88,214,141,0.12); border-left: 4px solid var(--green); }
-.verdict.lose { background: rgba(236,112,99,0.12); border-left: 4px solid var(--red); }
+/* 勝 = 紅 / 敗 = 綠 (台灣) */
+.verdict.win { background: rgba(236,112,99,0.12); border-left: 4px solid var(--red); }
+.verdict.lose { background: rgba(88,214,141,0.12); border-left: 4px solid var(--green); }
 .verdict.neutral { background: rgba(95,177,255,0.12); border-left: 4px solid var(--acc); }
 footer { padding: 24px; color: var(--muted); font-size: 0.8rem; text-align: center; }
 .meta { color: var(--muted); font-size: 0.85rem; }

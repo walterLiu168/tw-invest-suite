@@ -1626,6 +1626,7 @@ def main():
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
     <div class="brand">📊 台股深度選股 <small>tw-invest-suite · market screen + single-stock deep-dive · {today}</small></div>
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <a href="readme.html" style="background:rgba(95,177,255,0.15);color:var(--acc);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:0.85rem;font-weight:600;text-decoration:none;white-space:nowrap">📖 關於本站</a>
       <a href="https://groovelab.dev/analyze/patterns.html" target="_blank" style="background:rgba(57,197,207,0.18);color:var(--cyan);border:1px solid var(--cyan);border-radius:6px;padding:6px 12px;font-size:0.85rem;font-weight:600;text-decoration:none;white-space:nowrap">📊 型態搜尋 →</a>
       <form class="search-form" action="https://groovelab.dev/analyze.html" method="get" target="_blank" style="display:flex;gap:6px">
         <input name="ticker" placeholder="個股代號 e.g. 2324" maxlength="6" required style="background:var(--panel);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:0.85rem;width:160px;font-family:inherit">
@@ -1682,14 +1683,14 @@ function copyText(btn) {{
     out1.write_text(html_doc, encoding="utf-8")
     print(f"  → {out1} ({len(html_doc):,} bytes)")
 
-    groove = Path(r"C:\Groove-Lab\picks.html")
+    groove = Path(r"C:\Groove-Lab\watchlist.html")
     groove.write_text(html_doc, encoding="utf-8")
     print(f"  → {groove} ({len(html_doc):,} bytes)")
 
     # Stats
     total_errs = sum(len(d.get("fetch_errors", [])) for d in data_map.values())
     print(f"\n✅ Done. {len(all_picks)} picks, fetch_errors={total_errs}, total time {time.time()-t0:.0f}s")
-    print(f"📱 Phone: https://groovelab.dev/picks.html")
+    print(f"📱 Phone: https://groovelab.dev/watchlist.html")
 
 
 if __name__ == "__main__":

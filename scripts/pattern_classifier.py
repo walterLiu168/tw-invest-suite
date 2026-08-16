@@ -29,6 +29,10 @@ import pymysql
 
 
 # ---------- Pattern definitions ----------
+# 重要：台灣顏色慣例（與美股相反）
+#   紅 = 漲 / 多頭（uptrend, breakout）
+#   綠 = 跌 / 空頭（downtrend, drawdown）
+#   不要依美股邏輯標綠=漲/紅=跌
 
 PATTERNS = {
     "hot_breakout": {
@@ -38,17 +42,17 @@ PATTERNS = {
     },
     "short_uptrend": {
         "name_zh": "📈 短多",
-        "color": "green",
+        "color": "red",
         "desc": "20 日動能強，技術面多頭",
     },
     "mid_uptrend": {
         "name_zh": "📊 中多",
-        "color": "green",
+        "color": "red",
         "desc": "60 日均線多頭排列，趨勢向上",
     },
     "long_uptrend": {
         "name_zh": "🚀 長多",
-        "color": "green",
+        "color": "red",
         "desc": "240 日大漲，長期持有候選",
     },
     "value_undervalued": {
@@ -58,17 +62,17 @@ PATTERNS = {
     },
     "short_downtrend": {
         "name_zh": "📉 短空",
-        "color": "red",
+        "color": "green",
         "desc": "20 日動能弱，技術面空頭",
     },
     "mid_downtrend": {
         "name_zh": "📊 中空",
-        "color": "red",
+        "color": "green",
         "desc": "60 日均線空頭排列",
     },
     "long_drawdown": {
         "name_zh": "💀 長空腰斬",
-        "color": "red",
+        "color": "green",
         "desc": "240 日腰斬，長期弱勢",
     },
 }
@@ -94,6 +98,14 @@ def _classify_one(snap: Dict, rets: Dict, yf: Dict) -> List[str]:
 
     pe = yf.get("pe")
     pb = yf.get("pb")
+    try:
+        pe = float(pe) if pe is not None else None
+    except (TypeError, ValueError):
+        pe = None
+    try:
+        pb = float(pb) if pb is not None else None
+    except (TypeError, ValueError):
+        pb = None
     roe = yf.get("returnOnEquity")
 
     patterns = []
