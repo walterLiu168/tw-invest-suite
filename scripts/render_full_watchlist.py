@@ -1,5 +1,5 @@
 """
-Render the full deep-dive watchlist for groovelab.dev/watchlist.html.
+Render the full deep-dive watchlist for groovelab.dev/picks.html.
 
 For each of the 24 picks (4 price buckets × 6 picks):
   - Company info (FinMind stock_info)
@@ -1682,14 +1682,14 @@ function copyText(btn) {{
     out1.write_text(html_doc, encoding="utf-8")
     print(f"  → {out1} ({len(html_doc):,} bytes)")
 
-    groove = Path(r"C:\Groove-Lab\watchlist.html")
+    groove = Path(r"C:\Groove-Lab\picks.html")
     groove.write_text(html_doc, encoding="utf-8")
     print(f"  → {groove} ({len(html_doc):,} bytes)")
 
     # Stats
     total_errs = sum(len(d.get("fetch_errors", [])) for d in data_map.values())
     print(f"\n✅ Done. {len(all_picks)} picks, fetch_errors={total_errs}, total time {time.time()-t0:.0f}s")
-    print(f"📱 Phone: https://groovelab.dev/watchlist.html")
+    print(f"📱 Phone: https://groovelab.dev/picks.html")
 
 
 if __name__ == "__main__":
