@@ -15,6 +15,12 @@
 - [x] **觀察重點卡片化**（5 維度 auto-fit 網格）
 - [x] **render batch 拆 4 chunks 並行**（15 min 跑完 1962 隻，0 fail）
 - [x] **公開 GitHub repo**（walterLiu168/tw-invest-suite，56 檔 26K 行）
+- [x] **PWA installable**（manifest.json + sw.js）
+- [x] **Landing page**（行銷式 index.html，含 stats/features/workflow）
+- [x] **Docs 索引頁**（`public/docs/index.html`）
+- [x] **LLM commentary 骨架**（任何 OpenAI-compatible endpoint）
+- [x] **XGBoost 預測 + walk-forward backtest**（5 tickers 跑通）
+- [x] **LSTM skeleton**（需 torch 才能跑）
 - [x] **週末 auto-skip**（Sat/Sun 只 render+publish）
 - [x] **disk-based TTL cache**（`~/.cache_manager/`）
 - [x] **fail-fast 機制**（每 dataset 30 fail threshold）
@@ -22,10 +28,12 @@
 
 ## In Progress 🔄
 
-- [ ] **Phase 2: Web 產品站優化**（landing page + PWA + docs 站）
-- [ ] **Phase 2: LLM 每日 commentary**（`src/commentary/daily_commentary.py`）
-- [ ] **Phase 3: ML 模型**（LSTM/XGBoost 預測）
+- [x] **Phase 2: Web 產品站優化**（landing page + PWA manifest + service worker + docs 索引）
+- [x] **Phase 2: LLM 每日 commentary**（`src/commentary/daily_commentary.py` — dry-run OK，需 API key 跑實際 LLM）
+- [x] **Phase 3: ML 模型**（`src/ml/{features,xgb_predictor,lstm_predictor}.py` — XGBoost 跑通，LSTM skeleton）
 - [ ] **Phase 4: 盤中即時 + Telegram 推播**
+- [ ] LLM commentary 真的整合進 daily batch（需設 API key）
+- [ ] LSTM 整合 torch 並跑實際訓練
 
 ## Backlog 📋
 

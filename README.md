@@ -11,6 +11,9 @@
 - 全市場個股分析頁（17 個 tab + Chart.js + 18 大師解讀）
 - Watchlist 24 檔精選（含每日 4h 新聞）
 - 8 種型態 240 日 walk-forward 回測
+- LLM 每日早報（watchlist 24 檔 + 大盤氛圍）
+- XGBoost 5-day 方向預測（walk-backtest）
+- PWA installable（手機可裝）
 
 ---
 
@@ -51,26 +54,43 @@ tw-invest-suite/
 │   ├── db_client.py           ← MySQL context manager
 │   ├── render_ticker_full.py  ← 17-tab HTML renderer
 │   ├── render_only.py         ← cache-only fast batch
+│   ├── render_chunk.py        ← chunk render (避 bash 30 min limit)
 │   ├── daily_full_tickers.py  ← 主 daily pipeline
 │   ├── pattern_classifier.py  ← 8 型態偵測
 │   ├── build_patterns_html.py ← 型態 dashboard 產生
 │   ├── publish_analyze_ghpages.py ← GitHub Pages push
 │   ├── render_full_watchlist.py    ← watchlist.html
 │   └── ...
-├── public/                    ← 靜態網站（部署用）
+├── public/                    ← 靜態網站（部署用，可 PWA 安裝）
+│   ├── index.html             ← 行銷 landing page
 │   ├── analyze.html           ← ticker 搜尋
 │   ├── watchlist.html         ← 24 檔精選 + 型態搜尋按鈕
-│   ├── index.html
+│   ├── manifest.json          ← PWA manifest
+│   ├── sw.js                  ← service worker (offline)
+│   ├── deploy.md              ← 部署指南
+│   ├── docs/                  ← docs 索引頁
 │   └── analyze/               ← 1,962 個 ticker HTML
 │       ├── 2330.html
 │       ├── 8039.html
 │       └── patterns.html
-├── src/                       ← LLM/ML 程式碼（Phase 2+）
+├── src/                       ← Phase 2/3 程式碼
 │   ├── commentary/            ← LLM 每日 commentary
-│   └── ml/                    ← LSTM/XGBoost 預測
-├── tests/                     ← 單元測試
+│   │   ├── daily_commentary.py
+│   │   └── README.md
+│   └── ml/                    ← XGBoost / LSTM 預測
+│       ├── features.py
+│       ├── xgb_predictor.py
+│       ├── lstm_predictor.py
+│       └── README.md
+├── tests/                     ← 單元測試（未來）
 ├── data/                      ← schema docs, sample CSV
+│   ├── README.md
+│   └── schema/
+│       ├── mysql.sql
+│       └── cache_format.md
 └── outputs/                   ← 本地輸出（gitignored）
+    ├── commentary/            ← LLM 早報
+    └── ml/                    ← ML 預測結果
 ```
 
 ---
@@ -158,12 +178,21 @@ python scripts\render_ticker_full.py 2330 tabbed
 
 ## 🌐 線上展示
 
+- 🏠 **Landing page**：<https://walterLiu168.github.io/stock-report/>
 - 🔍 個股搜尋：<https://groovelab.dev/analyze.html>
 - 📊 Watchlist 24 檔：<https://groovelab.dev/watchlist.html>
 - 🎛 型態 dashboard：<https://groovelab.dev/analyze/patterns.html>
 - 📈 個股範例（台積電）：<https://groovelab.dev/analyze/2330.html>
 - 📈 個股範例（台虹）：<https://groovelab.dev/analyze/8039.html>
+- 📚 Docs：<https://walterLiu168.github.io/stock-report/docs/>
 - 🌐 GitHub Pages：<https://walterLiu168.github.io/stock-report/analyze/>
+
+### 📱 PWA 安裝
+
+在手機瀏覽器開站，會問「加入主畫面」，裝了之後：
+- 全螢幕（像 app）
+- 離線可看（cache 過的 HTML）
+- 開啟更快
 
 ---
 

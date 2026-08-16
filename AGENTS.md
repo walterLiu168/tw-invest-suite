@@ -135,6 +135,9 @@ Get-ScheduledTask -TaskName "tw-invest-suite-daily"
 4. **不要**每次都打 FinMind API（cache 優先）
 5. **不要**用 `Remove-Item` 刪檔（會被擋），改 `Move-Item` 到 `_debug/`
 6. **不要**改 `:root` 的 `--red`/`--green` selector（會反轉顏色意義）
+7. **不要**用 bash 跑 > 30 min 的 batch（會 timeout），改用 `render_chunk.py` 拆 4 chunks 並行
+8. **不要**用 `pip install` 一次裝太多 ML package，預設只裝 xgboost + scikit-learn
+9. **不要**用 LLM commentary 沒設 API key 跑（會 401），先 `--dry-run` 驗 prompt
 
 ---
 
