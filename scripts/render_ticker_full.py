@@ -890,7 +890,7 @@ def section_minerva(data: Dict, db_latest: Dict, history: List[Dict]) -> str:
 
 def section_build_thesis(data: Dict, db_latest: Dict) -> str:
     """build-thesis — 兩面 thesis：LEFT (數字/共識) vs RIGHT (市場/動能)。
-    What must be true + falsification criteria.
+    純一行一訊息：每個 claim 1 行、無空行、無分組標題。
     """
     try:
         yf = data.get("yfinance", {}) or {}
@@ -914,76 +914,64 @@ def section_build_thesis(data: Dict, db_latest: Dict) -> str:
         # LEFT — 數字/共識
         left_claims = []
         if roe > 15:
-            left_claims.append(f"ROE {roe:.0f}% > 15% 顯示護城河")
+            left_claims.append(f"✅ ROE {roe:.0f}% > 15% 護城河")
         if pe and 0 < pe < 20:
-            left_claims.append(f"P/E {pe:.0f} < 20 估值合理")
+            left_claims.append(f"✅ P/E {pe:.0f} < 20 估值合理")
         if pb and 0 < pb < 2:
-            left_claims.append(f"P/B {pb:.2f} < 2 淨值支撐")
+            left_claims.append(f"✅ P/B {pb:.2f} < 2 淨值支撐")
         if rev_yoy is not None and rev_yoy > 10:
-            left_claims.append(f"月營收 YoY +{rev_yoy:.0f}% 成長動能")
+            left_claims.append(f"✅ 月營收 YoY +{rev_yoy:.0f}% 成長動能")
+
         # RIGHT — 市場/動能/資金
         right_claims = []
         if foreign_net > 0:
-            right_claims.append(f"外資買超 +{foreign_net/1000:,.0f} 張 法人偏多")
+            right_claims.append(f"✅ 外資買超 +{foreign_net/1000:,.0f} 張 法人偏多")
         if sma13 and sma27 and cur > sma13 > sma27:
-            right_claims.append(f"多頭排列 價 > MA13 {sma13:.0f} > MA27 {sma27:.0f}")
+            right_claims.append(f"✅ 多頭排列 價 > MA13 {sma13:.0f} > MA27 {sma27:.0f}")
         if ret_60 > 0.1:
-            right_claims.append(f"60d 動能 +{ret_60:.0f}% 順風")
+            right_claims.append(f"✅ 60d 動能 +{ret_60:.0f}% 順風")
         if rsi14 and 50 <= rsi14 <= 70:
-            right_claims.append(f"RSI {rsi14:.0f} 中性偏強")
+            right_claims.append(f"✅ RSI {rsi14:.0f} 中性偏強")
         elif rsi14 and rsi14 < 30:
-            right_claims.append(f"RSI {rsi14:.0f} 超賣（可能是撿便宜機會）")
+            right_claims.append(f"✅ RSI {rsi14:.0f} 超賣 撿便宜機會")
 
         # 決定 LEFT/RIGHT 訊號
         left_strong = len(left_claims) >= 2
         right_strong = len(right_claims) >= 2
         if left_strong and right_strong:
-            thesis = "🟢 **多頭共識** — LEFT 數字 + RIGHT 市場 雙重確認"
+            tag, sig = "🟢 多頭共識", "LEFT 數字 + RIGHT 市場 雙重確認"
         elif left_strong and not right_strong:
-            thesis = "🟡 **價值陷阱疑慮** — LEFT 好但 RIGHT 沒跟，建議等市場確認"
+            tag, sig = "🟡 價值陷阱疑慮", "LEFT 好但 RIGHT 沒跟，等市場確認"
         elif right_strong and not left_strong:
-            thesis = "🟡 **動能拉抬** — RIGHT 強但 LEFT 數字弱，可能 overvalued"
+            tag, sig = "🟡 動能拉抬", "RIGHT 強但 LEFT 數字弱，可能 overvalued"
         else:
-            thesis = "🔴 **觀望** — LEFT/RIGHT 都沒明顯訊號"
+            tag, sig = "🔴 觀望", "LEFT/RIGHT 都沒明顯訊號"
 
-        md = f"### {thesis}\n\n"
-        # 4 段都改成「一行一訊息」純 bullet
-        md += "**📊 LEFT — 數字/估值/財務體質：**\n"
-        if left_claims:
-            for c in left_claims:
-                md += f"- ✅ {c}\n"
-        else:
-            md += "- ⚪ LEFT 訊號不足\n"
-        md += "\n**📈 RIGHT — 市場/法人/動能/板塊：**\n"
-        if right_claims:
-            for c in right_claims:
-                md += f"- ✅ {c}\n"
-        else:
-            md += "- ⚪ RIGHT 訊號不足\n"
-        md += "\n**🔑 What must be true：**\n"
+        # 一行一訊息，無空行、無分組標題
+        lines = [f"**{tag}** — {sig}"]
+        for c in left_claims:
+            lines.append(c)
+        if not left_claims:
+            lines.append("⚪ LEFT 無明顯訊號")
+        for c in right_claims:
+            lines.append(c)
+        if not right_claims:
+            lines.append("⚪ RIGHT 無明顯訊號")
+        # What must be true（每個前提單獨一行）
         if left_strong and right_strong:
-            md += "- LEFT：基本面持續強勁（ROE、月營收 YoY 維持）\n- RIGHT：法人續買、技術維持多頭\n"
+            lines.append("🔑 前提：ROE/月營收 YoY 維持 + 法人續買 + 技術多頭")
+            lines.append("❌ 反證：RSI > 70 / 外資連賣 / 跌破 MA27")
         elif left_strong:
-            md += "- LEFT：基本面需維持強勁\n- RIGHT：等待法人/技術轉強訊號\n"
+            lines.append("🔑 前提：基本面維持強勁（ROE / 月營收 / 估值）")
+            lines.append("❌ 反證：法人續賣 / 技術轉弱 / 月營收反轉")
         elif right_strong:
-            md += "- RIGHT：動能延續\n- LEFT：基本面接續上來（需驗證月營收/ROE）\n"
+            lines.append("🔑 前提：動能延續 + 法人續買")
+            lines.append("❌ 反證：ROE / 月營收掉頭 / 估值過熱")
         else:
-            md += "- 等待 LEFT 或 RIGHT 任一訊號強化\n"
-        md += "\n**❌ Falsification：**\n"
-        falses = []
-        if rsi14 and rsi14 > 70:
-            falses.append(f"RSI {rsi14:.0f} 超買 → 短期回檔風險")
-        if foreign_net < -1000:
-            falses.append(f"外資大賣 {foreign_net/1000:,.0f} 張 → 法人棄守")
-        if ret_60 < -0.15:
-            falses.append(f"60d 跌 {ret_60:.0f}% → 趨勢反轉")
-        if pe and pe > 40:
-            falses.append(f"P/E {pe:.0f} 過高 → 估值修正風險")
-        if not falses:
-            falses.append("目前無明確反轉訊號")
-        for f in falses:
-            md += f"- {f}\n"
-        md += "\n_來源：build-thesis skill_\n"
+            lines.append("🔑 前提：等待 LEFT 或 RIGHT 任一訊號強化")
+            lines.append("❌ 反證：無明確反轉訊號")
+
+        md = "\n".join(lines) + "\n"
         return md
     except Exception as e:
         return f"_build-thesis 失敗：{e}_"
