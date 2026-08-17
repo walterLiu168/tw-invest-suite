@@ -1576,7 +1576,10 @@ def _fetch_margin_distress_fallback(top_n: int = 10) -> List[Dict]:
 
 
 def _render_margin_tab(candidates: List[Dict]) -> str:
-    """Render the 🎯 潛在反彈 tab content (uses multi-dim scan results)."""
+    """Render the 🎯 潛在反彈 tab content (uses multi-dim scan results).
+    Constitution: 一行一訊息 — no group labels, no multi-claim lines, no empty lines.
+    First rule: 融資維持率 < 130% (已於 scan.py hard filter 過濾).
+    """
     if not candidates:
         return '<div class="tab-content" data-bucket="margin">無候選人</div>'
     cards = []
@@ -1606,6 +1609,7 @@ def _render_margin_tab(candidates: List[Dict]) -> str:
                     chips.append(f'<span class="chip chip-{cls}">{label} {s:.0f}</span>')
             score_chips = '<div class="pick-chips">' + " ".join(chips) + '</div>'
 
+        # 一行一訊息：每個 cell 一個事實；維持率已在 pick-grid 內、不在 pick-meta 重複。
         cards.append(f"""
         <div class="pick">
           <div class="pick-head">
@@ -1642,15 +1646,10 @@ def _render_margin_tab(candidates: List[Dict]) -> str:
             </div>
           </div>
           {score_chips}
-          <div class="pick-meta muted">
-            <span>🚨 120d 估維持率 <b style="color:#ec7063">{maint_s}</b>（&lt; 133% 追繳線）</span> ·
-            <span>融資 {c.get('margin_張', 0):,} 張 · 市值 {c.get('margin_市值_億', 0):,.1f} 億</span>
-          </div>
         </div>""")
     return f"""
     <div class="tab-content" data-bucket="margin">
-      <h2 class="bucket-title">🎯 潛在反彈候選 <small>7 維度評分 (維持率 / 融資變化 / Bias / RSI / 布林 / 量價 / 集保*)</small></h2>
-      <p class="muted" style="font-size:0.82rem;margin:4px 0 12px">*集保戶數 / 千張大戶需 TDCC 申報資料，目前沒接入。每日 22:25 自動更新。</p>
+      <h2 class="bucket-title">🎯 潛在反彈候選</h2>
       <div class="picks">{''.join(cards)}</div>
     </div>"""
 

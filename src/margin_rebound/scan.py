@@ -282,7 +282,11 @@ def scan(threshold: float = DEFAULT_THRESHOLD,
         # Full composite
         c["composite"] = round(sum(c["scores"][k] * WEIGHTS[k] for k in WEIGHTS) * 100 / 100, 1)
 
-    # Filter + sort
+    # FIRST RULE (constitution): 融資維持率 < 130% — 不達就踢掉
+    # If maint_rate is None or >= 130, exclude entirely (no composite, no chip, no show)
+    candidates = [c for c in candidates if c.get("maint_rate") is not None and c["maint_rate"] < 130]
+
+    # Composite threshold filter + sort
     candidates = [c for c in candidates if c["composite"] >= threshold]
     candidates.sort(key=lambda c: c["composite"], reverse=True)
     return candidates[:top]
