@@ -332,8 +332,14 @@ $stages += @{ N=4; Name='render'; Cmd='render_only.py --no-yfinance --no-news'; 
 $stages += @{ N=5; Name='patterns'; Cmd='pattern_classifier.py'; To=30*60 }
 $stages += @{ N=6; Name='patterns_html'; Cmd='build_patterns_html.py'; To=10*60 }
 
-# Stage 7: Full watchlist render (24 picks + 潛在反彈 tab)
-$stages += @{ N=7; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
+# Stage 7: Margin rebound scan (7-dim scoring, top 10 candidates)
+$today = Get-Date -Format 'yyyy-MM-dd'
+$scanOut = Join-Path $PSScriptRoot "outputs\margin_rebound\$today.json"
+$scanScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\scan.py"
+$stages += @{ N=7; Name='margin_scan'; Cmd="$scanScript --threshold 30 --top 10 --out `"$scanOut`""; To=15*60 }
+
+# Stage 8: Full watchlist render (24 picks + 潛在反彈 tab from scan JSON)
+$stages += @{ N=8; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
 
 # Run stages
 foreach ($s in $stages) {

@@ -86,6 +86,12 @@ main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 .tab-content.active { display: block; }
 .bucket-title { font-size: 1.1rem; color: var(--acc); margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .bucket-title small { color: var(--muted); font-weight: 400; font-size: 0.85rem; }
+.pick-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 6px; }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; font-family: 'Consolas', monospace; border: 1px solid; }
+.chip-pos { background: rgba(236,112,99,0.15); color: #ec7063; border-color: rgba(236,112,99,0.3); }
+.chip-neu { background: rgba(245,176,65,0.15); color: #f5b041; border-color: rgba(245,176,65,0.3); }
+.chip-neg { background: rgba(88,214,141,0.12); color: #58d68d; border-color: rgba(88,214,141,0.3); }
+.pick-score { margin-left: auto; }
 .summary-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
 .card { background: var(--panel); border-radius: 8px; padding: 12px 14px; border: 1px solid var(--border); }
 .card .k { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -1491,22 +1497,37 @@ def render_pick_card(c: ms.Candidate, d: Dict, idx: int) -> str:
 # ---- per-bucket group ----
 
 def _fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
-    """從 DB 查詢融資反彈候選人：240d 平均維持率 < 133% + 融資餘額 ≥ 5000 張。
-    Returns: list of dicts with ticker, name, industry, close, maint_avg_pct, drop_pct, etc.
+    """從 outputs/margin_rebound/<date>.json 讀取 scan 結果。
+
+    若 JSON 不存在（scan 還沒跑過），fallback 到 DB query 算簡化版。
+    全 7 維度的 scan 結果由 src/margin_rebound/scan.py 產出。
     """
+    import json
+    # Try reading today's JSON (skill root / outputs / margin_rebound / <date>.json)
+    today = date.today().isoformat()
+    skill_root = Path(__file__).parent.parent
+    json_path = skill_root / "outputs" / "margin_rebound" / f"{today}.json"
+    if json_path.exists():
+        try:
+            d = json.loads(json_path.read_text(encoding="utf-8"))
+            candidates = d.get("candidates", [])
+            return candidates[:top_n]
+        except (json.JSONDecodeError, OSError):
+            pass
+    # Fallback: simple DB query (old behavior)
+    return _fetch_margin_distress_fallback(top_n)
+
+
+def _fetch_margin_distress_fallback(top_n: int = 10) -> List[Dict]:
+    """Fallback: 從 DB 查詢融資反彈候選人（簡化版，不含多維度評分）。"""
     out = []
     with db.get_conn() as conn:
         cur = conn.cursor(pymysql.cursors.DictCursor)
         cur.execute("""
             SELECT
-                d.Ticker,
-                d.Date,
-                d.Close,
-                d.MarginBalance,
-                d.ShortBalance,
-                d.Volume,
-                c.industry,
-                c.company AS name
+                d.Ticker, d.Date, d.Close, d.MarginBalance,
+                d.ShortBalance, d.Volume,
+                c.industry, c.company AS name
             FROM daily_data2_full d
             LEFT JOIN industry_type c ON d.Ticker = c.ticker
             WHERE d.Date = (SELECT MAX(Date) FROM daily_data2_full)
@@ -1523,7 +1544,7 @@ def _fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
             SELECT Ticker, AVG(Close) AS avg_c
             FROM daily_data2_full
             WHERE Ticker IN ({placeholders})
-              AND Date >= (SELECT MAX(Date) FROM daily_data2_full) - INTERVAL 240 DAY
+              AND Date >= (SELECT MAX(Date) FROM daily_data2_full) - INTERVAL 120 DAY
             GROUP BY Ticker
         """, tuple(tickers))
         avg_costs = {r["Ticker"]: float(r["avg_c"]) for r in cur.fetchall() if r.get("avg_c")}
@@ -1538,17 +1559,6 @@ def _fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
         maint_pct = close / avg_c * 100
         if maint_pct >= 133:
             continue
-        # compute drop from high (sma_13, sma_27, sma_54)
-        with db.get_conn() as conn2:
-            cur2 = conn2.cursor(pymysql.cursors.DictCursor)
-            cur2.execute("SELECT sma_13, sma_27, sma_54 FROM daily_data2_full WHERE Ticker=%s AND Date=(SELECT MAX(Date) FROM daily_data2_full)", (t,))
-            sma = cur2.fetchone() or {}
-        high_proxy = max(float(sma.get("sma_13") or 0), float(sma.get("sma_27") or 0), float(sma.get("sma_54") or 0))
-        if high_proxy <= 0:
-            high_proxy = avg_c
-        drop_pct = (high_proxy - close) / high_proxy * 100
-        if drop_pct > 80:
-            continue
         out.append({
             "ticker": t,
             "name": r.get("name") or t,
@@ -1556,28 +1566,53 @@ def _fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
             "close": close,
             "margin_張": margin,
             "margin_市值_億": round(margin * close * 1000 / 1e8, 2),
-            "avg_cost": round(avg_c, 2),
-            "maint_pct": round(maint_pct, 1),
-            "drop_pct": round(drop_pct, 1),
-            "volume": int(r["Volume"]),
+            "avg_cost_120d": round(avg_c, 2),
+            "maint_rate": round(maint_pct, 1),
+            "composite": round(maint_pct / 1.33, 1),  # simple proxy
+            "scores": {"maint_rate": round(max(0, 100 - (maint_pct - 100) * 2), 1)},
         })
-    # sort by margin market value DESC (large positions first)
-    out.sort(key=lambda x: x["margin_市值_億"], reverse=True)
+    out.sort(key=lambda x: x.get("margin_市值_億", 0), reverse=True)
     return out[:top_n]
 
 
 def _render_margin_tab(candidates: List[Dict]) -> str:
-    """Render the 🎯 潛在反彈 tab content."""
+    """Render the 🎯 潛在反彈 tab content (uses multi-dim scan results)."""
     if not candidates:
         return '<div class="tab-content" data-bucket="margin">無候選人</div>'
     cards = []
     for c in candidates:
+        # Color: 維持率 紅色 (台灣慣例 — 維持率低 = 紅 = 反彈機會)
+        maint = c.get("maint_rate")
+        maint_s = f"{maint:.1f}%" if maint is not None else "—"
+        score = c.get("composite", 0)
+        # 顯示每個維度的分數
+        scores = c.get("scores", {})
+        score_chips = ""
+        if scores:
+            chips = []
+            label_map = {
+                "maint_rate": "📏維持率",
+                "margin_change_1d": "📉1d融資",
+                "margin_change_3d": "📉3d融資",
+                "bias": "📐Bias",
+                "rsi": "RSI",
+                "boll": "布林",
+                "volume_shadow": "💥爆量",
+            }
+            for k, label in label_map.items():
+                if k in scores:
+                    s = scores[k]
+                    cls = "pos" if s >= 70 else ("neu" if s >= 40 else "neg")
+                    chips.append(f'<span class="chip chip-{cls}">{label} {s:.0f}</span>')
+            score_chips = '<div class="pick-chips">' + " ".join(chips) + '</div>'
+
         cards.append(f"""
         <div class="pick">
           <div class="pick-head">
             <span class="pick-ticker">{_esc(c['ticker'])}</span>
-            <span class="pick-name">{_esc(c['name'])}</span>
-            <span class="pick-industry muted">{_esc(c['industry'])}</span>
+            <span class="pick-name">{_esc(c.get('company') or c.get('name', c['ticker']))}</span>
+            <span class="pick-industry muted">{_esc(c.get('industry') or '—')}</span>
+            <span class="pick-score" style="background:var(--acc);color:#000;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78rem">Score {score:.0f}</span>
             <a class="analyze-link" href="analyze/{_esc(c['ticker'])}.html" target="_blank">🔍 分析 →</a>
           </div>
           <div class="pick-grid">
@@ -1587,33 +1622,35 @@ def _render_margin_tab(candidates: List[Dict]) -> str:
             </div>
             <div class="pick-cell">
               <div class="k">120d 平均成本</div>
-              <div class="v muted">{c['avg_cost']:,.2f}</div>
+              <div class="v muted">{c.get('avg_cost_120d', 0):,.2f}</div>
             </div>
             <div class="pick-cell">
               <div class="k">📏 估維持率</div>
-              <div class="v pos" style="font-weight:700">{c['maint_pct']:.1f}%</div>
+              <div class="v pos" style="font-weight:700">{maint_s}</div>
             </div>
             <div class="pick-cell">
-              <div class="k">📉 跌幅</div>
-              <div class="v neg">{c['drop_pct']:+.1f}%</div>
+              <div class="k">📉 1d 融資變化</div>
+              <div class="v neg">{c.get('margin_chg_1d_pct', 0):+.1f}%</div>
             </div>
             <div class="pick-cell">
-              <div class="k">融資餘額</div>
-              <div class="v">{c['margin_張']:,} 張</div>
+              <div class="k">📐 Bias</div>
+              <div class="v neg">{c.get('bias_pct', 0):+.1f}%</div>
             </div>
             <div class="pick-cell">
-              <div class="k">融資市值</div>
-              <div class="v">{c['margin_市值_億']:,.1f} 億</div>
+              <div class="k">RSI</div>
+              <div class="v">{c.get('rsi', 0):.0f}</div>
             </div>
           </div>
+          {score_chips}
           <div class="pick-meta muted">
-            <span>🚨 120d 平均維持率 <b style="color:#ec7063">{c['maint_pct']:.1f}%</b>（&lt; 133% 追繳線）</span> ·
-            <span>現價 <b>{c['close']:,.2f}</b> vs 平均成本 <b>{c['avg_cost']:,.2f}</b></span>
+            <span>🚨 120d 估維持率 <b style="color:#ec7063">{maint_s}</b>（&lt; 133% 追繳線）</span> ·
+            <span>融資 {c.get('margin_張', 0):,} 張 · 市值 {c.get('margin_市值_億', 0):,.1f} 億</span>
           </div>
         </div>""")
     return f"""
     <div class="tab-content" data-bucket="margin">
-      <h2 class="bucket-title">🎯 潛在反彈候選 <small>120d 融資維持率 &lt; 133% · forced-sell 反彈 setup</small></h2>
+      <h2 class="bucket-title">🎯 潛在反彈候選 <small>7 維度評分 (維持率 / 融資變化 / Bias / RSI / 布林 / 量價 / 集保*)</small></h2>
+      <p class="muted" style="font-size:0.82rem;margin:4px 0 12px">*集保戶數 / 千張大戶需 TDCC 申報資料，目前沒接入。每日 22:25 自動更新。</p>
       <div class="picks">{''.join(cards)}</div>
     </div>"""
 
