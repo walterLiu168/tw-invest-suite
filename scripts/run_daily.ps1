@@ -332,14 +332,19 @@ $stages += @{ N=4; Name='render'; Cmd='render_only.py --no-yfinance --no-news'; 
 $stages += @{ N=5; Name='patterns'; Cmd='pattern_classifier.py'; To=30*60 }
 $stages += @{ N=6; Name='patterns_html'; Cmd='build_patterns_html.py'; To=10*60 }
 
-# Stage 7: Margin rebound scan (7-dim scoring, top 10 candidates)
+# Stage 7: FinMind TaiwanStockMarginMaintenance (per-stock 維持率, D020)
+# 先抓才能讓 margin_scan 用真實 maint 而不是 120d 估算
+$maintScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\finmind_maint.py"
+$stages += @{ N=7; Name='finmind_maint'; Cmd=$maintScript; To=30*60 }
+
+# Stage 8: Margin rebound scan (7-dim scoring, all maint<130% candidates)
 $today = Get-Date -Format 'yyyy-MM-dd'
 $scanOut = Join-Path $PSScriptRoot "outputs\margin_rebound\$today.json"
 $scanScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\scan.py"
-$stages += @{ N=7; Name='margin_scan'; Cmd="$scanScript --threshold 30 --top 10 --out `"$scanOut`""; To=15*60 }
+$stages += @{ N=8; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=15*60 }
 
-# Stage 8: Full watchlist render (24 picks + 潛在反彈 tab from scan JSON)
-$stages += @{ N=8; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
+# Stage 9: Full watchlist render (24 picks + 潛在反彈 tab from scan JSON)
+$stages += @{ N=9; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
 
 # Run stages
 foreach ($s in $stages) {
