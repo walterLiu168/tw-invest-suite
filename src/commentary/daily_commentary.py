@@ -194,7 +194,7 @@ $market_overview
 
 $stocks
 
-【融資反彈候選】（240d 平均維持率 < 133% + 融資餘額大，是 forced-sell 反彈 setup）
+【融資反彈候選】（120d 平均維持率 < 133% + 融資餘額大，是 forced-sell 反彈 setup）
 
 $margin_candidates
 
