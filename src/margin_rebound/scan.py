@@ -279,7 +279,9 @@ def llm_synthesize_one(c: Dict) -> str:
             {"role": "system", "content": "你是台股資深分析師，數據解讀精準、不囉嗦。"},
             {"role": "user", "content": user_prompt}
         ],
-        "max_tokens": 200,
+        # DeepSeek v4-flash 是 reasoning model：reasoning_tokens 會佔 95%+
+        # 給到 4000 確保有 reasoning (~3800) + 實際回答 (~200)
+        "max_tokens": 4000,
         "temperature": 0.5,
     }
     try:
