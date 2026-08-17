@@ -127,6 +127,61 @@ def fetch_market_overview() -> Dict:
     return {"index_5d": idx, "breadth": breadth}
 
 
+def fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
+    """Fetch 融資反彈候選人：120d 平均維持率 < 133% + 融資餘額大。
+
+    Used by daily commentary to highlight forced-sell rebound opportunities.
+    """
+    out = []
+    with get_conn() as conn:
+        cur = conn.cursor(pymysql.cursors.DictCursor)
+        cur.execute("""
+            SELECT d.Ticker, d.Date, d.Close, d.MarginBalance,
+                   c.industry, c.company AS name
+            FROM daily_data2_full d
+            LEFT JOIN industry_type c ON d.Ticker = c.ticker
+            WHERE d.Date = (SELECT MAX(Date) FROM daily_data2_full)
+              AND d.MarginBalance >= 5000
+              AND d.Close >= 5
+              AND d.Volume >= 100
+        """)
+        latest = cur.fetchall()
+        if not latest:
+            return []
+        tickers = [r["Ticker"] for r in latest]
+        placeholders = ",".join(["%s"] * len(tickers))
+        cur.execute(f"""
+            SELECT Ticker, AVG(Close) AS avg_c
+            FROM daily_data2_full
+            WHERE Ticker IN ({placeholders})
+              AND Date >= (SELECT MAX(Date) FROM daily_data2_full) - INTERVAL 120 DAY
+            GROUP BY Ticker
+        """, tuple(tickers))
+        avg_costs = {r["Ticker"]: float(r["avg_c"]) for r in cur.fetchall() if r.get("avg_c")}
+    for r in latest:
+        t = r["Ticker"]
+        avg_c = avg_costs.get(t, 0)
+        if avg_c <= 0:
+            continue
+        close = float(r["Close"])
+        margin = int(r["MarginBalance"])
+        maint_pct = close / avg_c * 100
+        if maint_pct >= 133:
+            continue
+        out.append({
+            "ticker": t,
+            "name": r.get("name") or t,
+            "industry": r.get("industry") or "—",
+            "close": close,
+            "margin_張": margin,
+            "margin_市值_億": round(margin * close * 1000 / 1e8, 2),
+            "avg_cost": round(avg_c, 2),
+            "maint_pct": round(maint_pct, 1),
+        })
+    out.sort(key=lambda x: x["margin_市值_億"], reverse=True)
+    return out[:top_n]
+
+
 # ============== Prompt Builder ==============
 
 PROMPT_TEMPLATE = """你是台股資深分析師，正在為客戶撰寫「每日台股精選早報」。
@@ -138,6 +193,10 @@ $market_overview
 【24 檔精選】（已依價位 × 多空分組）
 
 $stocks
+
+【融資反彈候選】（240d 平均維持率 < 133% + 融資餘額大，是 forced-sell 反彈 setup）
+
+$margin_candidates
 
 ---
 
@@ -157,18 +216,27 @@ $stocks
 - **進場 / 停損 / 目標**：具體價位
 - **風險**：1-2 個關鍵風險
 
-## 3. 跨檔觀察（2 段）
+## 3. 融資反彈候選速評（top 10 forced-sell 反彈 setup）
+針對每檔用以下格式：
+- **TICKER NAME**：1 句該不該撿 / 何時進場的判斷
+- **理由**：為什麼 forced-sell 可能觸發反彈
+- **進場點**：建議的支撐 / 進場價位
+- **風險**：可能繼續下殺的理由
+
+## 4. 跨檔觀察（2 段）
 - 共同主題（哪幾檔同類股一起動、法人一致方向等）
 - 反向觀察（哪些 ticker 的訊號矛盾）
+- 24 檔精選 vs 融資反彈候選的差異（如有）
 
-## 4. 給客戶的行動建議（3-5 點）
+## 5. 給客戶的行動建議（3-5 點）
 - 今天該關注什麼、該避開什麼
+- 哪些融資反彈候選值得優先關注
 
 ---
 語氣：直接、像 senior 分析師對客戶講話，不囉嗦。"""
 
 
-def build_prompt(picks: List[Dict], market: Dict) -> str:
+def build_prompt(picks: List[Dict], market: Dict, margin_candidates: List[Dict] = None) -> str:
     today = date.today()
     weekday_cn = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"][today.weekday()]
 
@@ -221,6 +289,23 @@ def build_prompt(picks: List[Dict], market: Dict) -> str:
         stocks_txt_parts.append(line)
     stocks_txt = "\n\n".join(stocks_txt_parts)
 
+    # Margin distress candidates text
+    margin_txt_parts = []
+    margin_candidates = margin_candidates or []
+    if margin_candidates:
+        total_margin = sum(c["margin_市值_億"] for c in margin_candidates)
+        margin_txt_parts.append(f"（{len(margin_candidates)} 檔，總融資市值 {total_margin:,.0f} 億）")
+        for c in margin_candidates:
+            margin_txt_parts.append(
+                f"**{c['ticker']} {c['name']}** ({c['industry']})\n"
+                f"  - 收盤 {c['close']:,.2f} · 120d 平均成本 {c['avg_cost']:,.2f}\n"
+                f"  - 估維持率 {c['maint_pct']:.1f}%（< 133% 追繳線）\n"
+                f"  - 融資餘額 {c['margin_張']:,} 張 · 融資市值 {c['margin_市值_億']:,.0f} 億"
+            )
+    else:
+        margin_txt_parts.append("（無融資反彈候選人）")
+    margin_txt = "\n\n".join(margin_txt_parts)
+
     from string import Template
     tpl = Template(PROMPT_TEMPLATE)
     return tpl.substitute(
@@ -228,6 +313,7 @@ def build_prompt(picks: List[Dict], market: Dict) -> str:
         weekday=weekday_cn,
         market_overview=mkt_txt,
         stocks=stocks_txt,
+        margin_candidates=margin_txt,
     )
 
 
@@ -275,10 +361,13 @@ def main():
     print(f"    Got {len(picks)} picks", file=sys.stderr)
     print("  Fetching market overview...", file=sys.stderr)
     market = fetch_market_overview()
+    print("  Fetching margin distress candidates...", file=sys.stderr)
+    margin_candidates = fetch_margin_distress_candidates(top_n=10)
+    print(f"    Got {len(margin_candidates)} candidates", file=sys.stderr)
 
     # 2. Build prompt
     print("  Building prompt...", file=sys.stderr)
-    prompt = build_prompt(picks, market)
+    prompt = build_prompt(picks, market, margin_candidates=margin_candidates)
     print(f"    Prompt: {len(prompt)} chars", file=sys.stderr)
 
     if args.dry_run:

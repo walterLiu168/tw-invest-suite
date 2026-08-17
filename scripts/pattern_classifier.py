@@ -75,11 +75,20 @@ PATTERNS = {
         "color": "green",
         "desc": "240 日腰斬，長期弱勢",
     },
+    "margin_distress_rebound": {
+        "name_zh": "🎯 融資反彈候選",
+        "color": "red",
+        "desc": "240d 平均維持率 < 133% + 融資餘額大，潛在 forced-sell 反彈",
+    },
 }
 
 
-def _classify_one(snap: Dict, rets: Dict, yf: Dict) -> List[str]:
-    """Return list of pattern keys this ticker matches."""
+def _classify_one(snap: Dict, rets: Dict, yf: Dict, avg_cost: float = 0) -> List[str]:
+    """Return list of pattern keys this ticker matches.
+
+    avg_cost: 240d average close (proxy for average margin cost basis).
+    If provided and > 0, used to estimate margin maintenance rate.
+    """
     close = float(snap.get("Close") or 0)
     sma13 = float(snap.get("sma_13") or 0)
     sma27 = float(snap.get("sma_27") or 0)
@@ -87,6 +96,7 @@ def _classify_one(snap: Dict, rets: Dict, yf: Dict) -> List[str]:
     rsi = float(snap.get("rsi_14") or 0)
     volume = int(snap.get("Volume") or 0)
     fnet = int(snap.get("ForeignNet") or 0)
+    margin = int(snap.get("MarginBalance") or 0)
     is_gap = int(snap.get("is_gap") or 0)
     if not close:
         return []
@@ -141,6 +151,17 @@ def _classify_one(snap: Dict, rets: Dict, yf: Dict) -> List[str]:
     # 長空腰斬: 240 日腰斬
     if r240 < -0.30 and close < sma54:
         patterns.append("long_drawdown")
+
+    # 融資反彈候選: 240d 平均維持率 < 133% + 融資餘額 >= 5000 張
+    # 排除：close < 5（全額交割股）、volume 太低（沒量）、drop > 80%（可能下市）
+    if avg_cost > 0 and margin >= 5000 and close >= 5 and volume >= 100:
+        maint_avg = close / avg_cost * 100
+        if maint_avg < 133:
+            # 排除跌幅太深的（可能下市或 corporate event）
+            high_proxy = max(sma13, sma27, sma54) or avg_cost
+            drop = (high_proxy - close) / high_proxy * 100
+            if drop <= 80:
+                patterns.append("margin_distress_rebound")
 
     return patterns
 
@@ -207,17 +228,49 @@ def get_yfinance_cache_all() -> Dict[str, Dict]:
     return out
 
 
+def get_avg_costs_120d(tickers: List[str]) -> Dict[str, float]:
+    """For each ticker, compute 120d average close (proxy for recent margin cost).
+
+    120d (4 months) is a better proxy than 240d because:
+    - 240d catches too many "normal downtrend" stocks (false positives)
+    - 120d aligns with typical margin holding period
+    - Captures "recent buyers are underwater" more accurately
+    """
+    if not tickers:
+        return {}
+    latest = db.latest_date("daily_data2_full")
+    with db.get_conn() as conn:
+        cur = conn.cursor(pymysql.cursors.DictCursor)
+        placeholders = ",".join(["%s"] * len(tickers))
+        cur.execute(f"""
+            SELECT Ticker, AVG(Close) AS avg_c
+            FROM daily_data2_full
+            WHERE Ticker IN ({placeholders})
+              AND Date >= %s - INTERVAL 120 DAY
+            GROUP BY Ticker
+        """, tuple(tickers) + (latest,))
+        out = {}
+        for r in cur.fetchall():
+            try:
+                out[r["Ticker"]] = float(r["avg_c"])
+            except (TypeError, ValueError):
+                pass
+        return out
+
+
 def classify_all() -> Dict[str, List[str]]:
     """Classify every ticker into patterns. Return {ticker: [pattern_keys]}."""
     snaps = get_all_snapshots()
     tickers = list(snaps.keys())
     rets_map = get_all_long_term_returns(tickers)
     yf_map = get_yfinance_cache_all()
+    avg_cost_map = get_avg_costs_120d(tickers)
     out: Dict[str, List[str]] = {}
     for t, snap in snaps.items():
         rets = rets_map.get(t, {})
         yf = yf_map.get(t, {})
-        out[t] = _classify_one(snap, rets, yf)
+        avg_cost = avg_cost_map.get(t, 0)
+        out[t] = _classify_one(snap, rets, yf, avg_cost=avg_cost)
     return out
 
 
@@ -464,11 +517,14 @@ def main():
     print(f"    {len(yf_map)} tickers")
 
     print(f"  Classifying all tickers...")
+    print(f"  Loading 120d avg cost (margin distress proxy)...")
+    avg_cost_map = get_avg_costs_120d(list(snaps.keys()))
     classifications = {}
     for t, snap in snaps.items():
         rets = rets_map.get(t, {})
         yf = yf_map.get(t, {})
-        classifications[t] = _classify_one(snap, rets, yf)
+        avg_cost = avg_cost_map.get(t, 0)
+        classifications[t] = _classify_one(snap, rets, yf, avg_cost=avg_cost)
     print(f"  Classified in {time.time()-t0:.1f}s")
 
     # Pattern stats

@@ -38,6 +38,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date
 from pathlib import Path
+import pymysql
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import analyze_stock as a   # noqa: E402
@@ -1489,6 +1490,134 @@ def render_pick_card(c: ms.Candidate, d: Dict, idx: int) -> str:
 
 # ---- per-bucket group ----
 
+def _fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
+    """從 DB 查詢融資反彈候選人：240d 平均維持率 < 133% + 融資餘額 ≥ 5000 張。
+    Returns: list of dicts with ticker, name, industry, close, maint_avg_pct, drop_pct, etc.
+    """
+    out = []
+    with db.get_conn() as conn:
+        cur = conn.cursor(pymysql.cursors.DictCursor)
+        cur.execute("""
+            SELECT
+                d.Ticker,
+                d.Date,
+                d.Close,
+                d.MarginBalance,
+                d.ShortBalance,
+                d.Volume,
+                c.industry,
+                c.company AS name
+            FROM daily_data2_full d
+            LEFT JOIN industry_type c ON d.Ticker = c.ticker
+            WHERE d.Date = (SELECT MAX(Date) FROM daily_data2_full)
+              AND d.MarginBalance >= 5000
+              AND d.Close >= 5
+              AND d.Volume >= 100
+        """)
+        latest = cur.fetchall()
+        if not latest:
+            return []
+        tickers = [r["Ticker"] for r in latest]
+        placeholders = ",".join(["%s"] * len(tickers))
+        cur.execute(f"""
+            SELECT Ticker, AVG(Close) AS avg_c
+            FROM daily_data2_full
+            WHERE Ticker IN ({placeholders})
+              AND Date >= (SELECT MAX(Date) FROM daily_data2_full) - INTERVAL 240 DAY
+            GROUP BY Ticker
+        """, tuple(tickers))
+        avg_costs = {r["Ticker"]: float(r["avg_c"]) for r in cur.fetchall() if r.get("avg_c")}
+
+    for r in latest:
+        t = r["Ticker"]
+        avg_c = avg_costs.get(t, 0)
+        if avg_c <= 0:
+            continue
+        close = float(r["Close"])
+        margin = int(r["MarginBalance"])
+        maint_pct = close / avg_c * 100
+        if maint_pct >= 133:
+            continue
+        # compute drop from high (sma_13, sma_27, sma_54)
+        with db.get_conn() as conn2:
+            cur2 = conn2.cursor(pymysql.cursors.DictCursor)
+            cur2.execute("SELECT sma_13, sma_27, sma_54 FROM daily_data2_full WHERE Ticker=%s AND Date=(SELECT MAX(Date) FROM daily_data2_full)", (t,))
+            sma = cur2.fetchone() or {}
+        high_proxy = max(float(sma.get("sma_13") or 0), float(sma.get("sma_27") or 0), float(sma.get("sma_54") or 0))
+        if high_proxy <= 0:
+            high_proxy = avg_c
+        drop_pct = (high_proxy - close) / high_proxy * 100
+        if drop_pct > 80:
+            continue
+        out.append({
+            "ticker": t,
+            "name": r.get("name") or t,
+            "industry": r.get("industry") or "—",
+            "close": close,
+            "margin_張": margin,
+            "margin_市值_億": round(margin * close * 1000 / 1e8, 2),
+            "avg_cost": round(avg_c, 2),
+            "maint_pct": round(maint_pct, 1),
+            "drop_pct": round(drop_pct, 1),
+            "volume": int(r["Volume"]),
+        })
+    # sort by margin market value DESC (large positions first)
+    out.sort(key=lambda x: x["margin_市值_億"], reverse=True)
+    return out[:top_n]
+
+
+def _render_margin_tab(candidates: List[Dict]) -> str:
+    """Render the 🎯 潛在反彈 tab content."""
+    if not candidates:
+        return '<div class="tab-content" data-bucket="margin">無候選人</div>'
+    cards = []
+    for c in candidates:
+        cards.append(f"""
+        <div class="pick">
+          <div class="pick-head">
+            <span class="pick-ticker">{_esc(c['ticker'])}</span>
+            <span class="pick-name">{_esc(c['name'])}</span>
+            <span class="pick-industry muted">{_esc(c['industry'])}</span>
+            <a class="analyze-link" href="analyze/{_esc(c['ticker'])}.html" target="_blank">🔍 分析 →</a>
+          </div>
+          <div class="pick-grid">
+            <div class="pick-cell">
+              <div class="k">收盤</div>
+              <div class="v">{c['close']:,.2f}</div>
+            </div>
+            <div class="pick-cell">
+              <div class="k">120d 平均成本</div>
+              <div class="v muted">{c['avg_cost']:,.2f}</div>
+            </div>
+            <div class="pick-cell">
+              <div class="k">📏 估維持率</div>
+              <div class="v pos" style="font-weight:700">{c['maint_pct']:.1f}%</div>
+            </div>
+            <div class="pick-cell">
+              <div class="k">📉 跌幅</div>
+              <div class="v neg">{c['drop_pct']:+.1f}%</div>
+            </div>
+            <div class="pick-cell">
+              <div class="k">融資餘額</div>
+              <div class="v">{c['margin_張']:,} 張</div>
+            </div>
+            <div class="pick-cell">
+              <div class="k">融資市值</div>
+              <div class="v">{c['margin_市值_億']:,.1f} 億</div>
+            </div>
+          </div>
+          <div class="pick-meta muted">
+            <span>🚨 120d 平均維持率 <b style="color:#ec7063">{c['maint_pct']:.1f}%</b>（&lt; 133% 追繳線）</span> ·
+            <span>現價 <b>{c['close']:,.2f}</b> vs 平均成本 <b>{c['avg_cost']:,.2f}</b></span>
+          </div>
+        </div>""")
+    return f"""
+    <div class="tab-content" data-bucket="margin">
+      <h2 class="bucket-title">🎯 潛在反彈候選 <small>120d 融資維持率 &lt; 133% · forced-sell 反彈 setup</small></h2>
+      <div class="picks">{''.join(cards)}</div>
+    </div>"""
+
+
 def render_bucket(bucket_label: str, picks: List[ms.Candidate], data_map: Dict[str, Dict], idx_offset: int) -> str:
     BUCKET_META = {
         "<100": ("💰 銅板股", "高波動、題材驅動，短中期操作為主"),
@@ -1587,10 +1716,16 @@ def main():
     print(f"[4/4] Rendering HTML…")
     tabs_html = []
     contents_html = []
+    # First tab: 潛在反彈 (margin distress candidates) — highest priority
+    margin_candidates = _fetch_margin_distress_candidates(top_n=10)
+    if margin_candidates:
+        active = "active"  # first tab = default open
+        tabs_html.append(f'<button class="tab {active}" data-bucket="margin">🎯 潛在反彈 <span class="count">{len(margin_candidates)}</span></button>')
+        contents_html.append(_render_margin_tab(margin_candidates))
     for i, bucket_label in enumerate(["<100", "100-300", "300-1000", ">1000"]):
         items = bucket_picks.get(bucket_label, [])
         if not items: continue
-        active = "active" if i == 0 else ""
+        active = "active" if i == 0 and not margin_candidates else ""
         tabs_html.append(f'<button class="tab {active}" data-bucket="{bucket_label}">{bucket_label} 元 <span class="count">{len(items)}</span></button>')
         contents_html.append(render_bucket(bucket_label, items, data_map, i * 10))
 
