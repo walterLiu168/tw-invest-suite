@@ -57,21 +57,27 @@ DEFAULT_TOP = None  # 預設列全部（user: "i want to see it in the report"�
 
 
 # ============== SQL ==============
+# JOIN with finmind_taiwan_margin_maintenance for REAL margin_maintenance
+# (replaces 120d avg close estimate)
 SQL_LATEST = """
     WITH ranked AS (
       SELECT
-        Ticker, Date, Open, High, Low, Close, Volume,
-        MarginBalance, sma_13, sma_27, sma_54, rsi_14, atr_14,
-        LAG(Close, 1) OVER (PARTITION BY Ticker ORDER BY Date) AS prev_close,
-        LAG(Low, 1) OVER (PARTITION BY Ticker ORDER BY Date) AS prev_low,
-        LAG(MarginBalance, 1) OVER (PARTITION BY Ticker ORDER BY Date) AS prev_margin_1d,
-        LAG(MarginBalance, 3) OVER (PARTITION BY Ticker ORDER BY Date) AS prev_margin_3d,
-        AVG(Volume) OVER (PARTITION BY Ticker ORDER BY Date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS vol_avg_20,
-        AVG(Close) OVER (PARTITION BY Ticker ORDER BY Date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ma_20,
-        STDDEV_POP(Close) OVER (PARTITION BY Ticker ORDER BY Date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS std_20,
-        ROW_NUMBER() OVER (PARTITION BY Ticker ORDER BY Date DESC) AS rn
-      FROM daily_data2_full
-      WHERE Date >= (SELECT MAX(Date) FROM daily_data2_full) - INTERVAL 30 DAY
+        d.Ticker, d.Date, d.Open, d.High, d.Low, d.Close, d.Volume,
+        d.MarginBalance, d.sma_13, d.sma_27, d.sma_54, d.rsi_14, d.atr_14,
+        m.margin_maintenance, m.margin_cost AS finmind_margin_cost,
+        LAG(Close, 1) OVER (PARTITION BY d.Ticker ORDER BY d.Date) AS prev_close,
+        LAG(Low, 1) OVER (PARTITION BY d.Ticker ORDER BY d.Date) AS prev_low,
+        LAG(MarginBalance, 1) OVER (PARTITION BY d.Ticker ORDER BY d.Date) AS prev_margin_1d,
+        LAG(MarginBalance, 3) OVER (PARTITION BY d.Ticker ORDER BY d.Date) AS prev_margin_3d,
+        AVG(Volume) OVER (PARTITION BY d.Ticker ORDER BY d.Date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS vol_avg_20,
+        AVG(Close) OVER (PARTITION BY d.Ticker ORDER BY d.Date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ma_20,
+        STDDEV_POP(Close) OVER (PARTITION BY d.Ticker ORDER BY d.Date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS std_20,
+        ROW_NUMBER() OVER (PARTITION BY d.Ticker ORDER BY d.Date DESC) AS rn
+      FROM daily_data2_full d
+      LEFT JOIN finmind_taiwan_margin_maintenance m
+        ON d.Ticker = m.ticker
+        AND d.Date = m.trade_date
+      WHERE d.Date >= (SELECT MAX(Date) FROM daily_data2_full) - INTERVAL 30 DAY
     )
     SELECT * FROM ranked WHERE rn = 1
 """
@@ -81,7 +87,7 @@ SQL_LATEST = """
 
 def score_maint_rate(maint_rate: float) -> float:
     """1. 融資維持率 < 130% → 100 分；>= 150% → 0 分。
-    maint_rate: 120d avg cost-based estimate (lower = more distress)."""
+    maint_rate: FinMind 官方維持率（真實，非 120d 估算）。"""
     if maint_rate is None or maint_rate < 0:
         return 0
     # Linear: 100% maint = 100 分, 130% = 30 分, 150% = 0 分
@@ -343,6 +349,9 @@ def scan(threshold: float = DEFAULT_THRESHOLD,
             vol_avg_20 = float(r["vol_avg_20"] or 0)
             ma_20 = float(r["ma_20"] or 0)
             std_20 = float(r["std_20"] or 0)
+            # FinMind real maintenance (may be None if not yet downloaded)
+            finmind_maint = r.get("margin_maintenance")
+            maint_rate = float(finmind_maint) if finmind_maint is not None else None
         except (TypeError, ValueError):
             continue
         if margin <= 0 or close <= 0 or high <= low:
@@ -352,14 +361,6 @@ def scan(threshold: float = DEFAULT_THRESHOLD,
         bb_lower = ma_20 - 2 * std_20 if ma_20 > 0 and std_20 > 0 else 0
         bb_upper = ma_20 + 2 * std_20 if ma_20 > 0 and std_20 > 0 else 0
 
-        # 120d average cost for maintenance rate
-        # 簡化：在 scanner 直接 SQL 一次
-        # 但避免額外 query，用 sma_54 近似（54 交易日 = 約 80 天 calendar，可能不準）
-        # Better: do another small query
-        # 暫時跳過，讓外面傳入（從 avg_cost 函數拿）
-        # 簡化：用 1/avg_cost_in_sql
-        # 改寫：直接用 1/avg_cost_120 query
-
         # Margin change
         margin_chg_1d = (margin - prev_margin_1d) / prev_margin_1d if prev_margin_1d else 0
         margin_chg_3d = (margin - prev_margin_3d) / prev_margin_3d if prev_margin_3d else 0
@@ -368,6 +369,7 @@ def scan(threshold: float = DEFAULT_THRESHOLD,
         bias = (close - sma27) / sma27 if sma27 else 0
 
         scores = {
+            "maint_rate": score_maint_rate(maint_rate),  # uses real FinMind data
             "margin_change_1d": score_margin_change(margin_chg_1d),
             "margin_change_3d": score_margin_change_3d(margin_chg_3d),
             "bias": score_bias(bias),
@@ -375,9 +377,6 @@ def scan(threshold: float = DEFAULT_THRESHOLD,
             "boll": score_boll(close, bb_lower) if bb_lower > 0 else 0,
             "volume_shadow": score_volume_shadow(volume, vol_avg_20, close, high, low),
         }
-        # Composite (without maint_rate — need separate query)
-        composite_partial = sum(scores[k] * WEIGHTS[k] for k in scores) / sum(WEIGHTS[k] for k in scores)
-        composite_partial = round(composite_partial * (1 - WEIGHTS["maint_rate"]), 1)
 
         candidates.append({
             "ticker": ticker,
@@ -393,39 +392,33 @@ def scan(threshold: float = DEFAULT_THRESHOLD,
             "ma_20": round(ma_20, 2),
             "vol_ratio": round(volume / vol_avg_20, 2) if vol_avg_20 > 0 else 0,
             "lower_shadow": round((close - low) / (high - low), 2) if (high - low) > 0 else 0,
+            "maint_rate": maint_rate,  # FinMind real
+            "maint_source": "finmind" if maint_rate is not None else "missing",
             "scores": scores,
-            "composite_partial": composite_partial,
             "company": info.get(ticker, {}).get("company", ""),
             "industry": info.get(ticker, {}).get("industry", ""),
         })
 
-    # Now compute maint_rate with separate query
+    # Compute full composite (now includes maint_rate from real data)
+    for c in candidates:
+        c["composite"] = round(sum(c["scores"][k] * WEIGHTS[k] for k in WEIGHTS) * 100 / 100, 1)
+
+    # 120d 平均成本（純顯示用，不影響 130% 過濾）
     with get_conn() as conn:
         cur = conn.cursor(pymysql.cursors.DictCursor)
         tickers = [c["ticker"] for c in candidates]
-        if not tickers:
-            return []
-        placeholders = ",".join(["%s"] * len(tickers))
-        cur.execute(f"""
-            SELECT Ticker, AVG(Close) AS avg_c
-            FROM daily_data2_full
-            WHERE Ticker IN ({placeholders})
-              AND Date >= (SELECT MAX(Date) FROM daily_data2_full) - INTERVAL 120 DAY
-            GROUP BY Ticker
-        """, tuple(tickers))
-        avg_costs = {r["Ticker"]: float(r["avg_c"]) for r in cur.fetchall() if r.get("avg_c")}
-
+        if tickers:
+            placeholders = ",".join(["%s"] * len(tickers))
+            cur.execute(f"""
+                SELECT Ticker, AVG(Close) AS avg_c
+                FROM daily_data2_full
+                WHERE Ticker IN ({placeholders})
+                  AND Date >= (SELECT MAX(Date) FROM daily_data2_full) - INTERVAL 120 DAY
+                GROUP BY Ticker
+            """, tuple(tickers))
+            avg_costs = {r["Ticker"]: float(r["avg_c"]) for r in cur.fetchall() if r.get("avg_c")}
     for c in candidates:
-        avg_c = avg_costs.get(c["ticker"], 0)
-        if avg_c > 0 and c["close"] > 0:
-            maint_rate = c["close"] / avg_c * 100
-        else:
-            maint_rate = None
-        c["maint_rate"] = maint_rate
-        c["avg_cost_120d"] = round(avg_c, 2) if avg_c > 0 else None
-        c["scores"]["maint_rate"] = score_maint_rate(maint_rate) if maint_rate is not None else 0
-        # Full composite
-        c["composite"] = round(sum(c["scores"][k] * WEIGHTS[k] for k in WEIGHTS) * 100 / 100, 1)
+        c["avg_cost_120d"] = round(avg_costs.get(c["ticker"], 0), 2) or None
 
     # FIRST RULE (constitution): 融資維持率 < 130% — 不達就踢掉
     # If maint_rate is None or >= 130, exclude entirely (no composite, no chip, no show)
