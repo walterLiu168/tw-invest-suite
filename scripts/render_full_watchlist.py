@@ -1497,11 +1497,14 @@ def render_pick_card(c: ms.Candidate, d: Dict, idx: int) -> str:
 
 # ---- per-bucket group ----
 
-def _fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
+def _fetch_margin_distress_candidates(top_n: int = None) -> List[Dict]:
     """從 outputs/margin_rebound/<date>.json 讀取 scan 結果。
 
     若 JSON 不存在（scan 還沒跑過），fallback 到 DB query 算簡化版。
     全 7 維度的 scan 結果由 src/margin_rebound/scan.py 產出。
+
+    Constitution: 130% 是唯一硬規則；show all (no top_n default)。
+    用戶原話: "i want to see it in the report" (all 過 130% 的都要列)
     """
     import json
     # Try reading today's JSON (skill root / outputs / margin_rebound / <date>.json)
@@ -1512,10 +1515,14 @@ def _fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
         try:
             d = json.loads(json_path.read_text(encoding="utf-8"))
             candidates = d.get("candidates", [])
-            return candidates[:top_n]
+            if top_n is not None:
+                return candidates[:top_n]
+            return candidates
         except (json.JSONDecodeError, OSError):
             pass
     # Fallback: simple DB query (old behavior)
+    if top_n is None:
+        top_n = 1000  # 幾乎全部
     return _fetch_margin_distress_fallback(top_n)
 
 
@@ -1577,14 +1584,19 @@ def _fetch_margin_distress_fallback(top_n: int = 10) -> List[Dict]:
 
 
 def _render_margin_tab(candidates: List[Dict]) -> str:
-    """Render the 🎯 潛在反彈 tab content (uses multi-dim scan results).
+    """Render the 🎯 潛在反彈 tab content.
     Constitution: 一行一訊息 — no group labels, no multi-claim lines, no empty lines.
-    First rule: 融資維持率 < 130% (已於 scan.py hard filter 過濾).
+    First rule: 融資維持率 < 130% (hard filter in scan.py).
+    Layout: top 30 cards (with AI synthesis) + full table (all 1691 candidates, pure data).
     """
     if not candidates:
         return '<div class="tab-content" data-bucket="margin">無候選人</div>'
+
+    # Top 30 cards (with AI synthesis)
+    TOP_N = 30
+    top_cards_candidates = candidates[:TOP_N]
     cards = []
-    for c in candidates:
+    for c in top_cards_candidates:
         # Color: 維持率 紅色 (台灣慣例 — 維持率低 = 紅 = 反彈機會)
         maint = c.get("maint_rate")
         maint_s = f"{maint:.1f}%" if maint is not None else "—"
@@ -1754,8 +1766,8 @@ def main():
     print(f"[4/4] Rendering HTML…")
     tabs_html = []
     contents_html = []
-    # First tab: 潛在反彈 (margin distress candidates) — highest priority
-    margin_candidates = _fetch_margin_distress_candidates(top_n=10)
+    # First tab: 潛在反彈 (margin distress candidates) — show ALL (no top_n cap)
+    margin_candidates = _fetch_margin_distress_candidates()
     if margin_candidates:
         active = "active"  # first tab = default open
         tabs_html.append(f'<button class="tab {active}" data-bucket="margin">🎯 潛在反彈 <span class="count">{len(margin_candidates)}</span></button>')

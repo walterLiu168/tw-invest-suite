@@ -18,11 +18,18 @@
     python scan.py --threshold 60 # 自訂分數門檻
 """
 import sys
+import os
 import json
 import argparse
 from pathlib import Path
 from datetime import datetime, date
 from typing import Dict, List, Optional
+
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
 
 # 讓 script 可獨立跑
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -45,8 +52,8 @@ WEIGHTS = {
     "volume_shadow":  0.10,  # 爆量下影線
 }
 
-DEFAULT_THRESHOLD = 50  # 預設分數門檻
-DEFAULT_TOP = 30
+DEFAULT_THRESHOLD = 0  # 不再用 composite 過濾（130% 是唯一硬規則）
+DEFAULT_TOP = None  # 預設列全部（user: "i want to see it in the report"）
 
 
 # ============== SQL ==============
@@ -229,11 +236,80 @@ def synthesize_ai_comment(c: Dict) -> str:
     return " | ".join(parts) + " → " + action
 
 
+# ============== OpenAI Synthesis (per-card, real LLM) ==============
+
+def llm_synthesize_one(c: Dict) -> str:
+    """Use OpenAI Chat Completion to synthesize 1-line info for one card.
+
+    Falls back to rule-based if API call fails.
+    Requires env: OPENAI_API_KEY (and optional OPENAI_BASE_URL, OPENAI_MODEL).
+    """
+    if not HAS_REQUESTS:
+        return synthesize_ai_comment(c)
+
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        return synthesize_ai_comment(c)
+
+    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+
+    maint = c.get("maint_rate") or 0
+    chg = c.get("margin_chg_1d_pct") or 0
+    bias = c.get("bias_pct") or 0
+    rsi = c.get("rsi") or 50
+    close = c.get("close") or 0
+    avg = c.get("avg_cost_120d") or 0
+
+    user_prompt = (
+        f"你是台股分析師，給 1 句話（≤60 字）總結這檔的「融資反彈 setup」。\n\n"
+        f"數據：收盤 {close:.2f} · 120d 成本 {avg:.2f} · 維持率 {maint:.1f}% "
+        f"· 1d 融資 {chg:+.1f}% · Bias {bias:+.1f}% · RSI {rsi:.0f}\n\n"
+        f"規則：\n"
+        f"1. 繁體中文\n"
+        f"2. 一行一訊息（不要分點、不要空行）\n"
+        f"3. 開頭 emoji 語意：🔴套牢 / 🟢接近追繳 / 🟡警戒 / ✅短線反彈 / ⚪觀望\n"
+        f"4. 結尾給一句行動建議（短線搶反彈/觀望/慎防接刀等）\n"
+        f"5. 不要重複數字，用比喻或動作描述（例：「forced selling + 超賣 = 短線反彈 setup」）"
+    )
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "你是台股資深分析師，數據解讀精準、不囉嗦。"},
+            {"role": "user", "content": user_prompt}
+        ],
+        "max_tokens": 200,
+        "temperature": 0.5,
+    }
+    try:
+        r = requests.post(
+            f"{base_url}/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        # Fallback to rule-based
+        return synthesize_ai_comment(c)
+
+
 # ============== Main scan ==============
 
 def scan(threshold: float = DEFAULT_THRESHOLD,
          top: int = DEFAULT_TOP,
          save_json: bool = True) -> List[Dict]:
+    """Run the multi-dim margin rebound scan.
+
+    Filter rules (constitution):
+      - HARD filter: maint_rate < 130% (FIRST RULE)
+      - 其餘 7 維評分是 bonus 資訊，**不再用 composite 過濾**
+      - Sort by maint_rate ASC (最 distress 排前面)
+
+    Returns all candidates that pass 130% (or first `top` if specified).
+    """
     """Run the multi-dim margin rebound scan."""
     candidates = []
     with get_conn() as conn:
@@ -353,15 +429,36 @@ def scan(threshold: float = DEFAULT_THRESHOLD,
     # If maint_rate is None or >= 130, exclude entirely (no composite, no chip, no show)
     candidates = [c for c in candidates if c.get("maint_rate") is not None and c["maint_rate"] < 130]
 
-    # Composite threshold filter + sort
-    candidates = [c for c in candidates if c["composite"] >= threshold]
-    candidates.sort(key=lambda c: c["composite"], reverse=True)
+    # NOTE: 130% 是「唯一硬規則」；7 維評分只是 bonus 資訊，不要用 composite 過濾。
+    # 用戶原話: "the only rule is 130%, the rest are extra which is good to included"
+
+    # Multi-key sort: user 原話 "rank and sort by % then rest factors"
+    # Primary: 維持率 ASC (最 distress 排前)
+    # Secondary: composite DESC (整體評分高優先)
+    # Tertiary: 1d 融資 DESC (負越多越 forced selling = 越好)
+    candidates.sort(key=lambda c: (
+        c.get("maint_rate") or 999,
+        -(c.get("composite") or 0),
+        -(c.get("margin_chg_1d_pct") or 0),
+    ))
 
     # Per-card AI synthesis (data → info, 1 line per card)
-    for c in candidates:
-        c["ai_comment"] = synthesize_ai_comment(c)
+    # Use LLM for top N (configurable, default 30); rule-based for the rest.
+    LLM_TOP_N = int(os.environ.get("MARGIN_LLM_TOP_N", "30"))
+    for i, c in enumerate(candidates):
+        if i < LLM_TOP_N and os.environ.get("OPENAI_API_KEY"):
+            try:
+                c["ai_comment"] = llm_synthesize_one(c)
+            except Exception as e:
+                # LLM failed (rate limit, network) — fall back to rule
+                c["ai_comment"] = synthesize_ai_comment(c)
+        else:
+            c["ai_comment"] = synthesize_ai_comment(c)
 
-    return candidates[:top]
+    # Return all that pass 130% (no composite filter, no top limit)
+    if top and top < len(candidates):
+        return candidates[:top]
+    return candidates
 
 
 # ============== Output ==============
