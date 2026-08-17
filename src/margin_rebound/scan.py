@@ -162,6 +162,73 @@ def score_volume_shadow(volume: int, vol_avg_20: int, close: float,
     return round(vol_score + shadow_score, 1)
 
 
+# ============== AI Synthesis (data → info) ==============
+
+def synthesize_ai_comment(c: Dict) -> str:
+    """把 6 個 data 點合成 1 行 actionable info（rule-based）。
+
+    為什麼不是 LLM：daily LLM 還沒接好（LLM_API_KEY 未設），
+    這版用規則 + emoji 語意讓使用者一眼看出「該不該進場」。
+    升級路徑：scan_ai_comment.py 接 LLM 後取代此函式。
+    """
+    maint = c.get("maint_rate") or 0
+    chg = c.get("margin_chg_1d_pct") or 0
+    bias = c.get("bias_pct") or 0
+    rsi = c.get("rsi") or 50
+
+    parts = []
+
+    # 1. 維持率語意
+    if maint < 100:
+        parts.append(f"🔴 套牢 {maint:.0f}%")
+    elif maint < 115:
+        parts.append(f"🟢 接近追繳 {maint:.0f}%")
+    else:  # 115-130
+        parts.append(f"🟡 警戒 {maint:.0f}%")
+
+    # 2. 1d 融資變化語意
+    if chg < -10:
+        parts.append(f"📉 forced selling 強 {chg:+.1f}%")
+    elif chg < -3:
+        parts.append(f"📉 forced selling {chg:+.1f}%")
+    elif chg < 0:
+        parts.append(f"📉 輕微減 {chg:+.1f}%")
+    else:
+        parts.append(f"⚪ 沒動 {chg:+.1f}%")
+
+    # 3. Bias 語意
+    if bias < -15:
+        parts.append(f"🟢 嚴重負乖離 {bias:+.1f}%")
+    elif bias < -5:
+        parts.append(f"🟢 負乖離 {bias:+.1f}%")
+    elif bias < 0:
+        parts.append(f"🟡 輕微 {bias:+.1f}%")
+    else:
+        parts.append(f"⚪ 正常 {bias:+.1f}%")
+
+    # 4. RSI 語意
+    if rsi < 20:
+        parts.append(f"🔴 嚴重超賣 {rsi:.0f}")
+    elif rsi < 30:
+        parts.append(f"🟢 超賣 {rsi:.0f}")
+    elif rsi < 50:
+        parts.append(f"🟡 中性偏弱 {rsi:.0f}")
+    else:
+        parts.append(f"⚪ 中性 {rsi:.0f}")
+
+    # 5. Action 綜合
+    if maint < 100 and chg < -3 and rsi < 35:
+        action = "✅ 短線反彈候選，慎防接刀設停損"
+    elif maint < 100 and chg < -3:
+        action = "🟢 forced-sell 反彈 setup"
+    elif maint < 100:
+        action = "🟡 套牢待觀察"
+    else:
+        action = "⚪ 觀望"
+
+    return " | ".join(parts) + " → " + action
+
+
 # ============== Main scan ==============
 
 def scan(threshold: float = DEFAULT_THRESHOLD,
@@ -289,6 +356,11 @@ def scan(threshold: float = DEFAULT_THRESHOLD,
     # Composite threshold filter + sort
     candidates = [c for c in candidates if c["composite"] >= threshold]
     candidates.sort(key=lambda c: c["composite"], reverse=True)
+
+    # Per-card AI synthesis (data → info, 1 line per card)
+    for c in candidates:
+        c["ai_comment"] = synthesize_ai_comment(c)
+
     return candidates[:top]
 
 

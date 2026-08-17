@@ -91,6 +91,7 @@ main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 .chip-pos { background: rgba(236,112,99,0.15); color: #ec7063; border-color: rgba(236,112,99,0.3); }
 .chip-neu { background: rgba(245,176,65,0.15); color: #f5b041; border-color: rgba(245,176,65,0.3); }
 .chip-neg { background: rgba(88,214,141,0.12); color: #58d68d; border-color: rgba(88,214,141,0.3); }
+.pick-ai-comment { font-size: 0.78rem; line-height: 1.5; padding: 8px 10px; margin: 6px 0 0; background: rgba(95,177,255,0.08); border-left: 3px solid var(--acc); border-radius: 4px; color: var(--ink); font-family: -apple-system, "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif; }
 .pick-score { margin-left: auto; }
 .summary-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
 .card { background: var(--panel); border-radius: 8px; padding: 12px 14px; border: 1px solid var(--border); }
@@ -1646,6 +1647,7 @@ def _render_margin_tab(candidates: List[Dict]) -> str:
             </div>
           </div>
           {score_chips}
+          <div class="pick-ai-comment">{_esc(c.get('ai_comment', ''))}</div>
         </div>""")
     return f"""
     <div class="tab-content" data-bucket="margin">
