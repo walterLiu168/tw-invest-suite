@@ -255,96 +255,83 @@ if ($Mode -eq 'render') {
 }
 
 # === Full mode ===
+# OpenAlice paths
+$OA_ROOT = "D:\CODEX\AI-Telegram"
+$OA_PY = "C:\Users\icemo\AppData\Local\Programs\Python\Python310\python.exe"
+$OA_PHD = Join-Path $OA_ROOT "automation\openalice_phased_download.cmd"
+$OA_NEWS = Join-Path $OA_ROOT "scripts\stock_news_auto_refresh.py"
+$OA_RSS = Join-Path $OA_ROOT "news-digest\app\rss_to_db.py"
+$OA_MISSING = Join-Path $OA_ROOT "strategy_lab\missing_data_downloader.py"
+
+# Test that OpenAlice paths exist
+foreach ($p in @($OA_PHD, $OA_NEWS, $OA_RSS, $OA_MISSING)) {
+    if (-not (Test-Path $p)) {
+        Log-Msg "  [!] OpenAlice path missing: $p"
+    }
+}
+
 $stages = @()
 
-# Stage 1: yfinance — skip if cache fresh (1d TTL)
-if (-not $SkipYfinance) {
-    if (-not $Force) {
-        # Sample check 5 tickers
-        $sample = python -c "
-import sys
-sys.path.insert(0, r'C:\Users\icemo\.claude\skills\tw-invest-suite\scripts')
-import cache_manager as cm
-import json, glob
-files = sorted(glob.glob(r'C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_cache\*.json'))[:5]
-stale = sum(1 for f in files if cm.needs_refresh(f.split('\\\\')[-1].replace('.json',''), 'yfinance'))
-print(f'{stale}/{len(files)} stale')
-" 2>&1
-        Log-Msg "[Stage 1/5] yfinance cache check: $sample"
-        if ($sample -match '0/5 stale') {
-            Log-Msg "[Stage 1/5] SKIPPED — cache fresh (sampled 5 tickers)"
-            Write-Status -Stage 'yfinance' -State 'skipped' -Pct 100
-        } else {
-            $stages += @{ N=1; Name='yfinance'; Cmd='batch_yfinance_only.py'; To=240*60 }
-        }
-    } else {
-        $stages += @{ N=1; Name='yfinance'; Cmd='batch_yfinance_only.py'; To=240*60 }
-    }
-} else {
-    Log-Msg "[Stage 1/5] SKIPPED — -SkipYfinance flag"
-    Write-Status -Stage 'yfinance' -State 'skipped' -Pct 100
-}
+# === OpenAlice 7-phase downloads (D022) ===
+# Order from OpenAlice catalog: price → chips(inst+margin+daytrade) → weekly → exdiv → 5m → news → rss
+# OpenAlice's phased_download.cmd wraps 5 phases (5m, price, inst, margin, daytrade)
 
-# Stage 2: FinMind PE/Div/Fin/Month — skip if cache fresh
-if (-not $SkipFinmind) {
-    if (-not $Force) {
-        $sample = python -c "
-import sys
-sys.path.insert(0, r'C:\Users\icemo\.claude\skills\tw-invest-suite\scripts')
-import cache_manager as cm
-import json, glob
-files = sorted(glob.glob(r'C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_cache\*.json'))[:5]
-total_stale = 0
-for f in files:
-    t = f.split('\\\\')[-1].replace('.json','')
-    for k in ['finmind_pe','finmind_div','finmind_fin','finmind_month']:
-        if cm.needs_refresh(t, k):
-            total_stale += 1
-print(f'{total_stale}/20 entries stale (5 tickers × 4 datasets)')
-" 2>&1
-        Log-Msg "[Stage 2/5] FinMind cache check: $sample"
-        if ($sample -match '0/20 entries stale') {
-            Log-Msg "[Stage 2/5] SKIPPED — cache fresh"
-            Write-Status -Stage 'finmind' -State 'skipped' -Pct 100
-        } else {
-            $stages += @{ N=2; Name='finmind'; Cmd='batch_finmind_only.py'; To=$TimeoutMin*60 }
-        }
-    } else {
-        $stages += @{ N=2; Name='finmind'; Cmd='batch_finmind_only.py'; To=$TimeoutMin*60 }
-    }
-} else {
-    Log-Msg "[Stage 2/5] SKIPPED — -SkipFinmind flag"
-    Write-Status -Stage 'finmind' -State 'skipped' -Pct 100
-}
+# Stage 1: OpenAlice price (replaces yfinance)
+$stages += @{ N=1; Name='oa_price'; Cmd="cmd /c `"$OA_PHD`" price"; To=60*60 }
 
-# Stage 3: FinMind news — skip on weekend (DB stock_news will be used as fallback in render)
+# Stage 2: OpenAlice inst (institutional)
+$stages += @{ N=2; Name='oa_inst'; Cmd="cmd /c `"$OA_PHD`" inst"; To=60*60 }
+
+# Stage 3: OpenAlice margin (margin + short)
+$stages += @{ N=3; Name='oa_margin'; Cmd="cmd /c `"$OA_PHD`" margin"; To=60*60 }
+
+# Stage 4: OpenAlice daytrade
+$stages += @{ N=4; Name='oa_daytrade'; Cmd="cmd /c `"$OA_PHD`" daytrade"; To=60*60 }
+
+# Stage 5: OpenAlice weekly (TaiwanStockShareholding, 14d window)
+$stages += @{ N=5; Name='oa_weekly'; Cmd="`"$OA_PY`" `"$OA_ROOT\strategy_lab\_fetch_today.py`" --phase weekly --batch-size 50 --ensure-state-schema"; To=60*60 }
+
+# Stage 6: OpenAlice exdiv (TaiwanStockDividendResult, 14d window)
+$stages += @{ N=6; Name='oa_exdiv'; Cmd="`"$OA_PY`" `"$OA_ROOT\strategy_lab\_fetch_today.py`" --phase exdiv --batch-size 50 --ensure-state-schema"; To=60*60 }
+
+# Stage 7: OpenAlice 5m (TaiwanStockKBar, daily universe)
+$stages += @{ N=7; Name='oa_5m'; Cmd="cmd /c `"$OA_PHD`" 5m"; To=90*60 }
+
+# Stage 8: news (FinMind TaiwanStockNews, 7d max)
 if ($weekend -and -not $Force) {
-    Log-Msg "[Stage 3/5] SKIPPED — weekend (DB stock_news will be used as fallback)"
-    Write-Status -Stage 'finmind_news' -State 'skipped' -Pct 100
+    Log-Msg "[Stage 8] SKIPPED — weekend (DB stock_news fallback in render)"
+    Write-Status -Stage 'news' -State 'skipped' -Pct 100
 } else {
-    $stages += @{ N=3; Name='finmind_news'; Cmd='batch_finmind_news.py'; To=60*60 }
+    $stages += @{ N=8; Name='oa_news'; Cmd="`"$OA_PY`" `"$OA_NEWS`" --max-days 7 --max-requests 10 --sleep-seconds 0.70"; To=60*60 }
 }
 
-# Stage 4: Render
-$stages += @{ N=4; Name='render'; Cmd='render_only.py --no-yfinance --no-news'; To=$TimeoutMin*60 }
+# Stage 9: rss (raw landing + ticker-linked)
+$stages += @{ N=9; Name='oa_rss'; Cmd="`"$OA_PY`" `"$OA_RSS`" --all-configured --lang zh-TW --max-items 15 --write-db"; To=30*60 }
 
-# Stage 5: Pattern + build HTML
-$stages += @{ N=5; Name='patterns'; Cmd='pattern_classifier.py'; To=30*60 }
-$stages += @{ N=6; Name='patterns_html'; Cmd='build_patterns_html.py'; To=10*60 }
+# Stage 10: missing-data 6 domains (options, warrants, etf, premium, macro, revenue)
+$stages += @{ N=10; Name='oa_missing'; Cmd="`"$OA_PY`" `"$OA_MISSING`" --domain all --ensure-schema"; To=60*60 }
 
-# Stage 7: FinMind TaiwanStockMarginMaintenance (per-stock 維持率, D020)
-# 先抓才能讓 margin_scan 用真實 maint 而不是 120d 估算
+# === tw-invest-suite specific stages ===
+
+# Stage 11: FinMind TaiwanStockMarginMaintenance (per-stock 維持率, D020)
 $maintScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\finmind_maint.py"
-$stages += @{ N=7; Name='finmind_maint'; Cmd=$maintScript; To=30*60 }
+$stages += @{ N=11; Name='finmind_maint'; Cmd=$maintScript; To=30*60 }
 
-# Stage 8: Margin rebound scan (7-dim scoring, all maint<130% candidates)
+# Stage 12: Render (1,962 tickers)
+$stages += @{ N=12; Name='render'; Cmd='render_only.py --no-yfinance --no-news'; To=$TimeoutMin*60 }
+
+# Stage 13: Pattern + build HTML
+$stages += @{ N=13; Name='patterns'; Cmd='pattern_classifier.py'; To=30*60 }
+$stages += @{ N=14; Name='patterns_html'; Cmd='build_patterns_html.py'; To=10*60 }
+
+# Stage 15: Margin rebound scan (7-dim scoring, all maint<130% candidates)
 $today = Get-Date -Format 'yyyy-MM-dd'
 $scanOut = Join-Path $PSScriptRoot "outputs\margin_rebound\$today.json"
 $scanScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\scan.py"
-$stages += @{ N=8; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=15*60 }
+$stages += @{ N=15; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=15*60 }
 
-# Stage 9: Full watchlist render (24 picks + 潛在反彈 tab from scan JSON)
-$stages += @{ N=9; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
+# Stage 16: Full watchlist render
+$stages += @{ N=16; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
 
 # Run stages
 foreach ($s in $stages) {
