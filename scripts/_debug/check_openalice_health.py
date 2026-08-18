@@ -41,8 +41,8 @@ TASKS = [
     # OpenAlice aux (12)
     ("OpenAlice Weekly Shareholding 1330",  "weekday",  "13:30"),
     ("OpenAlice ExDividend 1335",           "weekday",  "13:35"),
-    ("OpenAlice Intraday 5m 1555",          "weekday",  "15:55"),
-    ("OpenAlice Intraday 5m Retry 1620",    "weekday",  "16:20"),
+    ("OpenAlice Intraday 5m 1800",          "weekday",  "18:00"),
+    ("OpenAlice Intraday 5m Retry 1830",    "weekday",  "18:30"),
     ("OpenAlice Daily OHLCV 1735",          "weekday",  "17:35"),
     ("OpenAlice Daily OHLCV Retry 1755",    "weekday",  "17:55"),
     ("OpenAlice Missing Data Center 1830",  "weekday",  "18:30"),
@@ -54,6 +54,16 @@ TASKS = [
     # tw-invest-suite 22:25
     ("tw-invest-suite-daily-report",        "weekday",  "22:25"),
 ]
+
+# Tasks that are intentionally Disabled (legacy/obsolete, kept for audit).
+# Don't flag them as "NOT READY" failures.
+KNOWN_DISABLED = {
+    "OpenAlice Daily Download Center 1900",   # legacy replaced by phased schedule
+    "OpenAlice Daily OHLCV 1745",             # obsolete phase
+    "OpenAlice Intraday 5m 1600",             # obsolete phase
+    "OpenAlice Intraday 5m 1555",             # D024: moved to 18:00 (was failing on empty universe)
+    "OpenAlice Intraday 5m Retry 1620",       # D024: moved to 18:30
+}
 
 # Trigger time lists for every2h tasks (must match install_openalice_aux_schedule.ps1)
 AT_LISTS = {
@@ -258,7 +268,10 @@ def main() -> int:
 
         status = "OK"
         if info["state"] not in ("Ready", "Running"):
-            status = f"NOT READY ({info['state']})"
+            if name in KNOWN_DISABLED:
+                status = "DISABLED (intentional)"
+            else:
+                status = f"NOT READY ({info['state']})"
         elif expected_today and scheduled_passed and not ran_today:
             status = "DID NOT RUN TODAY"
         elif expected_today and ran_today and info["result"] not in (0, "0", 267011, None):
@@ -266,7 +279,7 @@ def main() -> int:
         elif not expected_today and ran_today:
             status = "RAN (not expected on weekend)"
 
-        if status not in ("OK", "RAN (not expected on weekend)"):
+        if status not in ("OK", "RAN (not expected on weekend)", "DISABLED (intentional)"):
             failures.append((name, status, last_run_str, info["result"]))
         rows.append({
             "check": "scheduler",
