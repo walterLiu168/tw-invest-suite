@@ -272,66 +272,29 @@ foreach ($p in @($OA_PHD, $OA_NEWS, $OA_RSS, $OA_MISSING)) {
 
 $stages = @()
 
-# === OpenAlice 7-phase downloads (D022) ===
-# Order from OpenAlice catalog: price → chips(inst+margin+daytrade) → weekly → exdiv → 5m → news → rss
-# OpenAlice's phased_download.cmd wraps 5 phases (5m, price, inst, margin, daytrade)
+# === tw-invest-suite 22:25 batch (D023) ===
+# OpenAlice downloads 已分散到 15:55-21:45 排程跑（7 phases 各自時間觸發）
+# 22:25 這班只跑 tw-invest-suite specific stages（不再重跑 OpenAlice）
 
-# Stage 1: OpenAlice price (replaces yfinance)
-$stages += @{ N=1; Name='oa_price'; Cmd="cmd /c `"$OA_PHD`" price"; To=60*60 }
-
-# Stage 2: OpenAlice inst (institutional)
-$stages += @{ N=2; Name='oa_inst'; Cmd="cmd /c `"$OA_PHD`" inst"; To=60*60 }
-
-# Stage 3: OpenAlice margin (margin + short)
-$stages += @{ N=3; Name='oa_margin'; Cmd="cmd /c `"$OA_PHD`" margin"; To=60*60 }
-
-# Stage 4: OpenAlice daytrade
-$stages += @{ N=4; Name='oa_daytrade'; Cmd="cmd /c `"$OA_PHD`" daytrade"; To=60*60 }
-
-# Stage 5: OpenAlice weekly (TaiwanStockShareholding, 14d window)
-$stages += @{ N=5; Name='oa_weekly'; Cmd="`"$OA_PY`" `"$OA_ROOT\strategy_lab\_fetch_today.py`" --phase weekly --batch-size 50 --ensure-state-schema"; To=60*60 }
-
-# Stage 6: OpenAlice exdiv (TaiwanStockDividendResult, 14d window)
-$stages += @{ N=6; Name='oa_exdiv'; Cmd="`"$OA_PY`" `"$OA_ROOT\strategy_lab\_fetch_today.py`" --phase exdiv --batch-size 50 --ensure-state-schema"; To=60*60 }
-
-# Stage 7: OpenAlice 5m (TaiwanStockKBar, daily universe)
-$stages += @{ N=7; Name='oa_5m'; Cmd="cmd /c `"$OA_PHD`" 5m"; To=90*60 }
-
-# Stage 8: news (FinMind TaiwanStockNews, 7d max)
-if ($weekend -and -not $Force) {
-    Log-Msg "[Stage 8] SKIPPED — weekend (DB stock_news fallback in render)"
-    Write-Status -Stage 'news' -State 'skipped' -Pct 100
-} else {
-    $stages += @{ N=8; Name='oa_news'; Cmd="`"$OA_PY`" `"$OA_NEWS`" --max-days 7 --max-requests 10 --sleep-seconds 0.70"; To=60*60 }
-}
-
-# Stage 9: rss (raw landing + ticker-linked)
-$stages += @{ N=9; Name='oa_rss'; Cmd="`"$OA_PY`" `"$OA_RSS`" --all-configured --lang zh-TW --max-items 15 --write-db"; To=30*60 }
-
-# Stage 10: missing-data 6 domains (options, warrants, etf, premium, macro, revenue)
-$stages += @{ N=10; Name='oa_missing'; Cmd="`"$OA_PY`" `"$OA_MISSING`" --domain all --ensure-schema"; To=60*60 }
-
-# === tw-invest-suite specific stages ===
-
-# Stage 11: FinMind TaiwanStockMarginMaintenance (per-stock 維持率, D020)
+# Stage 1: FinMind TaiwanStockMarginMaintenance (per-stock 維持率, D020)
 $maintScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\finmind_maint.py"
-$stages += @{ N=11; Name='finmind_maint'; Cmd=$maintScript; To=30*60 }
+$stages += @{ N=1; Name='finmind_maint'; Cmd=$maintScript; To=10*60 }
 
-# Stage 12: Render (1,962 tickers)
-$stages += @{ N=12; Name='render'; Cmd='render_only.py --no-yfinance --no-news'; To=$TimeoutMin*60 }
+# Stage 2: Render (1,962 tickers)
+$stages += @{ N=2; Name='render'; Cmd='render_only.py --no-yfinance --no-news'; To=$TimeoutMin*60 }
 
-# Stage 13: Pattern + build HTML
-$stages += @{ N=13; Name='patterns'; Cmd='pattern_classifier.py'; To=30*60 }
-$stages += @{ N=14; Name='patterns_html'; Cmd='build_patterns_html.py'; To=10*60 }
+# Stage 3: Pattern + build HTML
+$stages += @{ N=3; Name='patterns'; Cmd='pattern_classifier.py'; To=30*60 }
+$stages += @{ N=4; Name='patterns_html'; Cmd='build_patterns_html.py'; To=10*60 }
 
-# Stage 15: Margin rebound scan (7-dim scoring, all maint<130% candidates)
+# Stage 5: Margin rebound scan (7-dim scoring, all maint<130% candidates)
 $today = Get-Date -Format 'yyyy-MM-dd'
 $scanOut = Join-Path $PSScriptRoot "outputs\margin_rebound\$today.json"
 $scanScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\scan.py"
-$stages += @{ N=15; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=15*60 }
+$stages += @{ N=5; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=15*60 }
 
-# Stage 16: Full watchlist render
-$stages += @{ N=16; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
+# Stage 6: Full watchlist render
+$stages += @{ N=6; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
 
 # Run stages
 foreach ($s in $stages) {
