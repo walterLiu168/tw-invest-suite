@@ -164,6 +164,30 @@ def db_max_date(table: str, col: str = "Date") -> str | None:
         return f"ERR: {e}"
 
 
+def db_max_date_hours_behind(table: str, col: str) -> int | None:
+    """For datetime columns, return hours behind now (None if null/error)."""
+    try:
+        with get_conn() as c:
+            cur = c.cursor()
+            cur.execute(f"SELECT MAX({col}) FROM {table}")
+            row = cur.fetchone()
+            if not row or not row[0]:
+                return None
+            latest = row[0]
+            now = datetime.now(TZ)
+            if isinstance(latest, datetime):
+                delta = now - latest
+                # If the latest is naive, treat as UTC? we keep tz-naive comparison
+                if latest.tzinfo is None:
+                    return int(delta.total_seconds() // 3600)
+                return int((now - latest).total_seconds() // 3600)
+            # date column
+            delta_days = (now.date() - latest).days if hasattr(latest, 'isoformat') else None
+            return delta_days * 24 if delta_days is not None else None
+    except Exception:
+        return None
+
+
 def db_count_since(table: str, since: date) -> int | None:
     try:
         with get_conn() as c:
@@ -262,7 +286,7 @@ def main() -> int:
         ("daily_data2_full",   "Date",  "OHLCV/price/chips/weekly/exdiv/inst/margin/daytrade — should land by ~21:45"),
         ("ai_5min_kbars",      "Date",  "5m — should land by 15:55 + retry 16:20"),
         ("stock_news",         "published_at", "News — every 2h"),
-        ("digest_source_raw",  "trade_date",  "RSS — every 2h"),
+        ("digest_source_raw",  "created_at",  "RSS — every 2h (using created_at, not trade_date which is nullable)"),
         ("finmind_taiwan_margin_maintenance", "trade_date", "Margin maintenance — D020, daily 22:25"),
     ]
     domain_tables = [
@@ -285,9 +309,17 @@ def main() -> int:
         landed_today = (latest_date == check_date) if latest_date else False
         days_behind = (check_date - latest_date).days if latest_date else None
 
+        # Special: for digest_source_raw + stock_news, use hours-behind on the datetime column
+        is_datetime_col = (table in ("digest_source_raw", "stock_news"))
+        hours_behind = None
+        if is_datetime_col:
+            hours_behind = db_max_date_hours_behind(table, col)
+
         status = "OK"
-        if latest_date is None:
+        if latest_date is None and hours_behind is None:
             status = "NO DATA"
+        elif is_datetime_col and hours_behind is not None and hours_behind > 6 and is_weekday:
+            status = f"BEHIND {hours_behind}h"
         elif days_behind is not None and days_behind > 1 and is_weekday:
             status = f"BEHIND {days_behind}d"
         elif days_behind is not None and days_behind > 5:
@@ -301,6 +333,7 @@ def main() -> int:
             "desc": desc,
             "latest": str(latest) if latest else None,
             "days_behind": days_behind,
+            "hours_behind": hours_behind,
             "landed_today": landed_today,
             "status": status,
         })
@@ -361,7 +394,8 @@ def main() -> int:
                     print(f"  {flag} {r['task']:45s} state={r['state']:10s} last_run={str(r['last_run'])[:19]:19s} result={r['result']}{sched}  {r['status']}")
                 elif r["check"] == "db_landing":
                     flag = "✓" if r["status"] == "OK" else "✗"
-                    print(f"  {flag} {r['task']:45s} latest={str(r['latest']):19s} behind={r['days_behind']}d  {r['status']}  ({r['desc']})")
+                    behind = f"{r['hours_behind']}h" if r.get("hours_behind") is not None else f"{r['days_behind']}d"
+                    print(f"  {flag} {r['task']:45s} latest={str(r['latest']):19s} behind={behind:>4s}  {r['status']}  ({r['desc']})")
                 elif r["check"] == "render_output":
                     flag = "✓" if r["status"] == "OK" else "✗"
                     print(f"  {flag} {r['task']:45s} mtime={r['mtime']}  {r['status']}")
