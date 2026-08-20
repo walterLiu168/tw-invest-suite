@@ -91,7 +91,6 @@ main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 .chip-pos { background: rgba(236,112,99,0.15); color: #ec7063; border-color: rgba(236,112,99,0.3); }
 .chip-neu { background: rgba(245,176,65,0.15); color: #f5b041; border-color: rgba(245,176,65,0.3); }
 .chip-neg { background: rgba(88,214,141,0.12); color: #58d68d; border-color: rgba(88,214,141,0.3); }
-.pick-ai-comment { font-size: 0.78rem; line-height: 1.5; padding: 8px 10px; margin: 6px 0 0; background: rgba(95,177,255,0.08); border-left: 3px solid var(--acc); border-radius: 4px; color: var(--ink); font-family: -apple-system, "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif; }
 .pick-score { margin-left: auto; }
 .summary-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
 .card { background: var(--panel); border-radius: 8px; padding: 12px 14px; border: 1px solid var(--border); }
@@ -1497,14 +1496,11 @@ def render_pick_card(c: ms.Candidate, d: Dict, idx: int) -> str:
 
 # ---- per-bucket group ----
 
-def _fetch_margin_distress_candidates(top_n: int = None) -> List[Dict]:
+def _fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
     """從 outputs/margin_rebound/<date>.json 讀取 scan 結果。
 
     若 JSON 不存在（scan 還沒跑過），fallback 到 DB query 算簡化版。
     全 7 維度的 scan 結果由 src/margin_rebound/scan.py 產出。
-
-    Constitution: 130% 是唯一硬規則；show all (no top_n default)。
-    用戶原話: "i want to see it in the report" (all 過 130% 的都要列)
     """
     import json
     # Try reading today's JSON (skill root / outputs / margin_rebound / <date>.json)
@@ -1515,14 +1511,10 @@ def _fetch_margin_distress_candidates(top_n: int = None) -> List[Dict]:
         try:
             d = json.loads(json_path.read_text(encoding="utf-8"))
             candidates = d.get("candidates", [])
-            if top_n is not None:
-                return candidates[:top_n]
-            return candidates
+            return candidates[:top_n]
         except (json.JSONDecodeError, OSError):
             pass
     # Fallback: simple DB query (old behavior)
-    if top_n is None:
-        top_n = 1000  # 幾乎全部
     return _fetch_margin_distress_fallback(top_n)
 
 
@@ -1584,51 +1576,73 @@ def _fetch_margin_distress_fallback(top_n: int = 10) -> List[Dict]:
 
 
 def _render_margin_tab(candidates: List[Dict]) -> str:
-    """Render the 🎯 潛在反彈 tab content.
-    Constitution: 一行一訊息 — no group labels, no multi-claim lines, no empty lines.
-    First rule: 融資維持率 < 130% (hard filter in scan.py).
-    Layout: top 30 cards (with AI synthesis) + full table (all 1691 candidates, pure data).
+    """Render the 🎯 潛在反彈 tab content (uses multi-dim scan results).
+
+    D025: 顯示 tier 標籤 + 進場天數 badge（🆕 新進 / 🔥 持續 / ⚠️ 持續 8+ 天）。
+    Group by tier (Tier 1 strict < 130% first, then Tier 2 warning 130-150% 連 3 日下降).
     """
     if not candidates:
         return '<div class="tab-content" data-bucket="margin">無候選人</div>'
 
-    # Top 30 cards (with AI synthesis)
-    TOP_N = 30
-    top_cards_candidates = candidates[:TOP_N]
-    cards = []
-    for c in top_cards_candidates:
-        # Color: 維持率 紅色 (台灣慣例 — 維持率低 = 紅 = 反彈機會)
-        maint = c.get("maint_rate")
-        maint_s = f"{maint:.1f}%" if maint is not None else "—"
-        score = c.get("composite", 0)
-        # 顯示每個維度的分數
-        scores = c.get("scores", {})
-        score_chips = ""
-        if scores:
-            chips = []
-            label_map = {
-                "maint_rate": "📏維持率",
-                "margin_change_1d": "📉1d融資",
-                "margin_change_3d": "📉3d融資",
-                "bias": "📐Bias",
-                "rsi": "RSI",
-                "boll": "布林",
-                "volume_shadow": "💥爆量",
-            }
-            for k, label in label_map.items():
-                if k in scores:
-                    s = scores[k]
-                    cls = "pos" if s >= 70 else ("neu" if s >= 40 else "neg")
-                    chips.append(f'<span class="chip chip-{cls}">{label} {s:.0f}</span>')
-            score_chips = '<div class="pick-chips">' + " ".join(chips) + '</div>'
+    # Group by tier
+    tier1 = [c for c in candidates if c.get("tier") == 1 or c.get("maint_rate") is not None and c.get("maint_rate") < 130]
+    tier2 = [c for c in candidates if c not in tier1]
+    sections = []
+    for label, group, badge_color, desc in [
+        ("🎯 Tier 1: 維持率 < 130%（斷頭區）", tier1, "red", "已觸及追繳線，強制賣壓大"),
+        ("⚠️ Tier 2: 130-150% 連 3 日融資下降（警示區）", tier2, "yellow", "接近追繳且融資持續減，可能是早進場訊號"),
+    ]:
+        if not group:
+            continue
+        cards = []
+        for c in group:
+            # Color: 維持率 紅色 (台灣慣例 — 維持率低 = 紅 = 反彈機會)
+            maint = c.get("maint_rate")
+            maint_s = f"{maint:.1f}%" if maint is not None else "—"
+            score = c.get("composite", 0)
+            # D025: 進場天數 badge (Taiwan color convention: 紅=新/正, 綠=舊/負)
+            days = c.get("days_on_list", 0) or 0
+            if days <= 2:
+                # 新進 — 紅色 (台灣慣例 = 正/新)
+                days_badge = '<span class="chip chip-pos">🆕 新進 ' + ('今' if days == 0 else f'{days} 天') + '</span>'
+            elif days <= 7:
+                # 持續中 — 黃色 (注意)
+                days_badge = f'<span class="chip chip-neu">🔥 持續 {days} 天</span>'
+            else:
+                # 持續 8+ 天 — 綠色 (台灣慣例 = 負/舊/失去新鮮感)
+                days_badge = f'<span class="chip chip-neg">⚠️ 持續 {days} 天</span>'
+            # 顯示每個維度的分數
+            scores = c.get("scores", {})
+            score_chips = ""
+            if scores:
+                chips = []
+                label_map = {
+                    "maint_rate": "📏維持率",
+                    "margin_change_1d": "📉1d融資",
+                    "margin_change_3d": "📉3d融資",
+                    "bias": "📐Bias",
+                    "rsi": "RSI",
+                    "boll": "布林",
+                    "volume_shadow": "💥爆量",
+                }
+                for k, lbl in label_map.items():
+                    if k in scores:
+                        s = scores[k]
+                        cls = "pos" if s >= 70 else ("neu" if s >= 40 else "neg")
+                        chips.append(f'<span class="chip chip-{cls}">{lbl} {s:.0f}</span>')
+                score_chips = '<div class="pick-chips">' + " ".join(chips) + '</div>'
 
-        # 一行一訊息：每個 cell 一個事實；維持率已在 pick-grid 內、不在 pick-meta 重複。
-        cards.append(f"""
+            # Tier label
+            tier_label = '<span class="chip" style="background:rgba(236,112,99,0.18);color:#ec7063">Tier 1</span>' if c.get("tier") == 1 else '<span class="chip" style="background:rgba(245,176,65,0.18);color:#f5b041">Tier 2</span>'
+
+            cards.append(f"""
         <div class="pick">
           <div class="pick-head">
             <span class="pick-ticker">{_esc(c['ticker'])}</span>
             <span class="pick-name">{_esc(c.get('company') or c.get('name', c['ticker']))}</span>
             <span class="pick-industry muted">{_esc(c.get('industry') or '—')}</span>
+            {tier_label}
+            {days_badge}
             <span class="pick-score" style="background:var(--acc);color:#000;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78rem">Score {score:.0f}</span>
             <a class="analyze-link" href="analyze/{_esc(c['ticker'])}.html" target="_blank">🔍 分析 →</a>
           </div>
@@ -1659,12 +1673,21 @@ def _render_margin_tab(candidates: List[Dict]) -> str:
             </div>
           </div>
           {score_chips}
-          <div class="pick-ai-comment">{_esc(c.get('ai_comment', ''))}</div>
+          <div class="pick-meta muted">
+            <span>🚨 120d 估維持率 <b style="color:#ec7063">{maint_s}</b>（&lt; 133% 追繳線）</span> ·
+            <span>融資 {c.get('margin_張', 0):,} 張 · 市值 {c.get('margin_市值_億', 0):,.1f} 億</span> ·
+            <span>進場 {c.get('first_seen', '—')}</span>
+          </div>
         </div>""")
+        sections.append(f"""
+        <h3 style="margin:18px 0 8px;color:var(--{'green' if badge_color=='red' else 'amber'});font-size:0.95rem">{label} <small class="muted" style="font-weight:400">{desc} · {len(group)} 檔</small></h3>
+        <div class="picks">{''.join(cards)}</div>""")
     return f"""
     <div class="tab-content" data-bucket="margin">
-      <h2 class="bucket-title">🎯 潛在反彈候選</h2>
-      <div class="picks">{''.join(cards)}</div>
+      <h2 class="bucket-title">🎯 潛在反彈候選 <small>7 維度評分 (維持率 / 融資變化 / Bias / RSI / 布林 / 量價 / 集保*)</small></h2>
+      <p class="muted" style="font-size:0.82rem;margin:4px 0 12px">*集保戶數 / 千張大戶需 TDCC 申報資料，目前沒接入。每日 22:25 自動更新。<br>
+      <b>Tier 1</b> 維持率 &lt; 130%（斷頭區）；<b>Tier 2</b> 130-150% 連 3 日融資下降（警示區）。進場天數：<span class="chip chip-pos">🆕 新進</span> ≤ 2 天 / <span class="chip chip-neu">🔥 持續</span> 3-7 天 / <span class="chip" style="background:rgba(110,118,130,0.15);color:#8b949e">⚠️ 持續 8+ 天</span>。</p>
+      {''.join(sections)}
     </div>"""
 
 
@@ -1766,8 +1789,9 @@ def main():
     print(f"[4/4] Rendering HTML…")
     tabs_html = []
     contents_html = []
-    # First tab: 潛在反彈 (margin distress candidates) — show ALL (no top_n cap)
-    margin_candidates = _fetch_margin_distress_candidates()
+    # First tab: 潛在反彈 (margin distress candidates) — highest priority
+    # D025: margin tab 顯示更多 (Tier 1 strict + Tier 2 warning, 總共 ~30 張)
+    margin_candidates = _fetch_margin_distress_candidates(top_n=30)
     if margin_candidates:
         active = "active"  # first tab = default open
         tabs_html.append(f'<button class="tab {active}" data-bucket="margin">🎯 潛在反彈 <span class="count">{len(margin_candidates)}</span></button>')

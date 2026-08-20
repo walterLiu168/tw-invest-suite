@@ -304,11 +304,38 @@ def llm_synthesize_one(c: Dict) -> str:
         return synthesize_ai_comment(c)
 
 
+# ============== History tracking (D025) ==============
+
+DEFAULT_HISTORY_PATH = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\outputs\margin_rebound\history.json")
+
+
+def resolve_history_path(out_path) -> Path:
+    """If --out path given, use its parent; else default."""
+    if out_path is not None:
+        return Path(out_path).parent / "history.json"
+    return DEFAULT_HISTORY_PATH
+
+
+def load_history(path: Path) -> Dict:
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def save_history(path: Path, history: Dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 # ============== Main scan ==============
 
 def scan(threshold: float = DEFAULT_THRESHOLD,
          top: int = DEFAULT_TOP,
-         save_json: bool = True) -> List[Dict]:
+         save_json: bool = True,
+         out_path: Optional[Path] = None) -> List[Dict]:
     """Run the multi-dim margin rebound scan.
 
     Filter rules (constitution):
@@ -422,19 +449,54 @@ def scan(threshold: float = DEFAULT_THRESHOLD,
 
     # FIRST RULE (constitution): 融資維持率 < 130% — 不達就踢掉
     # If maint_rate is None or >= 130, exclude entirely (no composite, no chip, no show)
-    candidates = [c for c in candidates if c.get("maint_rate") is not None and c["maint_rate"] < 130]
+    # D025: 加 Tier 2 「警示區」130-150% 且連 3 日 margin 下降（給 early warning）
+    tier1 = [c for c in candidates if c.get("maint_rate") is not None and c["maint_rate"] < 130]
+    tier2 = [
+        c for c in candidates
+        if c.get("maint_rate") is not None
+        and 130 <= c["maint_rate"] < 150
+        and c.get("margin_chg_3d_pct") is not None
+        and c["margin_chg_3d_pct"] < 0
+    ]
+    for c in tier1:
+        c["tier"] = 1
+    for c in tier2:
+        c["tier"] = 2
+    candidates = tier1 + tier2
+    print(f"  Tier 1 (<130%): {len(tier1)}; Tier 2 (130-150% 連3日下降): {len(tier2)}", file=sys.stderr)
 
-    # NOTE: 130% 是「唯一硬規則」；7 維評分只是 bonus 資訊，不要用 composite 過濾。
+    # NOTE: 130% 是「核心硬規則」；7 維評分只是 bonus 資訊，不要用 composite 過濾。
     # 用戶原話: "the only rule is 130%, the rest are extra which is good to included"
+    # D025: Tier 2 用戶同意放寬，加 warning zone
+
+    # D025: 加 history tracking（first_seen per ticker）
+    # Resolve history path: prefer sibling of --out if provided, else default
+    # (scan may be called from C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\outputs\)
+    history_path = resolve_history_path(out_path)
+    history = load_history(history_path)
+    today_str = date.today().isoformat()
+    for c in candidates:
+        t = c["ticker"]
+        if t not in history:
+            history[t] = {"first_seen": today_str, "tier": c["tier"]}
+        history[t]["last_seen"] = today_str
+        history[t]["tier"] = c["tier"]
+        # Days on list (relative to today)
+        first = date.fromisoformat(history[t]["first_seen"])
+        c["days_on_list"] = (date.today() - first).days
+        c["first_seen"] = history[t]["first_seen"]
+    save_history(history_path, history)
 
     # Multi-key sort: user 原話 "rank and sort by % then rest factors"
-    # Primary: 維持率 ASC (最 distress 排前)
-    # Secondary: composite DESC (整體評分高優先)
-    # Tertiary: 1d 融資 DESC (負越多越 forced selling = 越好)
+    # Primary: tier ASC (Tier 1 first)
+    # Secondary: days_on_list ASC (newer first)
+    # Tertiary: 維持率 ASC (最 distress 排前)
+    # Quaternary: composite DESC
     candidates.sort(key=lambda c: (
+        c.get("tier") or 99,
+        c.get("days_on_list") or 0,
         c.get("maint_rate") or 999,
         -(c.get("composite") or 0),
-        -(c.get("margin_chg_1d_pct") or 0),
     ))
 
     # Per-card AI synthesis (data → info, 1 line per card)
@@ -467,7 +529,7 @@ def main():
     args = parser.parse_args()
 
     print(f"[{datetime.now():%H:%M:%S}] Margin rebound scan (threshold ≥ {args.threshold})...", file=sys.stderr)
-    candidates = scan(threshold=args.threshold, top=args.top, save_json=False)
+    candidates = scan(threshold=args.threshold, top=args.top, save_json=False, out_path=args.out)
     print(f"  {len(candidates)} candidates (composite ≥ {args.threshold})", file=sys.stderr)
 
     if not candidates:
