@@ -104,10 +104,10 @@ main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 .pick-ticker { font-size: 1.1rem; font-weight: 700; color: var(--acc); }
 .pick-name { color: var(--ink); font-weight: 500; }
 .pick-price { font-size: 1.3rem; font-weight: 700; }
-.pick-price.up { color: var(--green); }
-.pick-price.down { color: var(--red); }
+.pick-price.up { color: var(--red); }
+.pick-price.down { color: var(--green); }
 .pick-horizon { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 500; }
-.pick-horizon.long { background: rgba(88,214,141,0.18); color: var(--green); }
+.pick-horizon.long { background: rgba(236,112,99,0.18); color: var(--red); }
 .pick-horizon.short { background: rgba(245,176,65,0.18); color: var(--amber); }
 .pick-body { padding: 12px 16px; }
 .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
@@ -131,28 +131,28 @@ main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 .section tr:last-child td { border-bottom: none; }
 .section tr:hover td { background: rgba(95,177,255,0.06); }
 .section td.num { font-variant-numeric: tabular-nums; font-weight: 500; }
-.section td.pos { color: var(--green); font-weight: 600; }
-.section td.neg { color: var(--red); font-weight: 600; }
+.section td.pos { color: var(--red); font-weight: 600; }
+.section td.neg { color: var(--green); font-weight: 600; }
 .section td.muted { color: var(--muted); }
 .section .callout { background: linear-gradient(135deg, rgba(95,177,255,0.1), rgba(57,197,207,0.05)); border: 1px solid rgba(95,177,255,0.3); border-radius: 8px; padding: 10px 12px; margin: 8px 0; font-size: 0.85rem; line-height: 1.7; }
 .section .callout .k { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px; margin-right: 4px; }
 .section .callout .v { font-weight: 600; color: var(--ink); }
-.section .callout .v.pos { color: var(--green); }
-.section .callout .v.neg { color: var(--red); }
+.section .callout .v.pos { color: var(--red); }
+.section .callout .v.neg { color: var(--green); }
 .section .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; margin: 6px 0 10px; }
 .section .stat { background: rgba(255,255,255,0.04); border-radius: 6px; padding: 8px 10px; }
 .section .stat .k { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.4px; }
 .section .stat .v { font-size: 0.95rem; font-weight: 700; margin-top: 2px; }
-.section .stat .v.pos { color: var(--green); }
-.section .stat .v.neg { color: var(--red); }
+.section .stat .v.pos { color: var(--red); }
+.section .stat .v.neg { color: var(--green); }
 .section .summary-line { padding: 6px 0; border-top: 1px solid rgba(255,255,255,0.06); margin-top: 8px; font-size: 0.85rem; }
 .zen-box { background: rgba(188,140,255,0.06); border: 1px solid var(--purple); border-radius: 6px; padding: 8px 10px; margin: 6px 0; font-size: 0.82rem; }
 .zen-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; margin-top: 4px; }
 .zen-cell { background: rgba(0,0,0,0.2); padding: 4px 6px; border-radius: 4px; }
 .zen-cell-label { font-size: 0.7rem; color: var(--muted); }
 .zen-cell-value { font-size: 0.85rem; font-weight: 600; }
-.zen-bullish { color: var(--green); }
-.zen-bearish { color: var(--red); }
+.zen-bullish { color: var(--red); }
+.zen-bearish { color: var(--green); }
 .zen-neutral { color: var(--muted); }
 .news-item { padding: 4px 0; border-bottom: 1px dashed rgba(255,255,255,0.06); font-size: 0.8rem; }
 .news-item:last-child { border-bottom: none; }
@@ -165,8 +165,8 @@ main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 .obs { color: var(--ink); font-size: 0.82rem; }
 .obs li { padding: 2px 0; }
 footer { padding: 24px; color: var(--muted); font-size: 0.8rem; text-align: center; }
-.ret-up { color: var(--green); }
-.ret-down { color: var(--red); }
+.ret-up { color: var(--red); }
+.ret-down { color: var(--green); }
 .muted { color: var(--muted); }
 @media (max-width: 700px) {
   .picks { grid-template-columns: 1fr; }
@@ -1503,9 +1503,9 @@ def _fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
     全 7 維度的 scan 結果由 src/margin_rebound/scan.py 產出。
     """
     import json
-    # Try reading today's JSON (skill root / outputs / margin_rebound / <date>.json)
+    # Try reading today's JSON (scripts/outputs/margin_rebound/<date>.json)
     today = date.today().isoformat()
-    skill_root = Path(__file__).parent.parent
+    skill_root = Path(__file__).parent
     json_path = skill_root / "outputs" / "margin_rebound" / f"{today}.json"
     if json_path.exists():
         try:
@@ -1661,22 +1661,25 @@ def _render_margin_tab(candidates: List[Dict]) -> str:
             </div>
             <div class="pick-cell">
               <div class="k">📉 1d 融資變化</div>
-              <div class="v neg">{c.get('margin_chg_1d_pct', 0):+.1f}%</div>
+              <div class="v {'pos' if c.get('margin_chg_1d_pct', 0) > 0 else 'neg' if c.get('margin_chg_1d_pct', 0) < 0 else ''}">{c.get('margin_chg_1d_pct', 0):+.1f}%</div>
             </div>
             <div class="pick-cell">
               <div class="k">📐 Bias</div>
-              <div class="v neg">{c.get('bias_pct', 0):+.1f}%</div>
+              <div class="v {'pos' if c.get('bias_pct', 0) > 0 else 'neg' if c.get('bias_pct', 0) < 0 else ''}">{c.get('bias_pct', 0):+.1f}%</div>
             </div>
             <div class="pick-cell">
               <div class="k">RSI</div>
               <div class="v">{c.get('rsi', 0):.0f}</div>
             </div>
+            <div class="pick-cell">
+              <div class="k">融資張數</div>
+              <div class="v">{c.get('margin_張', 0):,}</div>
+            </div>
           </div>
           {score_chips}
-          <div class="pick-meta muted">
-            <span>🚨 120d 估維持率 <b style="color:#ec7063">{maint_s}</b>（&lt; 133% 追繳線）</span> ·
-            <span>融資 {c.get('margin_張', 0):,} 張 · 市值 {c.get('margin_市值_億', 0):,.1f} 億</span> ·
-            <span>進場 {c.get('first_seen', '—')}</span>
+          <div class="pick-meta muted" style="font-size:0.78rem;line-height:1.7;display:flex;flex-wrap:wrap;gap:4px 12px">
+            <span>融資 {c.get('margin_張', 0):,} 張</span>
+            <span>市值 {c.get('margin_市值_億', 0):,.1f} 億</span>{f'<span>進場 {c.get("first_seen", "")}</span>' if c.get('first_seen') else ''}
           </div>
         </div>""")
         sections.append(f"""
@@ -1790,8 +1793,8 @@ def main():
     tabs_html = []
     contents_html = []
     # First tab: 潛在反彈 (margin distress candidates) — highest priority
-    # D025: margin tab 顯示更多 (Tier 1 strict + Tier 2 warning, 總共 ~30 張)
-    margin_candidates = _fetch_margin_distress_candidates(top_n=30)
+    # D025: margin tab 顯示更多 (Tier 1 strict + Tier 2 warning, 總共 ~60 張)
+    margin_candidates = _fetch_margin_distress_candidates(top_n=60)
     if margin_candidates:
         active = "active"  # first tab = default open
         tabs_html.append(f'<button class="tab {active}" data-bucket="margin">🎯 潛在反彈 <span class="count">{len(margin_candidates)}</span></button>')
