@@ -20,7 +20,7 @@ CACHE_DIR = SCRIPTS_DIR / "_cache"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import finmind_client as fm  # noqa: E402
-from industry_zh import zh_industry  # noqa: E402
+from industry_zh import zh_industry, resolve  # noqa: E402
 
 PUBLIC_DIR = ROOT / "public"
 DATA_DIR = PUBLIC_DIR / "data"
@@ -184,7 +184,7 @@ def build_features(ohlcv, inst_rows, meta):
             "ticker": t,
             "name": m.get("name", t),
             "industry": m.get("industry", ""),
-            "industry_zh": zh_industry(m.get("industry", ""), m.get("sector", "")),
+            "industry_zh": resolve(t, m.get("industry", ""), m.get("sector", "")),
             "price": cur_close,
             "vwap_buy_20d": round(vwap_buy, 2) if vwap_buy else None,
             "vwap_all_20d": round(vwap_all, 2) if vwap_all else None,

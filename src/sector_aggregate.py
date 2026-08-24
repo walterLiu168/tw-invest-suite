@@ -20,7 +20,7 @@ CACHE_DIR = SCRIPTS_DIR / "_cache"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import finmind_client as fm  # noqa: E402
-from industry_zh import zh_industry  # noqa: E402
+from industry_zh import zh_industry, resolve  # noqa: E402
 
 PUBLIC_DIR = ROOT / "public"
 DATA_DIR = PUBLIC_DIR / "data"
@@ -238,7 +238,7 @@ def aggregate(meta, yoy, inst5):
 
         sectors.append({
             "industry": ind,
-            "industry_zh": zh_industry(ind, meta[tickers[0]].get("sector", "") if tickers else ""),
+            "industry_zh": resolve(tickers[0], ind, meta[tickers[0]].get("sector", "") if tickers else "") if tickers else zh_industry(ind),
             "count": len(tickers),
             "lead_ticker": lead,
             "lead_name": meta[lead]["name"] if lead else "",

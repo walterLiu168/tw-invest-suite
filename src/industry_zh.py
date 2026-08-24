@@ -1,7 +1,15 @@
-"""industry_zh.py — yfinance 英文 industry/sector → 繁體中文對照
-依台股慣用分類命名 (TWSE/TPEx 上市/上櫃分類參考)
+"""industry_zh.py — 繁體中文產業對照
+優先順序：
+  1. FinMind TaiwanStockInfo.industry_category (TWSE/TPEx 官方 48 分類)  ← 權威
+  2. yfinance industry 對照表 (85 個細分類)
+  3. yfinance sector 大類
+  4. 原英文
 """
-# 11 個 yfinance sector (大類)
+import json
+import os
+from pathlib import Path
+
+# yfinance sector (大類) 備援
 SECTOR_ZH = {
     "Basic Materials": "原物料",
     "Communication Services": "通訊服務",
@@ -16,9 +24,8 @@ SECTOR_ZH = {
     "Utilities": "公用事業",
 }
 
-# ~85 個 industry 細分 (yfinance English → 繁中)
+# yfinance industry (細類) 備援（如果沒在 tw-industry.json 裡）
 INDUSTRY_ZH = {
-    # 科技 (Technology)
     "Semiconductors": "半導體",
     "Semiconductor Equipment & Materials": "半導體設備",
     "Electronic Components": "電子零組件",
@@ -30,10 +37,9 @@ INDUSTRY_ZH = {
     "Software - Application": "軟體應用",
     "Software - Infrastructure": "軟體基礎建設",
     "Solar": "太陽能",
-    "Electronic Gaming & Multimedia": "遊戲/多媒體",
+    "Electronic Gaming & Multimedia": "遊戲多媒體",
     "Scientific & Technical Instruments": "科學儀器",
 
-    # 工業 (Industrials)
     "Specialty Industrial Machinery": "工業機械",
     "Engineering & Construction": "營建工程",
     "Building Products & Equipment": "建材設備",
@@ -55,7 +61,6 @@ INDUSTRY_ZH = {
     "Tools & Accessories": "工具機",
     "Business Equipment & Supplies": "辦公設備",
 
-    # 非必需消費 (Consumer Cyclical)
     "Auto Manufacturers": "汽車工業",
     "Auto Parts": "汽車零組件",
     "Auto & Truck Dealerships": "汽車經銷",
@@ -78,7 +83,6 @@ INDUSTRY_ZH = {
     "Entertainment": "娛樂",
     "Broadcasting": "廣播電視",
 
-    # 必需消費 (Consumer Defensive)
     "Packaged Foods": "食品",
     "Beverages - Non-Alcoholic": "飲料",
     "Confectioners": "糖果",
@@ -87,7 +91,6 @@ INDUSTRY_ZH = {
     "Household & Personal Products": "日用品",
     "Tobacco": "菸草",
 
-    # 原物料 (Basic Materials)
     "Steel": "鋼鐵",
     "Copper": "銅",
     "Aluminum": "鋁",
@@ -102,13 +105,11 @@ INDUSTRY_ZH = {
     "Gold": "黃金",
     "Silver": "白銀",
 
-    # 能源 (Energy)
     "Oil & Gas Refining & Marketing": "石油煉製",
     "Oil & Gas Equipment & Services": "石油設備",
     "Thermal Coal": "燃煤",
     "Uranium": "鈾",
 
-    # 金融 (Financial Services)
     "Banks - Regional": "銀行",
     "Banks - Diversified": "綜合銀行",
     "Financial Conglomerates": "金控",
@@ -121,7 +122,6 @@ INDUSTRY_ZH = {
     "Credit Services": "信貸",
     "Financial Data & Stock Exchanges": "金融交易所",
 
-    # 醫療保健 (Healthcare)
     "Biotechnology": "生技",
     "Drug Manufacturers - Specialty & Generic": "學名藥",
     "Drug Manufacturers - General": "製藥",
@@ -132,7 +132,6 @@ INDUSTRY_ZH = {
     "Diagnostics & Research": "檢驗",
     "Healthcare Plans": "健保",
 
-    # 不動產 (Real Estate)
     "Real Estate - Development": "建設",
     "Real Estate - Diversified": "多元不動產",
     "Real Estate Services": "不動產服務",
@@ -144,28 +143,61 @@ INDUSTRY_ZH = {
     "REIT - Specialty": "特殊 REIT",
     "REIT - Healthcare Facilities": "醫療 REIT",
 
-    # 公用事業 (Utilities)
     "Utilities - Regulated Electric": "電力公用",
     "Utilities - Regulated Gas": "天然氣公用",
     "Utilities - Regulated Water": "自來水",
     "Utilities - Renewable": "再生能源",
     "Utilities - Independent Power Producers": "獨立發電",
 
-    # 通訊服務 (Communication Services)
     "Telecom Services": "電信",
     "Pay TV": "有線電視",
     "Entertainment - Distributors": "影視發行",
     "Internet Content & Information": "網路內容",
 
-    # 雜項
     "Conglomerates": "集團股",
     "Industrial Distribution": "工業經銷",
     "Electrical Equipment & Parts": "電機機械",
 }
 
+# TWSE/TPEx 官方 48 個分類（從 FinMind TaiwanStockInfo 拿到）
+# 不在這裡 hard-code，因為每個 ticker 從 tw-industry.json 直接查
+TW_PATH = Path(__file__).resolve().parent.parent / "public" / "data" / "tw-industry.json"
+
+_TW_CACHE = None
+
+
+def _load_tw():
+    global _TW_CACHE
+    if _TW_CACHE is None:
+        if TW_PATH.exists():
+            try:
+                j = json.loads(TW_PATH.read_text(encoding="utf-8"))
+                _TW_CACHE = j.get("by_ticker", {})
+            except Exception:
+                _TW_CACHE = {}
+        else:
+            _TW_CACHE = {}
+    return _TW_CACHE
+
+
+def refresh_tw_cache():
+    """讓快取失效（fetch_tw_industry.py 跑完後可呼叫）"""
+    global _TW_CACHE
+    _TW_CACHE = None
+
+
+def tw_industry(ticker):
+    """從 tw-industry.json 查 ticker 的官方 TWSE/TPEx 分類"""
+    return _load_tw().get(ticker, {}).get("industry", "") or ""
+
+
+def tw_name(ticker):
+    """從 tw-industry.json 查 ticker 的中文名"""
+    return _load_tw().get(ticker, {}).get("name", "") or ""
+
 
 def zh_industry(industry_en, sector_en=""):
-    """英文 industry 轉中文，fallback 到 sector"""
+    """英文 yfinance industry → 中文（fallback chain）"""
     if industry_en and industry_en in INDUSTRY_ZH:
         return INDUSTRY_ZH[industry_en]
     if sector_en and sector_en in SECTOR_ZH:
@@ -174,7 +206,19 @@ def zh_industry(industry_en, sector_en=""):
 
 
 def zh_sector(sector_en):
-    """英文 sector 轉中文"""
     if sector_en and sector_en in SECTOR_ZH:
         return SECTOR_ZH[sector_en]
     return sector_en or "未分類"
+
+
+def resolve(ticker, yf_industry="", yf_sector=""):
+    """Best-effort 中文產業：
+    1. TWSE/TPEx 官方 (tw-industry.json)
+    2. yfinance industry 對照
+    3. yfinance sector 對照
+    4. 英文 fallback
+    """
+    tw = tw_industry(ticker)
+    if tw:
+        return tw
+    return zh_industry(yf_industry, yf_sector)

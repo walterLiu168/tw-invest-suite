@@ -20,7 +20,7 @@ CACHE_DIR = SCRIPTS_DIR / "_cache"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import finmind_client as fm  # noqa: E402
-from industry_zh import zh_industry  # noqa: E402
+from industry_zh import zh_industry, resolve  # noqa: E402
 
 PUBLIC_DIR = ROOT / "public"
 DATA_DIR = PUBLIC_DIR / "data"
@@ -240,7 +240,7 @@ def compute_features(per_ticker, meta):
             "ticker": t,
             "name": m["name"],
             "industry": m["industry"],
-            "industry_zh": zh_industry(m["industry"], m.get("sector", "")),
+            "industry_zh": resolve(t, m["industry"], m.get("sector", "")),
             "price": price,
             "today_f": today["f"],
             "today_t": today["t"],
