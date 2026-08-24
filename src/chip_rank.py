@@ -13,12 +13,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 SKILL_DIR = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite")
 SCRIPTS_DIR = SKILL_DIR / "scripts"
 CACHE_DIR = SCRIPTS_DIR / "_cache"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import finmind_client as fm  # noqa: E402
+from industry_zh import zh_industry  # noqa: E402
 
 PUBLIC_DIR = ROOT / "public"
 DATA_DIR = PUBLIC_DIR / "data"
@@ -238,6 +240,7 @@ def compute_features(per_ticker, meta):
             "ticker": t,
             "name": m["name"],
             "industry": m["industry"],
+            "industry_zh": zh_industry(m["industry"], m.get("sector", "")),
             "price": price,
             "today_f": today["f"],
             "today_t": today["t"],
@@ -333,7 +336,7 @@ def render_html(data, out_path: Path):
         # 卡片 HTML
         t = p["ticker"]
         n = p["name"][:14]
-        ind = p.get("industry", "")[:12]
+        ind = p.get("industry_zh") or p.get("industry", "")[:12]
         f_5d = p["f_5d_shares"]
         t_5d = p["t_5d_shares"]
         d_5d = p["d_5d_shares"]

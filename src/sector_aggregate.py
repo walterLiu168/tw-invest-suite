@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 # 22:25 batch 工作目錄 (cache + finmind_client 都在這)
 SKILL_DIR = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite")
 SCRIPTS_DIR = SKILL_DIR / "scripts"
@@ -19,6 +20,7 @@ CACHE_DIR = SCRIPTS_DIR / "_cache"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import finmind_client as fm  # noqa: E402
+from industry_zh import zh_industry  # noqa: E402
 
 PUBLIC_DIR = ROOT / "public"
 DATA_DIR = PUBLIC_DIR / "data"
@@ -198,7 +200,7 @@ def aggregate(meta, yoy, inst5):
     by_industry = {}
     for t, m in meta.items():
         ind = m["industry"] or "未分類"
-        by_industry.setdefault(ind, []).append(t)
+        by_industry.setdefault(ind, []).append(t)  # 仍用英文 group，但顯示用中文
     sectors = []
     skipped_pe = 0
     for ind, tickers in by_industry.items():
@@ -236,7 +238,7 @@ def aggregate(meta, yoy, inst5):
 
         sectors.append({
             "industry": ind,
-            "industry_zh": INDUSTRY_ZH.get(meta[tickers[0]]["sector"] if tickers else "", ""),
+            "industry_zh": zh_industry(ind, meta[tickers[0]].get("sector", "") if tickers else ""),
             "count": len(tickers),
             "lead_ticker": lead,
             "lead_name": meta[lead]["name"] if lead else "",
@@ -314,7 +316,7 @@ def render_html(sectors, dates, total_tickers):
         rows.append(f'''
   <a class="sector-card" href="https://walterliu168.github.io/tw-invest-suite/analyze/{s["lead_ticker"]}.html" target="_blank" rel="noopener">
     <div class="sector-head">
-      <div class="sector-name">{s["industry"]}</div>
+      <div class="sector-name">{s.get("industry_zh") or s["industry"]}</div>
       <div class="sector-lead">代表性：{s["lead_ticker"]} {s["lead_name"][:18]}</div>
     </div>
     <div class="sector-chips">

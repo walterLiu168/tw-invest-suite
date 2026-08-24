@@ -10,8 +10,10 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 DATA = ROOT / "public" / "data" / "chips-advanced.json"
 OUT = ROOT / "public" / "chips-advanced.html"
+from industry_zh import zh_industry  # noqa: E402
 
 
 def fmt_shares(n):
@@ -31,7 +33,8 @@ def fmt_pct(n, d=2):
 
 def card(p, mode):
     """mode: 'vwap' | 'force' | 'radar'"""
-    t = p["ticker"]; n = p["name"][:14]; ind = p.get("industry", "")[:12]
+    t = p["ticker"]; n = p["name"][:14]
+    ind = p.get("industry_zh") or zh_industry(p.get("industry", ""), p.get("sector", ""))[:12]
     if mode == "vwap":
         chips = f'''
             <div class="chip"><div class="k">現價</div><div class="v">{p.get("price", 0):.2f}</div></div>
