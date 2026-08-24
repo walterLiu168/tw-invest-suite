@@ -26,6 +26,20 @@ PUBLIC_DIR = ROOT / "public"
 DATA_DIR = PUBLIC_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+# 概念股 mapping
+CONCEPT_PATH = DATA_DIR / "concept-stocks.json"
+TICKER_CONCEPTS = {}
+if CONCEPT_PATH.exists():
+    try:
+        TICKER_CONCEPTS = json.loads(CONCEPT_PATH.read_text(encoding="utf-8")).get("ticker_to_concepts", {})
+    except Exception:
+        pass
+CONCEPT_ICON = {
+    "半導體": "💎", "AI 概念股": "🤖", "蘋果供應鏈": "🍎",
+    "5G": "📡", "銅箔基板 CCL": "🟫", "矽智財 IP": "🔐",
+    "機器人": "🦾", "記憶體": "💾", "電動車": "🚗", "重電綠能": "⚡",
+}
+
 # 法人分項代號對照
 INST_CAT = {
     "Foreign_Investor": "f",   # 外資
@@ -241,6 +255,7 @@ def compute_features(per_ticker, meta):
             "name": m["name"],
             "industry": m["industry"],
             "industry_zh": resolve(t, m["industry"], m.get("sector", "")),
+            "concepts": TICKER_CONCEPTS.get(t, []),
             "price": price,
             "today_f": today["f"],
             "today_t": today["t"],
@@ -337,6 +352,15 @@ def render_html(data, out_path: Path):
         t = p["ticker"]
         n = p["name"][:14]
         ind = p.get("industry_zh") or p.get("industry", "")[:12]
+        # 概念股 badges
+        concepts = p.get("concepts", []) or []
+        concept_html = ""
+        if concepts:
+            badges = "".join(
+                f'<span class="concept-badge">{CONCEPT_ICON.get(c, "")} {c}</span>'
+                for c in concepts[:3]
+            )
+            concept_html = f'<div class="concept-badges">{badges}</div>'
         f_5d = p["f_5d_shares"]
         t_5d = p["t_5d_shares"]
         d_5d = p["d_5d_shares"]
@@ -359,6 +383,7 @@ def render_html(data, out_path: Path):
             {badge_html}{streak_html}
           </div>
           <div class="card-ind muted">{ind}{twd_html}</div>
+          {concept_html}
           <div class="card-chips">
             <div class="chip"><div class="k">5 日外資</div><div class="v {cls(f_5d)}">{fmt_shares(f_5d)}</div></div>
             <div class="chip"><div class="k">5 日投信</div><div class="v {cls(t_5d)}">{fmt_shares(t_5d)}</div></div>
@@ -478,6 +503,17 @@ footer a {{ color: var(--acc); }}
 </style>
 </head>
 <body>
+
+<nav class="module-tabs">
+  <a class="mod-tab" href="readme.html">🏠 首頁</a>
+  <a class="mod-tab" href="watchlist.html">📊 24 檔精選</a>
+  <a class="mod-tab" href="sectors.html">🌊 板塊輪動</a>
+  <a class="mod-tab active" href="chips.html">💎 籌碼排行</a>
+  <a class="mod-tab" href="concepts.html">🔥 概念股</a>
+  <a class="mod-tab" href="chips-advanced.html">📡 籌碼進階</a>
+  <a class="mod-tab" href="chips-history.html">🕐 歷史回看</a>
+  <a class="mod-tab" href="monitor.html">📲 籌碼監控</a>
+</nav>
 
 <div class="hdr">
   <h1>💎 籌碼排行</h1>

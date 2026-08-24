@@ -355,6 +355,7 @@ def render_html(sectors, dates, total_tickers):
 <meta property="og:description" content="台股 1,962 檔依產業加總，看資金正湧向哪些板塊">
 <meta property="og:image" content="https://walterliu168.github.io/tw-invest-suite/data/og.png">
 <link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="assets/textsize.css">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='28'>🌊</text></svg>">
 <style>
 :root {{
@@ -416,6 +417,17 @@ footer a {{ color: var(--acc); }}
 </style>
 </head>
 <body>
+
+<nav class="module-tabs">
+  <a class="mod-tab" href="readme.html">🏠 首頁</a>
+  <a class="mod-tab" href="watchlist.html">📊 24 檔精選</a>
+  <a class="mod-tab active" href="sectors.html">🌊 板塊輪動</a>
+  <a class="mod-tab" href="chips.html">💎 籌碼排行</a>
+  <a class="mod-tab" href="concepts.html">🔥 概念股</a>
+  <a class="mod-tab" href="chips-advanced.html">📡 籌碼進階</a>
+  <a class="mod-tab" href="chips-history.html">🕐 歷史回看</a>
+  <a class="mod-tab" href="monitor.html">📲 籌碼監控</a>
+</nav>
 
 <div class="hdr">
   <h1>🌊 板塊輪動</h1>
