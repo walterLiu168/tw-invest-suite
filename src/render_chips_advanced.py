@@ -115,6 +115,12 @@ def main():
       <h2 class="bucket-title">籌碼雷達 · 強賣 <small>力道 ≥ 2× + 5d 賣超 + 20d 法人撤離</small></h2>
       <div class="grid">{render_grid(radar_sell, "radar")}</div>
     </div>
+    <div class="tab-content" data-bucket="chart">
+      <h2 class="bucket-title">📈 法人 20 日均價走勢圖 <small>折溢價 ±3% 個股 · 藍線=收盤價 · 紅線=法人 20 日 VWAP</small></h2>
+      <div class="chart-grid" id="chart-grid">
+        <div class="empty">載入中…</div>
+      </div>
+    </div>
     '''
 
     html = f'''<!DOCTYPE html>
@@ -171,6 +177,14 @@ main {{ max-width: 1200px; margin: 0 auto; padding: 16px 24px 60px; }}
 .v-pos {{ color: var(--red); }}
 .v-neg {{ color: var(--green); }}
 .empty {{ color: var(--muted); text-align: center; padding: 40px; }}
+
+/* 走勢圖 grid */
+.chart-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }}
+.chart-card {{ background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }}
+.chart-head {{ display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }}
+.chart-head .ticker {{ color: var(--acc); font-weight: 700; font-family: 'Consolas', monospace; font-size: 0.95rem; }}
+.chart-head .name {{ color: var(--ink); font-size: 0.85rem; }}
+.chart-stat {{ color: var(--muted); font-size: 0.75rem; margin-left: auto; font-variant-numeric: tabular-nums; }}
 footer {{ max-width: 1200px; margin: 0 auto 40px; padding: 0 24px; color: var(--muted); font-size: 0.82rem; text-align: center; }}
 footer a {{ color: var(--acc); }}
 </style>
@@ -213,6 +227,7 @@ footer a {{ color: var(--acc); }}
   <button class="tab" data-tab="force-sell">力道強賣 <span class="cnt">{len(force_sell)}</span></button>
   <button class="tab" data-tab="radar-buy">雷達強買 <span class="cnt">{len(radar_buy)}</span></button>
   <button class="tab" data-tab="radar-sell">雷達強賣 <span class="cnt">{len(radar_sell)}</span></button>
+  <button class="tab" data-tab="chart">📈 走勢圖</button>
 </div>
 
 <main>
@@ -235,7 +250,51 @@ document.querySelectorAll('.tab').forEach(function (b) {{
     }});
   }});
 }});
+
+// 走勢圖：從 chips-advanced.json 載入 chart_data，渲染 Chart.js 線圖
+fetch('data/chips-advanced.json').then(function (r) {{ return r.ok ? r.json() : null; }})
+  .then(function (j) {{
+    if (!j) return;
+    var data = j.chart_data || {{}};
+    var tickers = Object.keys(data);
+    if (!tickers.length) {{
+      document.getElementById('chart-grid').innerHTML = '<div class="empty">無資料</div>';
+      return;
+    }}
+    var html = '';
+    tickers.forEach(function (t) {{
+      var c = data[t];
+      html += '<div class="chart-card">' +
+        '<div class="chart-head"><span class="ticker">' + t + '</span><span class="name">' + (c.name || '') + '</span>' +
+        '<span class="chart-stat">收 ' + (c.price_now || 0).toFixed(1) + ' / VWAP ' + (c.vwap || 0).toFixed(1) + '</span></div>' +
+        '<canvas id="cv-' + t + '" width="380" height="120"></canvas></div>';
+    }});
+    document.getElementById('chart-grid').innerHTML = html;
+    tickers.forEach(function (t) {{
+      var c = data[t];
+      var el = document.getElementById('cv-' + t);
+      if (!el) return;
+      new Chart(el, {{
+        type: 'line',
+        data: {{
+          labels: c.closes.map(function (_, i) {{ return 'D' + (i + 1); }}),
+          datasets: [
+            {{ label: '收盤', data: c.closes, borderColor: '#5fb1ff', backgroundColor: 'rgba(95,177,255,0.1)', tension: 0.25, pointRadius: 0, borderWidth: 2 }},
+            {{ label: '法人 VWAP', data: c.closes.map(function () {{ return c.vwap; }}), borderColor: '#ec7063', borderDash: [4, 4], pointRadius: 0, borderWidth: 2, fill: false }}
+          ]
+        }},
+        options: {{
+          responsive: false, plugins: {{ legend: {{ display: false }} }},
+          scales: {{
+            x: {{ display: false }},
+            y: {{ ticks: {{ color: '#8aa0c0', font: {{ size: 9 }} }}, grid: {{ color: 'rgba(255,255,255,0.04)' }} }}
+          }}
+        }}
+      }});
+    }});
+  }});
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="assets/textsize.js"></script>
 
 </body>

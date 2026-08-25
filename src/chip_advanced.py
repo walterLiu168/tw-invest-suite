@@ -221,9 +221,8 @@ def load_meta():
     return meta
 
 
-def write_json(features, dates):
+def write_json(features, dates, ohlcv_map=None):
     # 多條件雷達 (P2.4 雛形)：
-    # 「力道強」= force >= 2.0 且 5d 法人淨買超 (買盤) / 「法人加碼」= vs_vwap_pct <= -3
     radar = {
         "force_strong_buy": [f for f in features if (f.get("force_ratio") or 0) >= 2.0 and f.get("cum_5d_shares", 0) > 0],
         "force_strong_sell": [f for f in features if (f.get("force_ratio") or 0) >= 2.0 and f.get("cum_5d_shares", 0) < 0],
@@ -232,16 +231,39 @@ def write_json(features, dates):
     }
     for k in radar:
         radar[k].sort(key=lambda x: abs(x.get("force_ratio") or x.get("vs_vwap_pct") or 0), reverse=True)
+    # 為 top 30 個 ticker 帶 20 日收盤序列 (走勢圖用)
+    chart_data = {}
+    if ohlcv_map:
+        # ohlcv_map = {date: {ticker: close}}
+        all_top = (
+            radar["below_inst_cost"][:8] +
+            radar["above_inst_cost"][:8] +
+            radar["force_strong_buy"][:7] +
+            radar["force_strong_sell"][:7]
+        )
+        for p in all_top:
+            t = p["ticker"]
+            # 取 use_dates 範圍內的 close
+            closes = []
+            for d in dates:
+                by_date = ohlcv_map.get(d, {})
+                c = by_date.get(t)
+                if c is not None:
+                    closes.append(c)
+            if closes and len(closes) >= 5:
+                chart_data[t] = {"name": p.get("name", t), "vwap": p.get("vwap_buy_20d"),
+                                  "price_now": p.get("price"), "closes": closes, "dates": dates[:len(closes)]}
     out = {
         "date": datetime.now().strftime("%Y-%m-%d"),
         "trading_dates_20d": dates,
         "ticker_count": len(features),
         "features": features,
         "radar": radar,
+        "chart_data": chart_data,
     }
     p = DATA_DIR / "chips-advanced.json"
     p.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[json] {p}  count={len(features)}  force_buy={len(radar['force_strong_buy'])} force_sell={len(radar['force_strong_sell'])} below={len(radar['below_inst_cost'])} above={len(radar['above_inst_cost'])}", file=sys.stderr)
+    print(f"[json] {p}  count={len(features)}  force_buy={len(radar['force_strong_buy'])} force_sell={len(radar['force_strong_sell'])} below={len(radar['below_inst_cost'])} above={len(radar['above_inst_cost'])}  charts={len(chart_data)}", file=sys.stderr)
     return out
 
 
@@ -253,7 +275,8 @@ def main():
     ohlcv = fetch_ohlcv_20d()
     inst = fetch_institutional_20d()
     features, dates = build_features(ohlcv, inst, meta)
-    write_json(features, dates)
+    # 走勢圖資料 — 直接傳 ohlcv 本身 (格式: {date: {ticker: close}})
+    write_json(features, dates, ohlcv)
     print(f"[done] {time.time()-t0:.1f}s", file=sys.stderr)
 
 
