@@ -25,6 +25,7 @@ from industry_zh import zh_industry, resolve  # noqa: E402
 PUBLIC_DIR = ROOT / "public"
 DATA_DIR = PUBLIC_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+ADV_PATH = DATA_DIR / "chips-advanced.json"  # 補強資料來源 (f_stay + force)
 
 # 概念股 mapping
 CONCEPT_PATH = DATA_DIR / "concept-stocks.json"
@@ -276,7 +277,7 @@ def compute_features(per_ticker, meta):
     return out
 
 
-def write_json(features, dates):
+def write_json(features, dates, adv_features=None):
     by_today_buy = sorted([f for f in features if f["three_5d_shares"] > 0],
                            key=lambda x: -x["three_5d_shares"])
     by_today_sell = sorted([f for f in features if f["three_5d_shares"] < 0],
@@ -285,6 +286,15 @@ def write_json(features, dates):
     same_sell = [f for f in features if f["same_side"] == "sell"]
     f_consec_buy = [f for f in features if f["f_streak_dir"] == 1 and f["f_streak"] >= CONSEC_MIN_DAYS]
     f_consec_sell = [f for f in features if f["f_streak_dir"] == -1 and f["f_streak"] >= CONSEC_MIN_DAYS]
+    # 補強：從 chips-advanced.json 把 f_stay_days + force_ratio merge 進來
+    if adv_features:
+        adv_map = {f["ticker"]: f for f in adv_features}
+        for f in features:
+            af = adv_map.get(f["ticker"])
+            if af:
+                f["f_stay_days"] = af.get("f_stay_days", 0)
+                f["f_stay_dir"] = af.get("f_stay_dir", 0)
+                f["force_ratio"] = af.get("force_ratio")
     out = {
         "date": datetime.now().strftime("%Y-%m-%d"),
         "trading_dates_5d": dates[:5],
@@ -361,6 +371,24 @@ def render_html(data, out_path: Path):
                 for c in concepts[:3]
             )
             concept_html = f'<div class="concept-badges">{badges}</div>'
+        # 外資停留 + 力道 + 連買天數 badges
+        f_stay = p.get("f_stay_days", 0) or 0
+        f_dir = p.get("f_stay_dir", 0) or 0
+        force = p.get("force_ratio")
+        # 連買/連賣天數（從 streak 參數拿 或 從 p 算）
+        streak_days = p.get("f_streak", 0) or 0
+        streak_dir = p.get("f_streak_dir", 0) or 0
+        extra_badges = []
+        if streak_days >= 3:
+            d_text = "連買" if streak_dir > 0 else "連賣"
+            extra_badges.append(f'<span class="streak">{d_text} {streak_days} 天</span>')
+        if f_stay >= 3:
+            d_text = "停留買" if f_dir > 0 else "停留賣"
+            extra_badges.append(f'<span class="stay">外{d_text} {f_stay} 天</span>')
+        if force is not None and abs(force) >= 1.5:
+            d_text = "力道↑" if force > 0 else "力道↓"
+            extra_badges.append(f'<span class="force">{d_text} {abs(force):.1f}×</span>')
+        extra_html = "".join(extra_badges) if extra_badges else ""
         f_5d = p["f_5d_shares"]
         t_5d = p["t_5d_shares"]
         d_5d = p["d_5d_shares"]
@@ -381,6 +409,7 @@ def render_html(data, out_path: Path):
             <span class="ticker">{t}</span>
             <span class="name">{n}</span>
             {badge_html}{streak_html}
+            {extra_html}
           </div>
           <div class="card-ind muted">{ind}{twd_html}</div>
           {concept_html}
@@ -405,6 +434,34 @@ def render_html(data, out_path: Path):
         if not html:
             return '<div class="empty">無資料</div>'
         return "\n".join(html)
+
+    def depth_rows(items, limit=100):
+        """法人分項深度表 (當日 + 5日 + 20日 × 3 法人)"""
+        # 排序：5 日 3 法人合計降冪
+        items = sorted(items, key=lambda x: -abs(x.get("three_5d_shares", 0)))[:limit]
+        if not items:
+            return '<div class="empty">無資料</div>'
+        rows = []
+        for p in items:
+            t = p["ticker"]
+            n = p.get("name", "")[:14]
+            ind = p.get("industry_zh", "")
+            today_three = p.get("today_f", 0) + p.get("today_t", 0) + p.get("today_d", 0)
+            five_three = p.get("three_5d_shares", 0)
+            f_20d = p.get("f_20d_shares", 0)
+            t_20d = p.get("t_20d_shares", 0)
+            d_20d = p.get("d_20d_shares", 0)
+            def cls(n): return "v-pos" if n > 0 else ("v-neg" if n < 0 else "")
+            rows.append(f'''<div class="depth-row">
+              <div class="dr-t"><a class="ticker" href="analyze/{t}.html" target="_blank">{t}</a><br><span class="muted dr-ind">{ind}</span></div>
+              <div>{n}</div>
+              <div class="{cls(today_three)}">{fmt_shares(today_three)}</div>
+              <div class="{cls(five_three)}">{fmt_shares(five_three)}</div>
+              <div class="{cls(f_20d)}">{fmt_shares(f_20d)}</div>
+              <div class="{cls(t_20d)}">{fmt_shares(t_20d)}</div>
+              <div class="{cls(d_20d)}">{fmt_shares(d_20d)}</div>
+            </div>''')
+        return "\n".join(rows)
 
     # badges
     same_buy_tickers = {p["ticker"] for p in tabs["same_buy"]}
@@ -436,6 +493,21 @@ def render_html(data, out_path: Path):
     <div class="tab-content" data-bucket="f-sell">
       <h2 class="bucket-title">外資連賣 <small>連續 {CONSEC_MIN_DAYS}+ 天</small></h2>
       <div class="grid">{render_grid(tabs["f_consec_sell"], "var(--green)", badge_map={t: "同賣" for t in same_sell_tickers}, streak_map=f_sell_streak)}</div>
+    </div>
+    <div class="tab-content" data-bucket="depth">
+      <h2 class="bucket-title">📊 法人分項深度 <small>當日 + 5 日 + 20 日 (3 法人 × 3 期間 = 9 維度)</small></h2>
+      <div class="depth-table">
+        <div class="depth-row depth-head">
+          <div>Ticker</div>
+          <div>名稱</div>
+          <div>今日 3 法人</div>
+          <div>5 日 3 法人</div>
+          <div>20 日 外資</div>
+          <div>20 日 投信</div>
+          <div>20 日 自營</div>
+        </div>
+        {depth_rows(tabs["all_buy"] + tabs["all_sell"])}
+      </div>
     </div>
     '''
 
@@ -480,6 +552,16 @@ main {{ max-width: 1200px; margin: 0 auto; padding: 16px 24px 60px; }}
 .tab-content {{ display: none; }}
 .tab-content.active {{ display: block; }}
 .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }}
+
+/* 法人分項深度表 */
+.depth-table {{ background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 0.85rem; }}
+.depth-row {{ display: grid; grid-template-columns: 1.4fr 1.4fr 1fr 1fr 1fr 1fr 1fr; gap: 6px; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); align-items: center; font-variant-numeric: tabular-nums; }}
+.depth-row:last-child {{ border-bottom: none; }}
+.depth-row:hover {{ background: rgba(95,177,255,0.05); }}
+.depth-head {{ background: var(--panel2); font-weight: 600; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px; }}
+.depth-row > div:nth-child(n+3) {{ text-align: right; }}
+.dr-t .ticker {{ font-size: 0.95rem; font-weight: 700; color: var(--acc); font-family: 'Consolas', monospace; }}
+.dr-ind {{ font-size: 0.65rem; }}
 .card {{ display: block; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px 12px 18px; position: relative; transition: all 0.15s; overflow: hidden; }}
 .card-accent {{ position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }}
 .card-head {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }}
@@ -488,6 +570,8 @@ main {{ max-width: 1200px; margin: 0 auto; padding: 16px 24px 60px; }}
 .badge {{ background: var(--red-soft); color: var(--red); padding: 1px 7px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }}
 .badge.same-sell {{ background: var(--green-soft); color: var(--green); }}
 .streak {{ background: var(--amber); color: #000; padding: 1px 7px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }}
+.stay {{ background: var(--cyan); color: #000; padding: 1px 7px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }}
+.force {{ background: var(--purple, #bc8cff); color: #000; padding: 1px 7px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }}
 .card-ind {{ font-size: 0.75rem; display: flex; gap: 8px; margin-bottom: 8px; }}
 .twd {{ color: var(--cyan); font-weight: 600; font-size: 0.72rem; }}
 .card-chips {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 6px; }}
@@ -540,6 +624,7 @@ footer a {{ color: var(--acc); }}
   <button class="tab" data-tab="same-sell">同賣 <span class="cnt">{len(tabs['same_sell'])}</span></button>
   <button class="tab" data-tab="f-buy">外資連買 <span class="cnt">{len(tabs['f_consec_buy'])}</span></button>
   <button class="tab" data-tab="f-sell">外資連賣 <span class="cnt">{len(tabs['f_consec_sell'])}</span></button>
+  <button class="tab" data-tab="depth">📊 法人分項深度</button>
 </div>
 
 <main>
@@ -585,8 +670,16 @@ def main():
     all_rows = fetch_institutional_10d()
     per_ticker = build_per_ticker_calendar(all_rows)
     features = compute_features(per_ticker, meta)
+    # 從 chips-advanced.json 拉 f_stay_days + force_ratio 補強
+    adv_features = []
+    if ADV_PATH.exists():
+        try:
+            adv_data = json.loads(ADV_PATH.read_text(encoding="utf-8"))
+            adv_features = adv_data.get("features", [])
+        except Exception as e:
+            print(f"[warn] {ADV_PATH} read failed: {e}", file=sys.stderr)
     sorted_dates = sorted({r["date"] for r in all_rows}, reverse=True)[:10]
-    data = write_json(features, sorted_dates)
+    data = write_json(features, sorted_dates, adv_features=adv_features)
     data["price_date"] = price_date
     render_html(data, PUBLIC_DIR / "chips.html")
     print(f"[done] {time.time()-t0:.1f}s", file=sys.stderr)
