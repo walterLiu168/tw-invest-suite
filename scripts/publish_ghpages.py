@@ -6,9 +6,13 @@ import subprocess
 import sys
 
 REPO_DIR = r"C:\Users\icemo\Projects\tw-invest-suite"
-TMP_DIR = r"C:\Users\icemo\Projects\tw-invest-suite-ghpages"
+# 用 timestamp 讓每次 deploy 都有新目錄（避免 git object lock 問題）
+import time as _time
+TMP_DIR = r"C:\Users\icemo\Projects\tw-invest-suite-ghpages-" + _time.strftime("%Y%m%d-%H%M%S")
 PUBLIC_DIR = os.path.join(REPO_DIR, "public")
 GH_PAGES_BRANCH = "gh-pages"
+# analyze pages 是 render_only.py 產出，輸出在 Groove-Lab (1965 個 .html)
+ANALYZE_SRC = r"C:\Groove-Lab\analyze"
 
 
 def run(cmd, cwd=None, check=True):
@@ -41,6 +45,24 @@ print("\n=== Step 3: Copy public/* to temp dir ===")
 for item in os.listdir(PUBLIC_DIR):
     src = os.path.join(PUBLIC_DIR, item)
     dst = os.path.join(TMP_DIR, item)
+    if os.path.isdir(src):
+        shutil.copytree(src, dst)
+        print(f"  dir: {item}")
+    else:
+        shutil.copy2(src, dst)
+        print(f"  file: {item}")
+
+# Step 3.5: Copy analyze/ pages (1965 HTML 來自 render_only.py → C:\Groove-Lab\analyze\)
+print("\n=== Step 3.5: Copy analyze/ from Groove-Lab ===")
+if os.path.isdir(ANALYZE_SRC):
+    dst_analyze = os.path.join(TMP_DIR, "analyze")
+    if os.path.isdir(dst_analyze):
+        shutil.rmtree(dst_analyze)
+    shutil.copytree(ANALYZE_SRC, dst_analyze)
+    n = len([f for f in os.listdir(dst_analyze) if f.endswith(".html")])
+    print(f"  analyze: {n} files from {ANALYZE_SRC}")
+else:
+    print(f"  [warn] {ANALYZE_SRC} not found, skip analyze/")
     if os.path.isdir(src):
         shutil.copytree(src, dst)
         print(f"  dir: {item}")
