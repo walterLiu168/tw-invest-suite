@@ -7401,6 +7401,7 @@ document.querySelectorAll('.tab').forEach(function (b) {
 // 排序：載入 chips.json → 動態排序
 var TICKER_MAP = {};
 var TICKER_DATA = {};  // D032: 完整 ticker 資料 (供篩選用)
+var RAW_TABS = {};     // D033: 各 tab 的原始 ticker 列表 (供動態渲染用)
 var CURRENT_SORT = 'default';
 function applySort() {
   if (CURRENT_SORT === 'default') return;
@@ -7538,16 +7539,165 @@ function matches(f, p) {
   return (f.mode === 'AND') ? conds.every(function(c){ return c(p); }) : conds.some(function(c){ return c(p); });
 }
 
-// 把 APPLIED 套到 cards 顯示
+// 數字格式化
+function fmt_shares(n) {
+  if (n === undefined || n === null) return '—';
+  var a = Math.abs(n);
+  if (a === 0) return '0張';
+  var sign = n > 0 ? '+' : (n < 0 ? '−' : '');
+  if (a >= 100000000) return sign + (a/100000000).toFixed(2) + '億張';
+  if (a >= 10000) return sign + (a/10000).toFixed(1) + '萬張';
+  if (a >= 1000) return sign + (a/1000).toFixed(1) + 'k張';
+  return sign + Math.round(a) + '張';
+}
+function fmt_twd(n) {
+  if (n === undefined || n === null) return '—';
+  var sign = n > 0 ? '+' : (n < 0 ? '−' : '');
+  return sign + Math.abs(n).toFixed(2) + '億';
+}
+function fmt_price(n) {
+  if (n === undefined || n === null) return '—';
+  return n.toFixed(2);
+}
+function v_class(n) {
+  if (n > 0) return 'v-pos';
+  if (n < 0) return 'v-neg';
+  return 'v';
+}
+function accent_color(n) {
+  if (n > 0) return 'var(--red)';
+  if (n < 0) return 'var(--green)';
+  return 'var(--muted)';
+}
+
+// 概念 chip 對照
+var CONCEPT_EMOJI = {
+  '半導體': '💎',
+  'AI 概念股': '🤖',
+  '蘋果供應鏈': '🍎',
+  '記憶體': '💾',
+  '機器人': '🦾',
+  '電動車': '🚗',
+  '重電綠能': '⚡',
+  '銅箔基板 CCL': '🟫',
+  '5G': '📡',
+  '矽智財 IP': '🔐'
+};
+
+function escapeHtml(s) {
+  if (s === undefined || s === null) return '';
+  return String(s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function buildCard(p) {
+  var badges = [];
+  // 同買/同賣
+  if (p.same_side === 1) badges.push('<span class="badge">同買</span>');
+  else if (p.same_side === -1) badges.push('<span class="badge same-sell">同賣</span>');
+  // 連買/連賣
+  if ((p.f_streak || 0) >= 3) {
+    var dir = p.f_streak_dir === 1 ? '連買' : (p.f_streak_dir === -1 ? '連賣' : '');
+    if (dir) badges.push('<span class="streak">'+dir+' ' + p.f_streak + ' 天</span>');
+  }
+  // 停留
+  if ((p.f_stay_days || 0) > 0) {
+    var sdir = p.f_stay_dir === 1 ? '外停留買' : (p.f_stay_dir === -1 ? '外停留賣' : '外停留');
+    badges.push('<span class="stay">'+sdir+' ' + p.f_stay_days + ' 天</span>');
+  }
+  // 力道
+  if (Math.abs(p.force_ratio || 0) >= 1.5) {
+    var fdir = p.force_ratio > 0 ? '力道↑' : '力道↓';
+    badges.push('<span class="force">'+fdir+' '+Math.abs(p.force_ratio).toFixed(1)+'×</span>');
+  }
+  // 概念 badges
+  var conceptHtml = '';
+  if (p.concepts && p.concepts.length) {
+    conceptHtml = '<div class="concept-badges">';
+    p.concepts.forEach(function(c) {
+      var e = CONCEPT_EMOJI[c] || '•';
+      conceptHtml += '<span class="concept-badge">'+e+' '+escapeHtml(c)+'</span>';
+    });
+    conceptHtml += '</div>';
+  }
+  return '<a class="card" href="analyze/'+p.ticker+'.html" target="_blank" rel="noopener" data-ticker="'+p.ticker+'">'
+    + '<div class="card-accent" style="background:'+accent_color(p.three_5d_shares)+'"></div>'
+    + '<div class="card-head">'
+    +   '<span class="ticker">'+p.ticker+'</span>'
+    +   '<span class="name">'+escapeHtml(p.name)+'</span>'
+    +   badges.join('')
+    + '</div>'
+    + '<div class="card-ind muted">'+escapeHtml(p.industry_zh || p.industry || '')+'</div>'
+    + conceptHtml
+    + '<div class="card-chips">'
+    +   '<div class="chip"><div class="k">5 日外資</div><div class="'+v_class(p.f_5d_shares)+'">'+fmt_shares(p.f_5d_shares)+'</div></div>'
+    +   '<div class="chip"><div class="k">5 日投信</div><div class="'+v_class(p.t_5d_shares)+'">'+fmt_shares(p.t_5d_shares)+'</div></div>'
+    +   '<div class="chip"><div class="k">5 日自營</div><div class="'+v_class(p.d_5d_shares)+'">'+fmt_shares(p.d_5d_shares)+'</div></div>'
+    + '</div>'
+    + '<div class="card-foot muted">'
+    +   '<span>收 '+fmt_price(p.price)+'</span>'
+    +   '<span>5 日 TWD '+fmt_twd(p.three_5d_twd)+'</span>'
+    + '</div>'
+    + '</a>';
+}
+
+// Tab 定義 (dataKey, sort欄位, desc?, 預設無 filter 時的限制)
+var TAB_DEFS = {
+  'all-buy':  { dataKey: 'all_buy',         sort: 'three_5d_shares', desc: true,  limit: 60, label: '3 法人合計' },
+  'all-sell': { dataKey: 'all_sell',        sort: 'three_5d_shares', desc: false, limit: 60, label: '3 法人合計' },
+  'same-buy': { dataKey: 'same_buy',        sort: 'three_5d_shares', desc: true,  limit: 0,  label: '3 法人合計' },
+  'same-sell':{ dataKey: 'same_sell',       sort: 'three_5d_shares', desc: false, limit: 0,  label: '3 法人合計' },
+  'f-buy':    { dataKey: 'f_consec_buy',    sort: 'f_5d_shares',     desc: true,  limit: 60, label: '5 日外資' },
+  'f-sell':   { dataKey: 'f_consec_sell',   sort: 'f_5d_shares',     desc: false, limit: 60, label: '5 日外資' }
+};
+
+// 把 APPLIED 套到 cards 顯示 (動態渲染)
 function renderApplied() {
   var hasAny = hasAnyConditions(APPLIED);
-  document.querySelectorAll('.card, .depth-row:not(.depth-head)').forEach(function(r){
-    var t = r.getAttribute('data-ticker');
-    var p = TICKER_DATA[t];
-    if (!hasAny) { r.style.display = ''; return; }
-    if (!p) { r.style.display = 'none'; return; }
-    r.style.display = matches(APPLIED, p) ? '' : 'none';
+  // 6 個 card tab 動態渲染
+  Object.keys(TAB_DEFS).forEach(function(tabKey) {
+    var def = TAB_DEFS[tabKey];
+    var base = RAW_TABS[def.dataKey] || [];
+    var filtered = base.slice();
+    if (hasAny) {
+      filtered = filtered.filter(function(p){ return matches(APPLIED, p); });
+    }
+    filtered.sort(function(a, b){
+      var va = a[def.sort] || 0, vb = b[def.sort] || 0;
+      return def.desc ? (vb - va) : (va - vb);
+    });
+    // 沒 filter 時套用預設 limit (前 60)，有 filter 時全部顯示
+    if (def.limit > 0 && !hasAny) filtered = filtered.slice(0, def.limit);
+    // 更新 tab 計數
+    var cntEl = document.querySelector('.tab[data-tab="' + tabKey + '"] .cnt');
+    if (cntEl) cntEl.textContent = filtered.length;
+    // 更新 bucket title
+    var titleEl = document.querySelector('.tab-content[data-bucket="' + tabKey + '"] .bucket-title small');
+    if (titleEl) {
+      if (hasAny) {
+        titleEl.textContent = '命中 ' + filtered.length + ' 檔 · 依 ' + def.label + (def.desc ? ' 降冪' : ' 升冪');
+      } else {
+        titleEl.textContent = (def.limit > 0 ? '前 ' + def.limit : '全部 ' + filtered.length) + ' 檔 · 依 ' + def.label + (def.desc ? ' 降冪' : ' 升冪');
+      }
+    }
+    // 渲染 cards
+    var grid = document.querySelector('.tab-content[data-bucket="' + tabKey + '"] .grid');
+    if (grid) {
+      grid.innerHTML = filtered.map(buildCard).join('');
+    }
   });
+  // depth tab: 維持靜態 + display:none 過濾
+  if (hasAny) {
+    document.querySelectorAll('.depth-row:not(.depth-head)').forEach(function(r){
+      var t = r.getAttribute('data-ticker');
+      var p = TICKER_DATA[t];
+      r.style.display = (p && matches(APPLIED, p)) ? '' : 'none';
+    });
+  } else {
+    document.querySelectorAll('.depth-row:not(.depth-head)').forEach(function(r){ r.style.display = ''; });
+  }
+  // 套用使用者選的排序
   if (CURRENT_SORT !== 'default') applySort();
 }
 
@@ -7840,6 +7990,11 @@ function showAutoApplyNotice(n) {
 }
 
 fetch('data/chips.json').then(function (r) { return r.json(); }).then(function (data) {
+  // 存各 tab 原始資料 (D033 動態渲染用)
+  Object.keys(data.tabs).forEach(function(k) {
+    RAW_TABS[k] = data.tabs[k] || [];
+  });
+  // 攤平所有 ticker 到 TICKER_DATA + TICKER_MAP
   var all = (data.tabs.all_buy || []).concat(data.tabs.all_sell || []);
   all.forEach(function (p) {
     TICKER_MAP[p.ticker] = {
@@ -7868,7 +8023,7 @@ fetch('data/chips.json').then(function (r) { return r.json(); }).then(function (
   renderAdv();
   renderPresets();
   bindUI();
-  // 1. 先把 APPLIED 套到卡片
+  // 1. 先把 APPLIED 套到卡片 (動態渲染)
   renderApplied();
   // 2. 預覽（命中計數 + popup）
   previewFilter();
