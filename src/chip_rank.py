@@ -20,7 +20,7 @@ CACHE_DIR = SCRIPTS_DIR / "_cache"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import finmind_client as fm  # noqa: E402
-from industry_zh import zh_industry, resolve  # noqa: E402
+from industry_zh import zh_industry, resolve, tw_name  # noqa: E402
 
 PUBLIC_DIR = ROOT / "public"
 DATA_DIR = PUBLIC_DIR / "data"
@@ -253,7 +253,7 @@ def compute_features(per_ticker, meta):
             same_side = "sell"
         out.append({
             "ticker": t,
-            "name": m["name"],
+            "name": tw_name(t) or m["name"],  # 優先用 TWSE 中文名
             "industry": m["industry"],
             "industry_zh": resolve(t, m["industry"], m.get("sector", "")),
             "concepts": TICKER_CONCEPTS.get(t, []),
@@ -540,7 +540,9 @@ a:hover .card {{ border-color: var(--acc); transform: translateY(-1px); }}
 .nav {{ max-width: 1200px; margin: 0 auto; padding: 0 24px 12px; display: flex; flex-wrap: wrap; gap: 6px; }}
 .nav a {{ padding: 5px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: 0.85rem; }}
 .nav a:hover {{ background: var(--panel); color: var(--ink); text-decoration: none; }}
-.tabs {{ max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; flex-wrap: wrap; gap: 4px; }}
+.tabs {{ max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }}
+.sort-sel {{ margin-left: auto; background: var(--panel); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 0.82rem; font-family: inherit; cursor: pointer; }}
+.sort-sel:focus {{ outline: 2px solid var(--acc); }}
 .tab {{ background: var(--panel); color: var(--muted); border: 1px solid var(--border); padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 0.88rem; font-weight: 500; }}
 .tab:hover {{ color: var(--ink); }}
 .tab.active {{ background: var(--acc); color: #000; border-color: var(--acc); font-weight: 600; }}
@@ -625,6 +627,16 @@ footer a {{ color: var(--acc); }}
   <button class="tab" data-tab="f-buy">外資連買 <span class="cnt">{len(tabs['f_consec_buy'])}</span></button>
   <button class="tab" data-tab="f-sell">外資連賣 <span class="cnt">{len(tabs['f_consec_sell'])}</span></button>
   <button class="tab" data-tab="depth">📊 法人分項深度</button>
+  <select class="sort-sel" id="sort-sel">
+    <option value="default">預設排序</option>
+    <option value="three_5d">3 法人合計 (張) ↓</option>
+    <option value="three_5d_twd">3 法人合計 (億) ↓</option>
+    <option value="f_5d">5 日外資張數 ↓</option>
+    <option value="t_5d">5 日投信張數 ↓</option>
+    <option value="d_5d">5 日自營張數 ↓</option>
+    <option value="streak">連買/賣天數 ↓</option>
+    <option value="volume">5 日成交量 (估) ↓</option>
+  </select>
 </div>
 
 <main>
@@ -647,6 +659,53 @@ document.querySelectorAll('.tab').forEach(function (b) {{
       c.classList.toggle('active', c.getAttribute('data-bucket') === k);
     }});
   }});
+}});
+
+// 排序：載入 chips.json → 動態排序
+var TICKER_MAP = {{}};
+var CURRENT_SORT = 'default';
+function applySort() {{
+  if (CURRENT_SORT === 'default') return;
+  document.querySelectorAll('.tab-content').forEach(function (content) {{
+    var grid = content.querySelector('.grid, .depth-table');
+    if (!grid) return;
+    var rows = Array.prototype.slice.call(grid.querySelectorAll('.card, .depth-row:not(.depth-head)'));
+    rows.sort(function (a, b) {{
+      var ta = a.getAttribute('data-ticker') || (a.querySelector('.ticker') ? a.querySelector('.ticker').textContent.trim() : '');
+      var tb = b.getAttribute('data-ticker') || (b.querySelector('.ticker') ? b.querySelector('.ticker').textContent.trim() : '');
+      return (TICKER_MAP[tb] || 0) - (TICKER_MAP[ta] || 0);
+    }});
+    rows.forEach(function (r) {{ grid.appendChild(r); }});
+  }});
+}}
+document.getElementById('sort-sel').addEventListener('change', function () {{
+  CURRENT_SORT = this.value;
+  applySort();
+}});
+fetch('data/chips.json').then(function (r) {{ return r.json(); }}).then(function (data) {{
+  var all = (data.tabs.all_buy || []).concat(data.tabs.all_sell || []);
+  all.forEach(function (p) {{
+    TICKER_MAP[p.ticker] = {{
+      three_5d: p.three_5d_shares,
+      three_5d_twd: p.three_5d_twd || 0,
+      f_5d: p.f_5d_shares,
+      t_5d: p.t_5d_shares,
+      d_5d: p.d_5d_shares,
+      streak: p.f_streak || 0,
+      volume: Math.abs(p.three_5d_shares)  // 暫用 3 法人合計估
+    }};
+  }});
+  // 加 card data-ticker (給排序用)
+  document.querySelectorAll('.tab-content .card').forEach(function (c) {{
+    var t = c.querySelector('.ticker');
+    if (t && !c.getAttribute('data-ticker')) c.setAttribute('data-ticker', t.textContent.trim());
+  }});
+  document.querySelectorAll('.depth-row:not(.depth-head)').forEach(function (r) {{
+    var t = r.querySelector('.dr-t .ticker');
+    if (t && !r.getAttribute('data-ticker')) r.setAttribute('data-ticker', t.textContent.trim());
+  }});
+  // 套當前選的排序
+  if (CURRENT_SORT !== 'default') applySort();
 }});
 </script>
 <script src="assets/textsize.js"></script>
