@@ -117,8 +117,29 @@ footer a { color: var(--acc); }
 .preset-bar button { background: var(--panel2); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 0.78rem; cursor: pointer; font-family: inherit; }
 .preset-bar button:hover { border-color: var(--acc); }
 .preset-bar .danger:hover { color: var(--red); border-color: var(--red); }
-.match-info { margin-left: auto; color: var(--muted); font-size: 0.78rem; }
+.match-info { margin-left: auto; color: var(--muted); font-size: 0.78rem; cursor: pointer; user-select: none; padding: 4px 8px; border-radius: 6px; position: relative; }
+.match-info:hover { background: var(--panel2); }
+.match-info[aria-expanded="true"] { background: var(--panel2); }
 .match-info b { color: var(--acc); }
+.match-info .caret { font-size: 0.65rem; margin-left: 2px; opacity: 0.7; }
+.preview-pop { position: absolute; right: 0; top: calc(100% + 4px); background: var(--panel); border: 1px solid var(--acc); border-radius: 8px; padding: 8px 10px; min-width: 320px; max-width: 480px; z-index: 200; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.preview-head { color: var(--muted); font-size: 0.72rem; font-weight: 600; padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.preview-list { display: flex; flex-direction: column; gap: 4px; }
+.preview-list .row { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; font-size: 0.8rem; }
+.preview-list .row:hover { background: var(--panel2); margin: 0 -6px; padding: 3px 6px; border-radius: 4px; }
+.preview-list .t { color: var(--acc); font-weight: 700; font-family: 'Consolas', monospace; margin-right: 6px; }
+.preview-list .n { color: var(--ink); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-list .m { color: var(--muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.preview-list .more { text-align: center; color: var(--acc); font-size: 0.72rem; padding-top: 4px; border-top: 1px solid var(--border); margin-top: 4px; }
+
+#filter-commit.primary { background: var(--acc); color: #000; border-color: var(--acc); font-weight: 700; padding: 4px 14px; }
+#filter-commit.primary:hover { background: #7dc1ff; }
+#filter-commit.primary[hidden] { display: none; }
+#filter-cancel { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); }
+#filter-cancel:hover { color: var(--ink); }
+#filter-cancel[hidden] { display: none; }
+
+.auto-apply-notice { display: inline-block; margin-left: 8px; color: var(--green); font-size: 0.72rem; padding: 2px 6px; border: 1px solid var(--green-soft); border-radius: 4px; background: rgba(88,214,141,0.08); }
 </style>
 </head>
 <body>
@@ -233,7 +254,15 @@ footer a { color: var(--acc); }
         <button id="preset-load-btn" hidden>📂 載入</button>
         <button id="preset-del" class="danger" hidden>🗑 刪除</button>
         <button id="filter-clear" class="danger">🗑 清除全部</button>
-        <span class="match-info">命中 <b id="match-cnt">0</b> ／ 全部</span>
+        <button id="filter-commit" class="primary" hidden>🚀 套用篩選 <span id="commit-cnt">0</span></button>
+        <button id="filter-cancel" hidden>↩ 取消</button>
+        <div class="match-info" id="match-info" tabindex="0" role="button" aria-expanded="false">
+          命中 <b id="match-cnt">0</b> ／ 全部 <span class="caret">▼</span>
+          <div class="preview-pop" id="preview-pop" hidden>
+            <div class="preview-head" id="preview-head">預覽前 10 檔</div>
+            <div class="preview-list" id="preview-list"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -7420,48 +7449,68 @@ var PRESET_DEFS = {
   force_high:   function(p){ return Math.abs(p.force_ratio||0) >= 1.5; }
 };
 
-// 篩選狀態
-var FILTER = {
-  mode: 'AND',
-  concepts: [],
-  presets: [],
-  industry: '',
-  numerics: []  // [{field, op, value}]
-};
+// 篩選狀態 — PENDING 是使用者正在編輯的，APPLIED 是已套用到卡片的
+var PENDING = { mode: 'AND', concepts: [], presets: [], industry: '', numerics: [] };
+var APPLIED = { mode: 'AND', concepts: [], presets: [], industry: '', numerics: [] };
 var STORAGE_KEY = 'tank-akali-filters-v1';
 
+function cloneFilter(f) { return JSON.parse(JSON.stringify(f)); }
+
 function saveFilter() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(FILTER)); } catch(e) {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(APPLIED)); } catch(e) {}
 }
 function loadFilter() {
   try {
     var s = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
     if (s && typeof s === 'object') {
-      FILTER.mode = s.mode || 'AND';
-      FILTER.concepts = Array.isArray(s.concepts) ? s.concepts : [];
-      FILTER.presets = Array.isArray(s.presets) ? s.presets : [];
-      FILTER.industry = s.industry || '';
-      FILTER.numerics = Array.isArray(s.numerics) ? s.numerics : [];
+      var f = {
+        mode: s.mode || 'AND',
+        concepts: Array.isArray(s.concepts) ? s.concepts : [],
+        presets: Array.isArray(s.presets) ? s.presets : [],
+        industry: s.industry || '',
+        numerics: Array.isArray(s.numerics) ? s.numerics : []
+      };
+      PENDING = cloneFilter(f);
+      APPLIED = cloneFilter(f);
+      return true;
     }
   } catch(e) {}
+  return false;
+}
+function hasAnyConditions(f) {
+  return f.concepts.length > 0 || f.presets.length > 0 || !!f.industry || f.numerics.length > 0;
+}
+function filterEqual(a, b) {
+  if (a.mode !== b.mode) return false;
+  if (a.industry !== b.industry) return false;
+  if (a.concepts.length !== b.concepts.length) return false;
+  if (a.presets.length !== b.presets.length) return false;
+  if (a.numerics.length !== b.numerics.length) return false;
+  for (var i = 0; i < a.concepts.length; i++) if (a.concepts[i] !== b.concepts[i]) return false;
+  for (var i = 0; i < a.presets.length; i++) if (a.presets[i] !== b.presets[i]) return false;
+  for (var i = 0; i < a.numerics.length; i++) {
+    var n1 = a.numerics[i], n2 = b.numerics[i];
+    if (n1.field !== n2.field || n1.op !== n2.op || n1.value !== n2.value) return false;
+  }
+  return true;
 }
 
-function conceptMatch(p) {
-  if (FILTER.concepts.length === 0) return true;
+function conceptMatch(f, p) {
+  if (f.concepts.length === 0) return true;
   var pc = p.concepts || [];
-  return FILTER.concepts.some(function(c){ return pc.indexOf(c) >= 0; });
+  return f.concepts.some(function(c){ return pc.indexOf(c) >= 0; });
 }
-function presetMatch(p) {
-  if (FILTER.presets.length === 0) return true;
-  return FILTER.presets.some(function(k){ return PRESET_DEFS[k] && PRESET_DEFS[k](p); });
+function presetMatch(f, p) {
+  if (f.presets.length === 0) return true;
+  return f.presets.some(function(k){ return PRESET_DEFS[k] && PRESET_DEFS[k](p); });
 }
-function industryMatch(p) {
-  if (!FILTER.industry) return true;
-  return (p.industry_zh || p.industry || '') === FILTER.industry;
+function industryMatch(f, p) {
+  if (!f.industry) return true;
+  return (p.industry_zh || p.industry || '') === f.industry;
 }
-function numericMatch(p) {
-  if (FILTER.numerics.length === 0) return true;
-  return FILTER.numerics.every(function(n){
+function numericMatch(f, p) {
+  if (f.numerics.length === 0) return true;
+  return f.numerics.every(function(n){
     var v = p[n.field];
     if (v === undefined || v === null) return false;
     var x = parseFloat(n.value);
@@ -7475,51 +7524,119 @@ function numericMatch(p) {
     return false;
   });
 }
-
-function applyFilter() {
-  // 只把有設定的條件類型納入計算 (避免 OR 模式下空條件讓全部通過)
+function collectMatchers(f) {
   var conds = [];
-  if (FILTER.concepts.length) conds.push(conceptMatch);
-  if (FILTER.presets.length) conds.push(presetMatch);
-  if (FILTER.industry) conds.push(industryMatch);
-  if (FILTER.numerics.length) conds.push(numericMatch);
-  var hasAny = conds.length > 0;
-  var matched = 0;
-  var total = 0;
+  if (f.concepts.length) conds.push(function(p){ return conceptMatch(f, p); });
+  if (f.presets.length) conds.push(function(p){ return presetMatch(f, p); });
+  if (f.industry) conds.push(function(p){ return industryMatch(f, p); });
+  if (f.numerics.length) conds.push(function(p){ return numericMatch(f, p); });
+  return conds;
+}
+function matches(f, p) {
+  var conds = collectMatchers(f);
+  if (conds.length === 0) return true;
+  return (f.mode === 'AND') ? conds.every(function(c){ return c(p); }) : conds.some(function(c){ return c(p); });
+}
+
+// 把 APPLIED 套到 cards 顯示
+function renderApplied() {
+  var hasAny = hasAnyConditions(APPLIED);
   document.querySelectorAll('.card, .depth-row:not(.depth-head)').forEach(function(r){
-    total++;
     var t = r.getAttribute('data-ticker');
     var p = TICKER_DATA[t];
-    if (!hasAny) { r.style.display = ''; matched++; return; }
+    if (!hasAny) { r.style.display = ''; return; }
     if (!p) { r.style.display = 'none'; return; }
-    var ok = (FILTER.mode === 'AND')
-      ? conds.every(function(f){ return f(p); })
-      : conds.some(function(f){ return f(p); });
-    r.style.display = ok ? '' : 'none';
-    if (ok) matched++;
+    r.style.display = matches(APPLIED, p) ? '' : 'none';
   });
-  document.getElementById('match-cnt').textContent = matched;
-  updateCount();
-  // 套排序 (filter 後)
   if (CURRENT_SORT !== 'default') applySort();
 }
 
-function updateCount() {
-  var n = FILTER.concepts.length + FILTER.presets.length + (FILTER.industry?1:0) + FILTER.numerics.length;
+// 計算 PENDING 命中，更新計數 + 預覽 popup
+function previewFilter() {
+  var hasAny = hasAnyConditions(PENDING);
+  // 1. 算命中（基於 TICKER_DATA 全 1921 檔）
+  var hits = [];
+  Object.keys(TICKER_DATA).forEach(function(t){
+    var p = TICKER_DATA[t];
+    if (!hasAny) { hits.push(p); return; }
+    if (matches(PENDING, p)) hits.push(p);
+  });
+  document.getElementById('match-cnt').textContent = hits.length;
+  // 2. 排序預覽：用 three_5d_twd 由大到小
+  hits.sort(function(a, b){
+    return (b.three_5d_twd || 0) - (a.three_5d_twd || 0);
+  });
+  // 3. 渲染預覽 popup
+  var list = document.getElementById('preview-list');
+  var head = document.getElementById('preview-head');
+  list.innerHTML = '';
+  var top = hits.slice(0, 10);
+  top.forEach(function(p){
+    var row = document.createElement('a');
+    row.className = 'row';
+    row.href = 'analyze/' + p.ticker + '.html';
+    row.target = '_blank';
+    row.style.textDecoration = 'none';
+    var twd = p.three_5d_twd || 0;
+    var twdStr = (twd >= 0 ? '+' : '') + twd.toFixed(2) + ' 億';
+    row.innerHTML = '<span class="t">'+p.ticker+'</span><span class="n">'+p.name+'</span><span class="m">'+twdStr+'</span>';
+    list.appendChild(row);
+  });
+  if (hits.length > 10) {
+    var more = document.createElement('div');
+    more.className = 'more';
+    more.textContent = '…還有 ' + (hits.length - 10) + ' 檔';
+    list.appendChild(more);
+  }
+  head.textContent = hasAny ? '預覽命中 ' + hits.length + ' 檔（前 10）' : '全部 1,921 檔（前 10）';
+  // 4. 同步 UI（chip 視覺 + Go 按鈕顯隱）
+  syncUI();
+}
+
+function syncUI() {
+  var n = PENDING.concepts.length + PENDING.presets.length + (PENDING.industry?1:0) + PENDING.numerics.length;
   var el = document.getElementById('filter-cnt');
   el.textContent = n;
   el.classList.toggle('zero', n === 0);
-  // 同步 UI 狀態
   document.querySelectorAll('.fchip[data-tag="concept"]').forEach(function(b){
-    b.classList.toggle('on', FILTER.concepts.indexOf(b.getAttribute('data-val')) >= 0);
+    b.classList.toggle('on', PENDING.concepts.indexOf(b.getAttribute('data-val')) >= 0);
   });
   document.querySelectorAll('.fchip[data-preset]').forEach(function(b){
-    b.classList.toggle('on', FILTER.presets.indexOf(b.getAttribute('data-preset')) >= 0);
+    b.classList.toggle('on', PENDING.presets.indexOf(b.getAttribute('data-preset')) >= 0);
   });
-  document.getElementById('filter-industry').value = FILTER.industry || '';
+  document.getElementById('filter-industry').value = PENDING.industry || '';
   document.querySelectorAll('#mode-toggle button').forEach(function(b){
-    b.classList.toggle('on', b.getAttribute('data-mode') === FILTER.mode);
+    b.classList.toggle('on', b.getAttribute('data-mode') === PENDING.mode);
   });
+  // Go / Cancel 按鈕：PENDING != APPLIED 才顯示
+  var dirty = !filterEqual(PENDING, APPLIED);
+  var commitBtn = document.getElementById('filter-commit');
+  var cancelBtn = document.getElementById('filter-cancel');
+  commitBtn.hidden = !dirty;
+  cancelBtn.hidden = !dirty;
+  document.getElementById('commit-cnt').textContent = n;
+}
+
+function commitFilter() {
+  APPLIED = cloneFilter(PENDING);
+  saveFilter();
+  renderApplied();
+  syncUI();
+  // 短暫閃爍提示「已套用」
+  var btn = document.getElementById('filter-commit');
+  var orig = btn.innerHTML;
+  btn.innerHTML = '✓ 已套用';
+  setTimeout(function(){ btn.innerHTML = orig; }, 1000);
+}
+
+function cancelPending() {
+  PENDING = cloneFilter(APPLIED);
+  renderAdv();
+  syncUI();
+  previewFilter();
+  // 收合預覽
+  document.getElementById('preview-pop').hidden = true;
+  document.getElementById('match-info').setAttribute('aria-expanded', 'false');
 }
 
 function bindUI() {
@@ -7535,9 +7652,9 @@ function bindUI() {
   document.querySelectorAll('.fchip[data-tag="concept"]').forEach(function(b){
     b.addEventListener('click', function(){
       var v = b.getAttribute('data-val');
-      var i = FILTER.concepts.indexOf(v);
-      if (i >= 0) FILTER.concepts.splice(i, 1); else FILTER.concepts.push(v);
-      applyFilter(); saveFilter();
+      var i = PENDING.concepts.indexOf(v);
+      if (i >= 0) PENDING.concepts.splice(i, 1); else PENDING.concepts.push(v);
+      previewFilter();
     });
   });
 
@@ -7545,23 +7662,23 @@ function bindUI() {
   document.querySelectorAll('.fchip[data-preset]').forEach(function(b){
     b.addEventListener('click', function(){
       var k = b.getAttribute('data-preset');
-      var i = FILTER.presets.indexOf(k);
-      if (i >= 0) FILTER.presets.splice(i, 1); else FILTER.presets.push(k);
-      applyFilter(); saveFilter();
+      var i = PENDING.presets.indexOf(k);
+      if (i >= 0) PENDING.presets.splice(i, 1); else PENDING.presets.push(k);
+      previewFilter();
     });
   });
 
   // 產業 select
   document.getElementById('filter-industry').addEventListener('change', function(){
-    FILTER.industry = this.value;
-    applyFilter(); saveFilter();
+    PENDING.industry = this.value;
+    previewFilter();
   });
 
   // 模式 toggle
   document.querySelectorAll('#mode-toggle button').forEach(function(b){
     b.addEventListener('click', function(){
-      FILTER.mode = b.getAttribute('data-mode');
-      applyFilter(); saveFilter();
+      PENDING.mode = b.getAttribute('data-mode');
+      previewFilter();
     });
   });
 
@@ -7575,15 +7692,38 @@ function bindUI() {
     this.classList.toggle('open', !open);
   });
   document.getElementById('adv-add').addEventListener('click', function(){
-    FILTER.numerics.push({field: NUM_FIELDS[0].id, op: '>', value: 1});
-    renderAdv(); applyFilter(); saveFilter();
+    PENDING.numerics.push({field: NUM_FIELDS[0].id, op: '>', value: 1});
+    renderAdv(); previewFilter();
   });
 
   // 清除
   document.getElementById('filter-clear').addEventListener('click', function(){
-    FILTER.concepts = []; FILTER.presets = []; FILTER.industry = '';
-    FILTER.numerics = []; FILTER.mode = 'AND';
-    renderAdv(); applyFilter(); saveFilter();
+    PENDING.concepts = []; PENDING.presets = []; PENDING.industry = '';
+    PENDING.numerics = []; PENDING.mode = 'AND';
+    APPLIED = cloneFilter(PENDING);
+    saveFilter();
+    renderAdv();
+    renderApplied();
+    previewFilter();
+  });
+
+  // 套用 / 取消
+  document.getElementById('filter-commit').addEventListener('click', commitFilter);
+  document.getElementById('filter-cancel').addEventListener('click', cancelPending);
+
+  // 預覽 popup 切換
+  var matchInfo = document.getElementById('match-info');
+  var pop = document.getElementById('preview-pop');
+  matchInfo.addEventListener('click', function(){
+    var open = !pop.hidden;
+    pop.hidden = open;
+    matchInfo.setAttribute('aria-expanded', open ? 'false' : 'true');
+  });
+  document.addEventListener('click', function(e){
+    if (!pop.hidden && !pop.contains(e.target) && e.target !== matchInfo && !matchInfo.contains(e.target)) {
+      pop.hidden = true;
+      matchInfo.setAttribute('aria-expanded', 'false');
+    }
   });
 
   // 策略儲存
@@ -7591,7 +7731,7 @@ function bindUI() {
     var name = document.getElementById('preset-name').value.trim();
     if (!name) { alert('請輸入策略名稱'); return; }
     var presets = {}; try { presets = JSON.parse(localStorage.getItem('tank-akali-presets-v1') || '{}'); } catch(e) {}
-    presets[name] = JSON.parse(JSON.stringify(FILTER));
+    presets[name] = cloneFilter(APPLIED);
     localStorage.setItem('tank-akali-presets-v1', JSON.stringify(presets));
     renderPresets();
     document.getElementById('preset-name').value = '';
@@ -7602,12 +7742,13 @@ function bindUI() {
     if (!name) return;
     var presets = {}; try { presets = JSON.parse(localStorage.getItem('tank-akali-presets-v1') || '{}'); } catch(e) {}
     if (presets[name]) {
-      FILTER.mode = presets[name].mode || 'AND';
-      FILTER.concepts = presets[name].concepts || [];
-      FILTER.presets = presets[name].presets || [];
-      FILTER.industry = presets[name].industry || '';
-      FILTER.numerics = presets[name].numerics || [];
-      renderAdv(); applyFilter(); saveFilter();
+      var f = presets[name];
+      PENDING = cloneFilter(f);
+      APPLIED = cloneFilter(f);
+      saveFilter();
+      renderAdv();
+      renderApplied();
+      previewFilter();
     }
   });
   document.getElementById('preset-del').addEventListener('click', function(){
@@ -7624,7 +7765,7 @@ function bindUI() {
 function renderAdv() {
   var wrap = document.getElementById('adv-wrap');
   wrap.innerHTML = '';
-  FILTER.numerics.forEach(function(n, i){
+  PENDING.numerics.forEach(function(n, i){
     var row = document.createElement('div');
     row.className = 'adv-cond';
     var sel1 = '<select data-i="'+i+'" data-k="field">';
@@ -7647,16 +7788,16 @@ function renderAdv() {
     el.addEventListener('change', function(){
       var i = parseInt(el.getAttribute('data-i'));
       var k = el.getAttribute('data-k');
-      if (k === 'value') FILTER.numerics[i][k] = parseFloat(el.value) || 0;
-      else FILTER.numerics[i][k] = el.value;
-      applyFilter(); saveFilter();
+      if (k === 'value') PENDING.numerics[i][k] = parseFloat(el.value) || 0;
+      else PENDING.numerics[i][k] = el.value;
+      previewFilter();
     });
   });
   wrap.querySelectorAll('.del').forEach(function(b){
     b.addEventListener('click', function(){
       var i = parseInt(b.getAttribute('data-i'));
-      FILTER.numerics.splice(i, 1);
-      renderAdv(); applyFilter(); saveFilter();
+      PENDING.numerics.splice(i, 1);
+      renderAdv(); previewFilter();
     });
   });
 }
@@ -7689,6 +7830,15 @@ function buildIndustryList() {
   });
 }
 
+function showAutoApplyNotice(n) {
+  if (n > 0) {
+    var hint = document.getElementById('filter-hint');
+    if (hint) {
+      hint.innerHTML = '<span class="auto-apply-notice">已自動套用上次 ' + n + ' 個條件</span>';
+    }
+  }
+}
+
 fetch('data/chips.json').then(function (r) { return r.json(); }).then(function (data) {
   var all = (data.tabs.all_buy || []).concat(data.tabs.all_sell || []);
   all.forEach(function (p) {
@@ -7699,12 +7849,10 @@ fetch('data/chips.json').then(function (r) { return r.json(); }).then(function (
       t_5d: p.t_5d_shares,
       d_5d: p.d_5d_shares,
       streak: p.f_streak || 0,
-      volume: Math.abs(p.three_5d_shares)  // 暫用 3 法人合計估
+      volume: Math.abs(p.three_5d_shares)
     };
-    // D032: 存完整資料
     TICKER_DATA[p.ticker] = p;
   });
-  // 加 card data-ticker (給排序用)
   document.querySelectorAll('.tab-content .card').forEach(function (c) {
     var t = c.querySelector('.ticker');
     if (t && !c.getAttribute('data-ticker')) c.setAttribute('data-ticker', t.textContent.trim());
@@ -7713,15 +7861,20 @@ fetch('data/chips.json').then(function (r) { return r.json(); }).then(function (
     var t = r.querySelector('.dr-t .ticker');
     if (t && !r.getAttribute('data-ticker')) r.setAttribute('data-ticker', t.textContent.trim());
   });
-  // D032: 初始化篩選
-  loadFilter();
+  // 載入 localStorage (PENDING + APPLIED 同步)
+  var loaded = loadFilter();
+  var nApplied = APPLIED.concepts.length + APPLIED.presets.length + (APPLIED.industry?1:0) + APPLIED.numerics.length;
   buildIndustryList();
   renderAdv();
   renderPresets();
   bindUI();
-  updateCount();
-  applyFilter();
-  // 套當前選的排序 (在 filter 後)
+  // 1. 先把 APPLIED 套到卡片
+  renderApplied();
+  // 2. 預覽（命中計數 + popup）
+  previewFilter();
+  // 3. 自動套用提示
+  if (loaded) showAutoApplyNotice(nApplied);
+  // 套當前選的排序
   if (CURRENT_SORT !== 'default') applySort();
 });
 </script>
