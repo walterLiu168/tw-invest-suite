@@ -352,7 +352,17 @@ footer a { color: var(--acc); }
   <span>→ 命中 <b id="sum-cnt">0</b> 檔</span>
   <div class="actions">
     <button id="sum-edit">✏️ 編輯條件</button>
-    <button id="sum-change" class="danger">🔄 換一組</button>
+    <button id="sum-reshuffle" class="primary">🔄 換一組</button>
+    <button id="sum-save" class="success">💾 存策略</button>
+  </div>
+</div>
+<div class="wizard-actions" id="wizard-actions" hidden>
+  <div class="intention-bar">
+    <span class="ilabel">🎯 您的意圖:</span>
+    <span id="sum-intention">🚀</span>
+  </div>
+  <div class="wizard-actions-row">
+    <button id="wiz-reshuffle" class="danger">🔄 換一組</button>
   </div>
 </div>
 
@@ -7604,11 +7614,19 @@ function applySort() {
     var grid = content.querySelector('.grid, .depth-table');
     if (!grid) return;
     var rows = Array.prototype.slice.call(grid.querySelectorAll('.card, .depth-row:not(.depth-head)'));
-    rows.sort(function (a, b) {
-      var ta = a.getAttribute('data-ticker') || (a.querySelector('.ticker') ? a.querySelector('.ticker').textContent.trim() : '');
-      var tb = b.getAttribute('data-ticker') || (b.querySelector('.ticker') ? b.querySelector('.ticker').textContent.trim() : '');
-      return (TICKER_MAP[tb] || 0) - (TICKER_MAP[ta] || 0);
-    });
+    if (CURRENT_SORT === 'shuffle') {
+      // D037c: random shuffle
+      for (var i = rows.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var tmp = rows[i]; rows[i] = rows[j]; rows[j] = tmp;
+      }
+    } else {
+      rows.sort(function (a, b) {
+        var ta = a.getAttribute('data-ticker') || (a.querySelector('.ticker') ? a.querySelector('.ticker').textContent.trim() : '');
+        var tb = b.getAttribute('data-ticker') || (b.querySelector('.ticker') ? b.querySelector('.ticker').textContent.trim() : '');
+        return (TICKER_MAP[tb] || 0) - (TICKER_MAP[ta] || 0);
+      });
+    }
     rows.forEach(function (r) { grid.appendChild(r); });
   });
 }
@@ -8746,12 +8764,11 @@ document.getElementById('wiz-next').addEventListener('click', function(){
   if (WIZARD.step < getWizardSteps().length - 1) { WIZARD.step++; renderWizardStep(); }
 });
 document.getElementById('wiz-go').addEventListener('click', function(){
-  // 驗證最後一步
-  if (WIZARD.answers[3] === 'concept' && (!WIZARD.answers[3] || WIZARD.answers[3].length === 0)) {
+  if (WIZARD.answers[3] === 'concept' && (!WIZARD.answers[4] || WIZARD.answers[4].length === 0)) {
     alert('請至少選一個概念');
     return;
   }
-  if (WIZARD.answers[3] === 'industry' && !WIZARD.answers[3]) {
+  if (WIZARD.answers[3] === 'industry' && !WIZARD.answers[4]) {
     alert('請選一個產業');
     return;
   }
@@ -8759,6 +8776,16 @@ document.getElementById('wiz-go').addEventListener('click', function(){
   commitFilter();
   document.getElementById('wizard').hidden = true;
   renderSummary('newbie', PERSONAS.newbie);
+  // D037c: show wizard action panel
+  var style = WIZARD.answers[0] || 'short';
+  var dir = (WIZARD.answers[1] || []).filter(function(d){return d!=='all';});
+  var range = WIZARD.answers[3] || 'all';
+  var sub = WIZARD.answers[4] || '';
+  var STYLE_NAMES = {short:'短線', swing:'波段', long:'長線'};
+  var DIR_NAMES = {long:'偏多', short:'偏空'};
+  var intention = '🚀 ' + STYLE_NAMES[style] + (dir.length?'（'+dir.map(function(d){return DIR_NAMES[d];}).join('+')+'）':'（全）') + ' ‧ ' + (range==='concept'?'概念: '+(Array.isArray(sub)?sub.join('/'):sub):range==='industry'?'產業: '+sub:'全市場');
+  document.getElementById('sum-intention').textContent = intention;
+  document.getElementById('wizard-actions').hidden = false;
 });
 document.getElementById('wiz-cancel').addEventListener('click', function(){
   document.getElementById('wizard').hidden = true;
@@ -8822,20 +8849,7 @@ document.getElementById('sum-edit').addEventListener('click', function(){
   document.getElementById('filter-toggle-btn').setAttribute('aria-expanded', 'true');
   document.getElementById('filter-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
-document.getElementById('sum-change').addEventListener('click', function(){
-  // 取消套用，回到 persona 選擇
-  PENDING = { mode: 'AND', concepts: [], presets: [], industry: '', numerics: [] };
-  APPLIED = cloneFilter(PENDING);
-  saveFilter();
-  document.getElementById('summary-bar').hidden = true;
-  document.getElementById('persona-q').hidden = true;
-  document.getElementById('wizard').hidden = true;
-  ACTIVE_PERSONA = null;
-  document.querySelectorAll('.persona-card').forEach(function(c){ c.classList.remove('active'); });
-  renderApplied();
-  previewFilter();
-  document.querySelector('.persona-row').scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
+
 
 // ========== Persona 卡片點擊綁定 ==========
 document.querySelectorAll('.persona-card').forEach(function(card){
@@ -8902,7 +8916,63 @@ document.querySelectorAll('.persona-card').forEach(function(card){
     tryApply();
   } catch(e) { console.warn('D035 auto-apply skipped:', e); }
 })();
+// D037c: wizard action handlers (moved from dead zone to main script)
+document.getElementById('sum-reshuffle').addEventListener('click', function() {
+  CURRENT_SORT = 'shuffle';
+  applySort();
+});
+document.getElementById('wiz-reshuffle').addEventListener('click', function() {
+  CURRENT_SORT = 'shuffle';
+  applySort();
+});
+document.getElementById('sum-save').addEventListener('click', function() {
+  var name = prompt('結緣包名稱 (下次一鍩套用):', '策略 ' + new Date().toLocaleDateString());
+  if (!name) return;
+  try {
+    var saved = JSON.parse(localStorage.getItem('tank-akali-saved-strategies') || '[]');
+    saved.push({name: name, filter: PENDING, ts: Date.now()});
+    localStorage.setItem('tank-akali-saved-strategies', JSON.stringify(saved));
+    alert('已存: ' + name + ' (全部 ' + saved.length + ' 個策略)');
+  } catch(e) { alert('存檔失敗: ' + e.message); }
+});
+document.getElementById('sum-edit').addEventListener('click', function() {
+  document.getElementById('filter-toggle-btn').click();
+  setTimeout(function() {
+    document.getElementById('filter-panel').scrollIntoView({behavior:'smooth', block:'center'});
+  }, 200);
+});
+
 </script>
+
+// D037c: wizard action handlers
+document.getElementById('sum-reshuffle').addEventListener('click', function() {
+  // 隨機排序影片排列
+  CURRENT_SORT = 'shuffle';
+  applySort();
+});
+document.getElementById('sum-save').addEventListener('click', function() {
+  var name = prompt('結緣包名稱 (下次一鍩套用):', '策略 ' + new Date().toLocaleDateString());
+  if (!name) return;
+  try {
+    var saved = JSON.parse(localStorage.getItem('tank-akali-saved-strategies') || '[]');
+    saved.push({name: name, filter: PENDING, ts: Date.now()});
+    localStorage.setItem('tank-akali-saved-strategies', JSON.stringify(saved));
+    alert('已存: ' + name + ' (全部 ' + saved.length + ' 個策略)');
+  }
+
+// D037c: wizard 換一組
+document.getElementById('wiz-reshuffle').addEventListener('click', function() {
+  CURRENT_SORT = 'shuffle';
+  applySort();
+});
+ catch(e) { alert('存檔失敗: ' + e.message); }
+});
+document.getElementById('sum-edit').addEventListener('click', function() {
+  document.getElementById('filter-toggle-btn').click();
+  setTimeout(function() {
+    document.getElementById('filter-panel').scrollIntoView({behavior:'smooth', block:'center'});
+  }, 200);
+});
 
 <script src="assets/textsize.js">
 (function() {
