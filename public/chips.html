@@ -317,7 +317,30 @@ footer a { color: var(--acc); }
       <div class="icon">🆕</div>
       <div class="name">我是新手</div>
       <div class="desc">3 步驟引導</div>
-    </button>
+  <div class="persona-row-ws" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);">
+    <div style="font-size:0.7rem;color:var(--muted);margin-bottom:4px;">📊 Wall Street 經典策略</div>
+    <div class="persona-row-inner" style="grid-template-columns:repeat(4,1fr);gap:6px;">
+      <button class="persona-card" data-persona="ws_aqr">
+        <div class="icon">📈</div>
+        <div class="name">AQR 偵優勢</div>
+        <div class="desc">低估值+動能</div>
+      </button>
+      <button class="persona-card" data-persona="ws_jt">
+        <div class="icon">🎯</div>
+        <div class="name">JT 動能王</div>
+        <div class="desc">跨檔相對強勢</div>
+      </button>
+      <button class="persona-card" data-persona="ws_mr">
+        <div class="icon">🔄</div>
+        <div class="name">跌深反彈</div>
+        <div class="desc">5日賣+20日買</div>
+      </button>
+      <button class="persona-card" data-persona="ws_qm">
+        <div class="icon">💎</div>
+        <div class="name">法人鎖碼</div>
+        <div class="desc">重量級+融資穩</div>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -8225,15 +8248,18 @@ var PERSONAS = {
   same_sell:   { name: '空方避雷', presets: ['same_sell', 'streak3_sell'], conds: ['同賣', '連賣 3 天'] },
   value:       { name: '金融存股', presets: ['streak3'], industries: ['金融保險', '食品工業', '油電燃氣業'], conds: ['金融/食品/油電', '連買 3 天'] },
   weak:        { name: '弱勢退場', presets: ['streak3_sell', 'force_low'], conds: ['連賣 3 天', '力道 ≤ -1.0×'] },
-  newbie:      { name: '新手精靈', isWizard: true, conds: ['3 步驟引導'] }
+  newbie:      { name: '新手精靈', isWizard: true, conds: ['3 步頓引導'] },
+  // ===== D037b: Wall Street 經典策略 =====
+  ws_aqr: { name: 'AQR 雙優勢', desc: '低估值+動能' },
+  ws_jt:  { name: 'JT 動能王', desc: '跨檔相對強勢' },
+  ws_mr:  { name: '跌深反彈', desc: '5 日賣+20 日買' },
+  ws_qm:  { name: '法人鎖碼', desc: '重量級+融資穩' }
 };
-
 var ACTIVE_PERSONA = null;
 
 // D035: cross-page persona sync (apply)
 function applyPersonaDirect(key) {
   try { localStorage.setItem('tank-akali-active-persona-v1', key); } catch(e){}
-  // 1-click 套用：直接 commit
   var p = PERSONAS[key];
   if (!p || p.isWizard) return;
   var pending = {
@@ -8243,15 +8269,37 @@ function applyPersonaDirect(key) {
     industry: (p.industries && p.industries.length === 1) ? p.industries[0] : '',
     numerics: []
   };
-  // 多 industry 處理：用首個當 industry，其他加概念篩選（暫時僅首個，後續可改用 in-list）
-  if (p.industries && p.industries.length > 1) {
+  // D037b: Wall Street strategies use numerics + presets
+  if (key === 'ws_aqr') {
+    pending.presets = ['streak3'];
+    pending.numerics = [
+      {field:'force_ratio', op:'>=', value:1.2},
+      {field:'cost_gap_pct', op:'<=', value:0}
+    ];
+  } else if (key === 'ws_jt') {
+    pending.presets = ['streak3'];
+    pending.numerics = [
+      {field:'force_ratio', op:'>=', value:1.0},
+      {field:'f_5d_twd', op:'>', value:0}
+    ];
+  } else if (key === 'ws_mr') {
+    pending.numerics = [
+      {field:'f_5d_shares', op:'<=', value:0},
+      {field:'f_20d_shares', op:'>', value:0}
+    ];
+  } else if (key === 'ws_qm') {
+    pending.presets = ['streak3'];
+    pending.numerics = [
+      {field:'f_streak', op:'>=', value:5},
+      {field:'margin_change', op:'>=', value:0},
+      {field:'f_5d_twd', op:'>=', value:1}
+    ];
+  } else if (p.industries && p.industries.length > 1) {
     pending.industry = p.industries[0];
-    // 提示：產業多於 1 個時只套第一個，提示用 D032 我的篩選進階
   }
   PENDING = pending;
   ACTIVE_PERSONA = key;
   commitFilter();
-  // 隱藏展開區 + 更新 summary
   document.getElementById('persona-q').hidden = true;
   document.getElementById('wizard').hidden = true;
   document.querySelectorAll('.persona-card').forEach(function(c){
