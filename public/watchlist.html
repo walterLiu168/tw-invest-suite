@@ -2053,6 +2053,7 @@ function presetMatch(p, presets) {
 function applyPersona(key) {
   var persona = PERSONAS[key];
   if (!persona) return;
+  try { localStorage.setItem('tank-akali-active-persona-v1', key); } catch(e){}
   ACTIVE_PERSONA = key;
   // Update persona card active state
   document.querySelectorAll('.persona-card').forEach(function(c){
@@ -2088,6 +2089,7 @@ function applyPersona(key) {
 }
 
 function resetPersona() {
+  try { localStorage.removeItem('tank-akali-active-persona-v1'); } catch(e){}
   ACTIVE_PERSONA = null;
   document.querySelectorAll('.persona-card').forEach(function(c){ c.classList.remove('active'); });
   document.getElementById('summary-w').hidden = true;
@@ -2098,7 +2100,8 @@ document.querySelectorAll('.persona-card').forEach(function(card){
   card.addEventListener('click', function(){
     var key = card.getAttribute('data-persona');
     if (key === 'newbie') {
-      // 對新手，引導到 chips.html 跑 wizard
+      // 對新手：先記錄意圖，跳到 chips.html 跑 wizard
+      try { localStorage.setItem('tank-akali-active-persona-v1', 'newbie'); } catch(e){}
       window.location.href = 'chips.html#wizard';
       return;
     }
@@ -2117,6 +2120,23 @@ fetch('data/chips.json').then(function(r){ return r.json(); }).then(function(dat
   var all = (data.tabs.all_buy || []).concat(data.tabs.all_sell || []);
   all.forEach(function(p){ CHIPS_DATA[p.ticker] = p; });
 }).catch(function(){ /* ignore */ });
+
+// D035 auto-apply hook
+(function() {
+  try {
+    var saved = localStorage.getItem('tank-akali-active-persona-v1');
+    if (!saved) return;
+    if (!PERSONAS[saved]) return;
+    if (saved === 'newbie') { window.location.href = 'chips.html#wizard'; return; }
+    var tryApply = function() {
+      if (typeof CHIPS_DATA === 'undefined') return setTimeout(tryApply, 200);
+      // Only auto-apply if no persona currently active
+      if (ACTIVE_PERSONA) return;
+      applyPersona(saved);
+    };
+    tryApply();
+  } catch(e) { console.warn('D035 auto-apply skipped:', e); }
+})();
 </script>
 </body>
 <script src="assets/textsize.js"></script>
