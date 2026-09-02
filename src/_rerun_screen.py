@@ -6,7 +6,16 @@ import sys
 from datetime import date, datetime
 
 DB = dict(host='localhost', user='root', password='1234', database='tw_elec')
-TARGET = '2026-08-31'
+
+# Get latest date
+_conn = pymysql.connect(**DB)
+_cur = _conn.cursor()
+_cur.execute('SELECT MAX(Date) FROM daily_data2_full')
+TARGET = _cur.fetchone()[0].isoformat()
+_cur.execute('SELECT MAX(id) FROM market_screen_runs')
+RUN_ID = _cur.fetchone()[0]
+_conn.close()
+print(f'Target: {TARGET}, run_id: {RUN_ID}')
 
 conn = pymysql.connect(**DB)
 cur = conn.cursor()
@@ -92,8 +101,8 @@ for i, (horizon, t) in enumerate(picks):
     cur.execute('''INSERT INTO market_screen_picks
                    (id, run_id, ticker, name, industry, horizon, bucket, close_at_pick, change_pct,
                     volume, market_cap, excess_return_60d, excess_return_240d, score, rationale, status)
-                   VALUES (%s, 2, %s, %s, %s, %s, %s, %s, %s, 0, 0, 0, 0, %s, %s, 'active')''',
-                (pick_id, t['ticker'], t['name'], ticker_industry.get(t['ticker'], ''),
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 0, 0, 0, %s, %s, 'active')''',
+                (pick_id, RUN_ID, t['ticker'], t['name'], ticker_industry.get(t['ticker'], ''),
                  'long' if horizon == 'long' else 'short',
                  t['bucket'], t['close'], t['pct'],
                  round(min(99, max(0, (t['long_score'] if horizon == 'long' else t['short_score']) / 1000.0)), 2),
