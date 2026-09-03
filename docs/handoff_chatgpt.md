@@ -184,6 +184,18 @@ Order (新手精靈 first, then by direction):
 
 ---
 
+## 15. ChatGPT-Mavis Debug Workflow (D049-D050)
+
+- `docs/chatgpt_debug/README.md` — workflow 規範
+- `docs/chatgpt_debug/2026-09-03-01-full-project-review.md` — 第一輪 6 findings
+- `scripts/chatgpt_browser_reviewer.py` — Mavis 自動跑 (Playwright + Chrome)
+  - 第一次 user 手動登入 chatgpt.com
+  - 之後 session 保留自動 prompt + 讀 response + 寫 MD
+  - 不用 OpenAI API key（用 user ChatGPT 訂閱）
+  - 在 `C:\Users\icemo\.mavis\chatgpt_profile` 存 session
+
+---
+
 ## 10. Reusable Scripts (git-committed to `src/`)
 
 | File | Purpose |
