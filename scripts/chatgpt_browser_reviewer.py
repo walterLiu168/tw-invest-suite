@@ -1,17 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-chatgpt_browser_reviewer.py — D050b
+chatgpt_browser_reviewer.py — D050b (D051a hardened)
 Mavis ↔ ChatGPT via Playwright browser automation. 每次 commit 完：
   1. 開 Chrome with persistent user-data-dir (保留 ChatGPT 登入 session)
   2. 自動 navigate 到 chatgpt.com
   3. 自動把 prompt 填入新對話 textarea
-  4. submit (按 Enter)
+  4. submit (按 Enter) + 確認 composer 已清空
   5. 等 response 完成
   6. 複製 response → 寫 MD 到 docs/chatgpt_debug/
   7. status=pending 給 Mavis 下次對話 implement
 
 需要 user 一次手動登入 chatgpt.com（session cookie 會存到 profile dir）。
+
+# Security notes (added D051a)
+- chatgpt_profile = C:\\Users\\icemo\\.mavis\\chatgpt_profile
+  This is sensitive local auth state (active ChatGPT session cookies).
+  Do NOT sync/backup, do NOT commit, do NOT share the profile dir.
+- --no-sandbox / --disable-blink-features=AutomationControlled are
+  currently used because of the Windows container / headless
+  automation environment. This is a known trade-off; revisit if
+  running on a real workstation.
+- ChatGPT Web UI selectors are NOT a stable API contract. If ChatGPT
+  changes its DOM, this script will silently break.
 """
 import os
 import sys
@@ -59,8 +70,12 @@ def get_diff(commit):
     return stat, diff
 
 
-def build_prompt(short_sha, subject, stat, diff):
-    return f"""你是 ChatGPT，幫我 review 一個台股分析平台 (tw-invest-suite) 的 commit。
+def build_prompt(short_sha, subject, stat, diff, marker):
+    # marker is the first line so submit-success verification can grep
+    # for it in the composer before sending (F4).
+    return f"""{marker}
+
+你是 ChatGPT，幫我 review 一個台股分析平台 (tw-invest-suite) 的 commit。
 
 # Context
 - Project: C:\\Users\\icemo\\Projects\\tw-invest-suite
@@ -116,8 +131,11 @@ def next_seq():
 
 def run_with_chrome(commit_sha, short_sha, subject, stat, diff, browser_path):
     """Use Playwright with system Chrome (or Edge) + persistent profile."""
-    prompt = build_prompt(short_sha, subject, stat, diff)
+    # F4: unique marker so we can verify insert+submit via DOM grep
+    marker = f"Review-ID: {short_sha}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    prompt = build_prompt(short_sha, subject, stat, diff, marker)
     print(f"[chatgpt] opening {browser_path} with profile {PROFILE_DIR}")
+    print(f"[chatgpt] {marker}")
     with sync_playwright() as p:
         # launch_persistent_context keeps the user-data-dir between runs.
         browser = p.chromium.launch_persistent_context(
@@ -131,36 +149,85 @@ def run_with_chrome(commit_sha, short_sha, subject, stat, diff, browser_path):
             ],
             viewport={"width": 1280, "height": 800},
         )
-        # If first time (no login), prompt user to log in manually
         page = browser.pages[0] if browser.pages else browser.new_page()
+        # F1: real URL, not Markdown link. ?model=auto is unreliable
+        # UI routing detail; root is enough — ChatGPT will pick its default.
         page.goto("https://chatgpt.com/", wait_until="domcontentloaded", timeout=30000)
-        # Check if logged in
         time.sleep(3)
-        if "login" in page.url.lower() or "auth" in page.url.lower():
+
+        # F2: chat-ready (composer visible) is the primary login signal,
+        # NOT the URL. URL-based check is unreliable.
+        def is_chat_ready():
+            return page.locator("#prompt-textarea").count() > 0
+
+        if not is_chat_ready():
             print("\n[chatgpt] NOT LOGGED IN. Please log in to chatgpt.com in the browser window.")
-            print("[chatgpt] After login, the script will continue automatically (press Enter in this terminal).")
-            input("[chatgpt] Press Enter here when logged in...")
-        # Navigate to fresh chat
-        page.goto("https://chatgpt.com/?model=auto", wait_until="domcontentloaded", timeout=30000)
-        time.sleep(2)
+            print("[chatgpt] Once logged in (chat UI visible with prompt box), this script will auto-continue.")
+            print(f"[chatgpt] {marker}")
+            print("[chatgpt] Polling every 5s...")
+            for i in range(60):
+                time.sleep(5)
+                if is_chat_ready():
+                    print(f"[chatgpt] login detected after {(i+1)*5}s, reloading chat for clean composer...")
+                    # F2: re-navigate to ensure a clean composer after manual login
+                    page.goto("https://chatgpt.com/", wait_until="domcontentloaded", timeout=30000)
+                    time.sleep(2)
+                    if not is_chat_ready():
+                        print(f"[chatgpt] WARN: composer not visible after reload, aborting")
+                        browser.close()
+                        return None
+                    break
+                if (i+1) % 6 == 0:
+                    print(f"[chatgpt]   still waiting... ({(i+1)*5}s)")
+            else:
+                print("[chatgpt] timeout: 5 min, no login detected. Aborting.")
+                browser.close()
+                return None
+
         # Find the prompt textarea
-        # New ChatGPT UI uses contenteditable div with id="prompt-textarea"
         try:
-            page.wait_for_selector("#prompt-textarea", timeout=10000)
+            page.wait_for_selector("#prompt-textarea", timeout=15000)
             page.click("#prompt-textarea")
         except Exception:
             try:
                 page.wait_for_selector("[contenteditable='true']", timeout=10000)
                 page.click("[contenteditable='true']")
             except Exception as e:
-                print(f"ERROR: could not find prompt textarea: {e}")
+                print(f"ERROR: could not find prompt textarea after login: {e}")
                 browser.close()
                 return None
         # Type prompt (use insertText for contenteditable)
         page.keyboard.insert_text(prompt)
         time.sleep(1)
+        # F4: verify the marker actually landed in the composer before
+        # we even try to submit. If it didn't, Enter would silently fail.
+        try:
+            composer_before = page.eval_on_selector(
+                "#prompt-textarea", "el => el.innerText || el.textContent || ''")
+        except Exception:
+            composer_before = ""
+        if marker not in composer_before:
+            print(f"ERROR: marker not in composer (insert failed). aborting.")
+            browser.close()
+            return None
+        print(f"[chatgpt] prompt inserted ({len(prompt)} chars, marker OK)")
         # Submit (press Enter)
         page.keyboard.press("Enter")
+        # F4: confirm submit by polling composer to clear (≤20s)
+        submitted = False
+        for j in range(10):
+            time.sleep(2)
+            try:
+                composer_after = page.eval_on_selector(
+                    "#prompt-textarea", "el => el.innerText || el.textContent || ''")
+            except Exception:
+                composer_after = ""
+            if not composer_after.strip():
+                print(f"[chatgpt] submit confirmed (composer cleared after {(j+1)*2}s)")
+                submitted = True
+                break
+        if not submitted:
+            print(f"[chatgpt] WARN: composer not cleared after 20s, submit may have failed")
         print("[chatgpt] prompt sent, waiting for response...")
         # Wait for response to complete
         # Strategy: wait for "Regenerate" button or stop button to disappear
