@@ -21,12 +21,13 @@
 
 ---
 
-## 2. User Profile (婕渝 — the owner)
+## 2. User Profile (Walter Liu — the owner)
 
-- 房仲 (real estate agent) — 張婕渝 / 住商不動產元生國小加盟店 / 0980.715.221
+- **Walter Liu** (GitHub: `walterLiu168`)
 - **繁體中文** only — no simplified, use 「／」 not `/`
 - Prefers direct, concise, businesslike communication
-- Cares about: data freshness daily, web auto-deploy, accurate 8/31 收盤 numbers
+- Cares about: data freshness daily, web auto-deploy, accurate 收盤 numbers
+- Domain: GitHub Pages (`walterliu168.github.io/tw-invest-suite`) + groovelab.dev (Cloudflare Tunnel)
 
 ---
 
@@ -222,7 +223,7 @@ Then sanity check:
 - Open https://walterliu168.github.io/tw-invest-suite/watchlist.html — 24 picks
 
 User profile:
-- 房仲 張婕渝 / 住商不動產元生國小加盟店
+- Walter Liu (GitHub walterLiu168)
 - 繁體中文 only
 - Prefers direct, concise communication
 
@@ -298,7 +299,7 @@ python _rerun_screen.py
 ---
 
 **Remember**:
-- 婕渝 wants daily 8/31 (or latest trading day) data ready by 10pm
+- Walter wants daily latest trading day data ready by 10pm
 - Wizard 3-step + 16 persona cards + 拿掉我的篩選 = current chips.html design
 - Watch for: chips.html working but watcher/crons breaking
 - Always sync Groove-Lab + GitHub Pages after chips.html change
