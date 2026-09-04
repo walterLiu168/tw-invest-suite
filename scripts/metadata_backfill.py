@@ -125,54 +125,67 @@ def insert_staging(cur, run_id, rows):
              row.get("stock_name"), row.get("industry_category"),
              row.get("type"), row.get("date"))
             for row in rows]
-    cur.executemany("""INSERT INTO metadata_staging
+    # INSERT IGNORE: if the (run_id, ticker, source_date, industry_category, type,
+    # stock_name) tuple already exists from a previous run, skip. This prevents
+    # the staging table from accumulating duplicates on every recurring run.
+    cur.executemany("""INSERT IGNORE INTO metadata_staging
                        (run_id, fetched_at, source, ticker, stock_name,
                         industry_category, type, source_date)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""", vals)
-    return len(vals)
+    return cur.rowcount
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--batch", help="comma-separated ticker allowlist (e.g. 3485,4195)")
-    ap.add_argument("--all", action="store_true", help="process all twse/tpex 普通股")
     ap.add_argument("--dry-run", action="store_true", help="no DB writes")
     ap.add_argument("--run-id", default=date.today().isoformat() + "-" + str(int(time.time())))
     args = ap.parse_args()
 
-    if not args.batch and not args.all:
-        print("ERROR: must pass --batch=... or --all", file=sys.stderr)
+    if not args.batch:
+        print("ERROR: must pass --batch=... (full-universe not approved yet, see D052c review)", file=sys.stderr)
         sys.exit(2)
 
-    allowlist = None
-    if args.batch:
-        allowlist = {t.strip() for t in args.batch.split(",") if t.strip()}
-        print(f"[metadata-backfill] run_id={args.run_id} mode=batch size={len(allowlist)}")
-    else:
-        print(f"[metadata-backfill] run_id={args.run_id} mode=all")
+    allowlist = {t.strip() for t in args.batch.split(",") if t.strip()}
+    print(f"[metadata-backfill] run_id={args.run_id} mode=batch size={len(allowlist)}")
 
     # ---- Pre-load existing state (idempotency for recurring runs) ----
-    # Skip tickers that are already resolved: either already in industry_type
-    # (promoted) or already in metadata_quarantine with resolved_at IS NULL
-    # (still pending review). This prevents the staging/quarantine tables from
-    # accumulating duplicate rows on every recurring run.
+    # 1. Skip tickers already in industry_type (already promoted)
+    # 2. Skip tickers with an OPEN quarantine row with the same event
+    #    fingerprint (ticker + source_date + reason) — re-running with the
+    #    same FinMind state must not re-insert duplicates.
+    # 3. New event fingerprints (e.g. reason text changed, or new FinMind
+    #    industry_category on a new source_date) WILL create a new row — this
+    #    is intentional so the audit trail captures changes over time.
     conn = pymysql.connect(**DB)
     cur = conn.cursor()
     ensure_tables(cur)
     conn.commit()
     cur.execute("SELECT ticker FROM industry_type")
     already_promoted = {r[0] for r in cur.fetchall()}
-    cur.execute("SELECT DISTINCT ticker FROM metadata_quarantine WHERE resolved_at IS NULL")
-    already_quarantined = {r[0] for r in cur.fetchall()}
+    # Open quarantine fingerprints
+    cur.execute("""SELECT ticker, source_date, reason FROM metadata_quarantine
+                   WHERE resolved_at IS NULL""")
+    # Normalize source_date to ISO string for fingerprint comparison
+    # (MySQL returns datetime.date, new code uses ISO string — must match)
+    open_fingerprints = {
+        (r[0], r[1].isoformat() if hasattr(r[1], "isoformat") else str(r[1]), r[2])
+        for r in cur.fetchall()
+    }
     conn.close()
-    if allowlist is not None:
-        skipped = sorted(t for t in allowlist if t in already_promoted or t in already_quarantined)
-        if skipped:
-            print(f"[metadata-backfill] skipping {len(skipped)} already-resolved tickers: {skipped}")
-            allowlist -= set(skipped)
-            if not allowlist:
-                print("[metadata-backfill] all allowlist tickers already resolved. nothing to do.")
-                return 0
+    # Apply per-ticker skip: already in industry_type → skip entirely
+    skipped = sorted(t for t in allowlist if t in already_promoted)
+    if skipped:
+        print(f"[metadata-backfill] skipping {len(skipped)} already-promoted tickers: {skipped}")
+        allowlist -= set(skipped)
+        if not allowlist:
+            print("[metadata-backfill] all allowlist tickers already promoted. nothing to do.")
+            return 0
+    # For tickers already in OPEN quarantine: keep them in allowlist so the
+    # new run re-validates against fresh FinMind data. If the new run produces
+    # a DIFFERENT reason (e.g. multi-category now resolves to single), it will
+    # INSERT a new row. If the SAME fingerprint, the insert step below will
+    # skip. Net effect: per-event idempotency, not per-ticker.
 
     print(f"[metadata-backfill] fetching FinMind {DATASET}...")
     rows = fetch_finmind()
@@ -204,13 +217,15 @@ def main():
     if dropped:
         print(f"[metadata-backfill] dropped {dropped} rows with type not in (twse, tpex)")
 
-    # Apply allowlist if --batch
-    if allowlist is not None:
-        on_date = [r for r in on_date if r["stock_id"] in allowlist]
-        missing = allowlist - {r["stock_id"] for r in on_date}
-        if missing:
-            print(f"[metadata-backfill] WARN: {len(missing)} allowlist tickers absent on current_date: {sorted(missing)}")
-        print(f"[metadata-backfill] after allowlist filter: {len(on_date)} rows")
+    # Apply allowlist (--batch is required)
+    on_date = [r for r in on_date if r["stock_id"] in allowlist]
+    print(f"[metadata-backfill] after allowlist filter: {len(on_date)} rows")
+
+    # Identify allowlist tickers absent from current_date FinMind data
+    # → per strict Q3 rule, these go to QUARANTINE (not just WARN), so that
+    # the missing universe is auditable and not silently dropped.
+    found = {r["stock_id"] for r in on_date}
+    absent = sorted(allowlist - found)
 
     # Per-ticker grouping on current_date
     by_ticker = defaultdict(list)
@@ -220,12 +235,18 @@ def main():
     promote = []  # [(ticker, stock_name, industry_category, type, source_date)]
     quarantine = []  # [(ticker, stock_name, type, source_date, candidate_categories, reason)]
 
+    # Handle absent tickers first (per Q3 strict: missing → quarantine)
+    for ticker in absent:
+        quarantine.append((ticker, None, None, current_date, [],
+                          f"allowlist ticker absent from FinMind on current_date ({current_date})"))
+
     for ticker in sorted(by_ticker):
         rows_t = by_ticker[ticker]
-        types = {r["type"] for r in rows_t if r.get("type")}
+        # NOTE: row-level type filter already dropped non-(twse/tpex) rows above,
+        # so we do NOT need a per-ticker type check here. All rows in by_ticker
+        # are known to be twse/tpex.
         names = {r["stock_name"] for r in rows_t if r.get("stock_name")}
         cats = {r["industry_category"] for r in rows_t if r.get("industry_category")}
-        # Use any row for type/name/date (all should be same ticker on same date)
         any_row = rows_t[0]
         type_v = any_row.get("type") or ""
         name_v = next(iter(names), None)
@@ -235,10 +256,6 @@ def main():
         if not name_v or not cats:
             quarantine.append((ticker, name_v, type_v, date_v, sorted(cats),
                               f"missing required field (name={name_v}, cats={cats})"))
-            continue
-        if not (types & {"twse", "tpex"}):
-            quarantine.append((ticker, name_v, type_v, date_v, sorted(cats),
-                              f"type not in (twse, tpex): {types}"))
             continue
         # ETF/ETN/warrant name check
         etf_hit = [kw for kw in ETF_KEYWORDS if kw in name_v]
@@ -293,16 +310,23 @@ def main():
                             (ticker, name, cat))
             print(f"[metadata-backfill] promoted {len(promote)} tickers to industry_type")
 
-        # 3. Quarantine
+        # 3. Quarantine (event-fingerprint dedup: skip if same ticker+date+reason open)
         if quarantine:
+            inserted = 0
+            skipped_dup = 0
             for ticker, name, ty, src_date, cats, reason in quarantine:
+                fp = (ticker, src_date, reason)
+                if fp in open_fingerprints:
+                    skipped_dup += 1
+                    continue
                 cur.execute("""INSERT INTO metadata_quarantine
                                (run_id, inserted_at, ticker, stock_name, type, source_date,
                                 candidate_categories, reason)
                                VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s)""",
                             (args.run_id, ticker, name, ty, src_date,
                              json.dumps(cats, ensure_ascii=False), reason))
-            print(f"[metadata-backfill] quarantined {len(quarantine)} tickers")
+                inserted += 1
+            print(f"[metadata-backfill] quarantined {inserted} tickers ({skipped_dup} skipped as duplicate fingerprint)")
 
         conn.commit()
 
