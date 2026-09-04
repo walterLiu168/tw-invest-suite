@@ -36,6 +36,12 @@ from pathlib import Path
 
 import pymysql
 
+try:
+    import certifi
+    _CA_FILE = certifi.where()
+except ImportError:
+    _CA_FILE = None  # fall back to system trust store
+
 # ----- config -----
 DB = dict(host="localhost", user="root", password="1234", database="tw_elec",
           connect_timeout=10, charset="utf8mb4")
@@ -61,9 +67,14 @@ def get_token():
 
 def fetch_finmind():
     """Fetch TaiwanStockInfo. Returns list of dicts."""
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    # Use certifi CA bundle if available; otherwise system trust store.
+    # IMPORTANT: do NOT disable verification — FinMind cert chain is fine if
+    # we point at the right bundle (Windows system store is sometimes missing
+    # the Subject Key Identifier that newer OpenSSL expects).
+    if _CA_FILE:
+        ctx = ssl.create_default_context(cafile=_CA_FILE)
+    else:
+        ctx = ssl.create_default_context()
     url = f"{API}?dataset={DATASET}&token={get_token()}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mavis/1.0"})
     raw = urllib.request.urlopen(req, timeout=30, context=ctx).read()
@@ -140,6 +151,29 @@ def main():
     else:
         print(f"[metadata-backfill] run_id={args.run_id} mode=all")
 
+    # ---- Pre-load existing state (idempotency for recurring runs) ----
+    # Skip tickers that are already resolved: either already in industry_type
+    # (promoted) or already in metadata_quarantine with resolved_at IS NULL
+    # (still pending review). This prevents the staging/quarantine tables from
+    # accumulating duplicate rows on every recurring run.
+    conn = pymysql.connect(**DB)
+    cur = conn.cursor()
+    ensure_tables(cur)
+    conn.commit()
+    cur.execute("SELECT ticker FROM industry_type")
+    already_promoted = {r[0] for r in cur.fetchall()}
+    cur.execute("SELECT DISTINCT ticker FROM metadata_quarantine WHERE resolved_at IS NULL")
+    already_quarantined = {r[0] for r in cur.fetchall()}
+    conn.close()
+    if allowlist is not None:
+        skipped = sorted(t for t in allowlist if t in already_promoted or t in already_quarantined)
+        if skipped:
+            print(f"[metadata-backfill] skipping {len(skipped)} already-resolved tickers: {skipped}")
+            allowlist -= set(skipped)
+            if not allowlist:
+                print("[metadata-backfill] all allowlist tickers already resolved. nothing to do.")
+                return 0
+
     print(f"[metadata-backfill] fetching FinMind {DATASET}...")
     rows = fetch_finmind()
     print(f"[metadata-backfill] fetched {len(rows)} raw rows")
@@ -160,6 +194,15 @@ def main():
     # Keep only current_date rows
     on_date = [r for r in valid if r["date"] == current_date]
     print(f"[metadata-backfill] rows on current_date: {len(on_date)}")
+
+    # ROW-LEVEL filter: drop non twse/tpex (e.g. emerging history) BEFORE
+    # per-ticker group. This is the correct filter order — anything left after
+    # this is known to be a currently listed 普通股. (See D052c review F4 fix.)
+    before_type = len(on_date)
+    on_date = [r for r in on_date if r.get("type") in ("twse", "tpex")]
+    dropped = before_type - len(on_date)
+    if dropped:
+        print(f"[metadata-backfill] dropped {dropped} rows with type not in (twse, tpex)")
 
     # Apply allowlist if --batch
     if allowlist is not None:
@@ -227,8 +270,8 @@ def main():
     conn = pymysql.connect(**DB)
     cur = conn.cursor()
     try:
-        ensure_tables(cur)
-        conn.commit()
+        # ensure_tables already called in preflight; this is a no-op
+        pass
 
         # 1. Insert ALL on_date rows to staging (audit trail)
         # (Use all current_date rows, not just filtered, for full audit)
