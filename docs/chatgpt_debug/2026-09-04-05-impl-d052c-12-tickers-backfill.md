@@ -16,6 +16,15 @@
 | GitHub Pages 12/12 live | 0/12 | 7/12 | 7 of 12 |
 | `daily_data2_full.company` for the 7 | NULL | NULL | unchanged (out of scope) |
 
+### Status update 2026-09-04 18:20 (after Walter's manual picks for 4 of 5)
+
+| Metric | Value | Δ |
+|---|---|---|
+| `industry_type` rows | **1,973** | +4 (4195/4582/7803/7827 added by Walter SQL) |
+| Open quarantine | **1** | -4 (7768 still open) |
+| `C:\Groove-Lab\analyze\{ticker}.html` (12) | **11/12** | +4 rendered |
+| GitHub Pages 11/12 live (after 23:50 publish) | — | — |
+
 ## Per-ticker outcome
 
 ### ✅ Promoted (7) — auto-inserted to `industry_type`
@@ -34,20 +43,20 @@ All 7 have `industry_type` row + `C:\Groove-Lab\analyze\{ticker}.html` with corr
 
 ### ⚠️ Quarantined (5) — need Walter manual pick
 
-| Ticker | Name | Type | Candidate categories | Reason |
-|---|---|---|---|---|
-| 4195 | 基米-創 | twse | 創新板股票, 化學生技醫療, 生技醫療業 | multi-category on current_date |
-| 4582 | 聚恆-創 | twse | 創新板股票, 綠能環保 | multi-category on current_date |
-| 7768 | 頌勝科技 | twse | 半導體業, 電子工業 | multi-category on current_date |
-| 7803 | 雲象科技-創 | twse | 創新板股票, 化學生技醫療, 生技醫療業 | multi-category on current_date |
-| 7827 | 漢康-KY創 | twse | 創新板股票, 化學生技醫療, 生技醫療業 | multi-category on current_date |
+| Ticker | Name | Type | Candidate categories | Reason | Status |
+|---|---|---|---|---|---|
+| 4195 | 基米-創 | twse | 創新板股票, 化學生技醫療, 生技醫療業 | multi-category | ✅ **resolved by Walter 18:19** (生技醫療業) |
+| 4582 | 聚恆-創 | twse | 創新板股票, 綠能環保 | multi-category | ✅ **resolved by Walter 18:19** (綠能環保) |
+| 7768 | 頌勝科技 | twse | 半導體業, 電子工業 | multi-category | ⏸ **awaiting TWSE lookup** |
+| 7803 | 雲象科技-創 | twse | 創新板股票, 化學生技醫療, 生技醫療業 | multi-category | ✅ **resolved by Walter 18:19** (生技醫療業) |
+| 7827 | 漢康-KY創 | twse | 創新板股票, 化學生技醫療, 生技醫療業 | multi-category | ✅ **resolved by Walter 18:19** (生技醫療業) |
 
 Pattern: 4 of 5 have "創新板股票" mixed in (board classification, not industry). 7768 is the only true industry ambiguity.
 
 ### Missing deliverables
 
-- 5 HTML files for quarantined tickers: **will remain 404 on GitHub Pages** until Walter picks an industry for each
-- 5 industry_type rows for quarantined: intentionally not added (per Q2 strict rule)
+- 1 HTML file for 7768: **will remain 404 on GitHub Pages** until Walter picks an industry
+- 1 industry_type row for 7768: intentionally not added (per Q2 strict rule)
 
 ## Evidence per ChatGPT's Q6
 
@@ -135,7 +144,7 @@ Then re-render the 5 HTML files (e.g. `python src/_render_12_d052.py` with the 5
 
 ## Status
 
-- ✅ 7/12 promoted and live
-- ⏸ 5/12 quarantined awaiting Walter (recommended picks above)
-- ⏭ D052d (recurring 18:05-18:10 cron) pending
+- ✅ 11/12 promoted (7 auto + 4 by Walter manual SQL)
+- ⏸ 1/12 quarantined (7768 — needs TWSE official classification)
+- ⏭ D052d (recurring 18:05-18:10 cron) pending — script now safe to schedule
 - ⏭ D052e (alerts) pending
