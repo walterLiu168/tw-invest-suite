@@ -9,6 +9,16 @@
 
 `market_screen_runs` 與 `market_screen_picks` 內目前有 3 筆 9/5 測試階段注入的殘留 run (`id=3, 4, 6`)。它們都是 D052h-fixup 與 D052h-fixup2 開發期間用 `--force --data-date=...` 留下的。
 
+**D052h-fixup3 新增事實**：run_id=4 對應 9/4 資料，但因 `mr.save_report` / `mrh.save_html` 用 `datetime.now()` 命名檔案，9/4 的 MD/HTML 實際被命名為 `market-screen-2026-09-05.{md,html}`（執行當下 9/5 Sat）。
+
+- `market-screen-2026-09-04.md`：**不存在**（實際位於 `market-screen-2026-09-05.md`）
+- `market-screen-2026-09-04.html`：**不存在**（同上）
+- `deep-dive-prompts-2026-09-04.md`：存在（DD generation 一開始就使用 data_date）
+
+D052h-fixup3 已把 `data_date` 參數加進 `mr.save_report` / `mrh.save_html`，未來 daily run / `--force` / repair 全部會用 data_date 命名。但**已經誤命名的 9/5 檔案仍留在 `~/.claude/skills/tw-invest-suite/reports/`**，需要手動清理或重新生成（`python market_screen_runner.py --force --data-date=2026-09-04`）。
+
+**本批 D052h-fixup3 不處理**：9/5 那個誤命名的檔案待 Walter 決定是否一併清掉；postflight 9/6 00:05 跑完後，post-marker check 會看到 `market-screen-2026-09-04.{md,html}` 缺失但 `market-screen-2026-09-05.{md,html}` 存在，並回報這個錯位（不會自動修正）。
+
 | id | run_date | run_at | picks active | 性質 | 建議 |
 |---|---|---|---|---|---|
 | 3 | 2026-09-01 | 2026-09-05 18:33:35 | 0 | backdated residue（D052h-fixup2 F5 已擋下，但這筆是 D052h-fixup 階段留下的） | 刪 |

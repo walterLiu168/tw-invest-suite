@@ -492,11 +492,18 @@ function copyPrompt(id, btn) {{
 </html>"""
 
 
-def save_html(result: Dict[str, Dict[str, List[ms.Candidate]]]) -> str:
-    today = datetime.now().strftime("%Y-%m-%d")
+def save_html(result: Dict[str, Dict[str, List[ms.Candidate]]],
+              data_date=None) -> str:
+    """D052h-fixup3: file name uses data_date (not datetime.now()).
+    See market_report.save_report for rationale.
+    """
+    if data_date is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+    else:
+        date_str = data_date.strftime("%Y-%m-%d") if hasattr(data_date, "strftime") else str(data_date)
     out_dir = os.path.expanduser("~/.claude/skills/tw-invest-suite/reports")
     os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, f"market-screen-{today}.html")
+    path = os.path.join(out_dir, f"market-screen-{date_str}.html")
     content = render_html(result)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)

@@ -240,11 +240,20 @@ def render_report(result: Dict[str, Dict[str, List[ms.Candidate]]]) -> str:
     return "\n".join(out)
 
 
-def save_report(result: Dict[str, Dict[str, List[ms.Candidate]]]) -> str:
-    today = datetime.now().strftime("%Y-%m-%d")
+def save_report(result: Dict[str, Dict[str, List[ms.Candidate]]],
+                data_date=None) -> str:
+    """D052h-fixup3: file name uses data_date (not datetime.now()).
+    data_date may be a date or datetime; if None, falls back to today.
+    This keeps the daily run (no data_date → today) backwards-compatible
+    while letting repair-only / --force runs target a specific data date.
+    """
+    if data_date is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+    else:
+        date_str = data_date.strftime("%Y-%m-%d") if hasattr(data_date, "strftime") else str(data_date)
     out_dir = os.path.expanduser("~/.claude/skills/tw-invest-suite/reports")
     os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, f"market-screen-{today}.md")
+    path = os.path.join(out_dir, f"market-screen-{date_str}.md")
     content = render_report(result)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)

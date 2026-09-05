@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-market_screen_runner.py — D052h-fixup2
+market_screen_runner.py — D052h-fixup3
 Master runner for daily market screen.
 
-D052h-fixup2 changes (per ChatGPT visible UI):
+D052h-fixup3 changes (per ChatGPT manager review):
+  - Repair-only fully reconstructs MD + HTML + DD using the existing
+    mr.save_report / mrh.save_html / ddp.render_prompt (no second
+    renderer). After generation, re-runs has_complete_run_for_data_date;
+    only returns success when missing=[].
+  - Unified artifact date contract: mr.save_report / mrh.save_html now
+    accept an optional data_date; market_screen_runner always passes
+    data_date (never datetime.now()) so daily run, --force --data-date,
+    and repair all produce artifacts named with the actual data date.
+  - metadata marker check parses the marker file's target_date + status
+    lines (no longer just .exists()).
+
+D052h-fixup2 changes (kept):
   - F1: get_verified_data_date counts only MAX(Date), not all history
   - F2: trading day with bad data exits 1, not 0 (only weekend or
         idempotent re-run can exit 0)
   - F4: verify metadata-backfill success marker for target data_date
-        (metadata_target_YYYY-MM-DD_OK.marker) before running
   - F5: --force --data-date validates the override date has data
-  - F7: has_existing_successful_run verifies 24 picks (total + active)
-        + 3 artifacts exist for data_date; missing-artifact case
-        runs repair-only
+  - F7: has_complete_run_for_data_date verifies 24 picks + 3 artifacts
+        + falls back to repair-only when only artifacts are missing
 
 D052h-fixup changes (kept):
   - Single DB transaction (rollback on any failure)
@@ -21,11 +31,17 @@ D052h-fixup changes (kept):
   - Weekend skip via is_trading_day (weekday-only, NOT full TWSE holiday)
   - Artifact failure -> exit 1 (DB already committed)
 
-Pending (NOT addressed in fixup2):
+Pending (NOT addressed in fixup3):
   - H: existing-ticker reconciliation
   - J: 7768 per-day quarantine accumulation
-  - T2/T3: live test infrastructure (mocked tests in tests/ post-fixup2)
-  - T4: live stale-OHLCV test (deterministic unit test in tests/)
+  - T2/T3 live: mocked tests in tests/ pass; live needs disposable DB
+  - T4 live: deterministic unit test passes; live stale-OHLCV needs
+    a real trading day with no fresh data
+  - 3 new crons (metadata-backfill, market-screen, postflight) first
+    effective live run
+  - health-check LastResult=1 root cause
+  - production residue cleanup (run_id=3, 4, 6) — pending Walter
+  - push approval (origin/main still at 8d48318)
 """
 import argparse
 import os
@@ -34,8 +50,25 @@ import traceback
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+# D052h-fixup3: import the renderer modules from the git repo path FIRST
+# so we get the data_date-aware save_report / save_html. The runtime copy
+# (C:\Users\icemo\.claude\skills\tw-invest-suite\scripts) is added next
+# as a fallback for transitive imports (market_screen, watchlist, etc.).
+#
+# Both paths must be on sys.path. We ensure REPO comes first; the test
+# file or runtime may have already added RUNTIME, so we re-insert REPO
+# AFTER (which keeps REPO ahead of RUNTIME because insert(0) is LIFO
+# relative to existing entries).
+REPO_SCRIPTS = Path(r"C:\Users\icemo\Projects\tw-invest-suite\scripts")
 RUNTIME_DIR = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts")
+# Remove RUNTIME from sys.path if present, then add REPO, then RUNTIME.
+# Result: REPO is at front, RUNTIME next. This works regardless of what
+# the test/caller did to sys.path beforehand.
+for p in (str(REPO_SCRIPTS), str(RUNTIME_DIR)):
+    while p in sys.path:
+        sys.path.remove(p)
 sys.path.insert(0, str(RUNTIME_DIR))
+sys.path.insert(0, str(REPO_SCRIPTS))
 
 import pymysql
 import market_screen as ms
@@ -57,12 +90,37 @@ SCRIPT_VERSION = "D052h-fixup2"
 
 
 def has_metadata_marker(data_date):
-    """D052h-fixup2 F4: returns True iff metadata-backfill wrote a success
-    marker for data_date. The marker is metadata_target_YYYY-MM-DD_OK.marker
-    and is only written after a successful run.
+    """D052h-fixup3: parse marker file content, verify both target_date
+    AND status. The marker is metadata_target_YYYY-MM-DD_OK.marker and
+    contains a small key=value block written by metadata_backfill_daily.ps1:
+
+        target_date=YYYY-MM-DD
+        finished_at=ISO8601
+        missing_count=N
+        status=ok
+
+    Returns True only if:
+      - file exists
+      - target_date line == data_date
+      - status line == 'ok'
     """
     marker = METADATA_MARKER_DIR / f"metadata_target_{data_date.isoformat()}_OK.marker"
-    return marker.exists()
+    if not marker.exists():
+        return False
+    try:
+        content = marker.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    info = {}
+    for line in content.splitlines():
+        if "=" in line:
+            k, _, v = line.partition("=")
+            info[k.strip()] = v.strip()
+    if info.get("status") != "ok":
+        return False
+    if info.get("target_date") != data_date.isoformat():
+        return False
+    return True
 
 
 def is_trading_day(d):
@@ -241,19 +299,20 @@ def persist_atomic(data_date, picks_count, notes, result):
 
 def generate_artifacts(data_date, result):
     """Generate MD + HTML + DD. Returns (paths, errors).
-    F7: if existing run with missing artifacts, this is called as repair.
+    D052h-fixup3: file names use data_date consistently (not datetime.now()).
+    Compatible with daily run (data_date=today) and --force --data-date.
     """
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     paths = []
     errors = []
     try:
-        md_path = mr.save_report(result)
+        md_path = mr.save_report(result, data_date=data_date)
         paths.append((md_path, True))
     except Exception as e:
         paths.append((None, False))
         errors.append(f"MD: {e}")
     try:
-        html_path = mrh.save_html(result)
+        html_path = mrh.save_html(result, data_date=data_date)
         paths.append((html_path, True))
     except Exception as e:
         paths.append((None, False))
@@ -278,13 +337,73 @@ def generate_artifacts(data_date, result):
     return paths, errors
 
 
+def _row_to_candidate(row):
+    """Reconstruct an ms.Candidate from a market_screen_picks row.
+    D052h-fixup3: fields not stored in the DB get safe defaults (0 / '')
+    so the existing renderer patterns (mr.save_report, mrh.save_html,
+    ddp.render_prompt) don't crash. The renderer guards (e.g. `if c.market_cap`)
+    and `or 0` patterns handle the degraded fields.
+    """
+    (ticker, name, industry, horizon, bucket, close, chg_pct, vol,
+     mc, er60, er240, rationale) = row
+    return ms.Candidate(
+        ticker=ticker,
+        name=name or "",
+        industry=industry or "",
+        close=float(close) if close is not None else 0.0,
+        change_pct=float(chg_pct) if chg_pct is not None else 0.0,
+        volume=int(vol) if vol is not None else 0,
+        # DB doesn't store these; renderer's `or 0` / `if c.X` guards skip
+        # them when 0/None, so degraded repair output is acceptable.
+        three_net=0,
+        foreign_net=0,
+        margin_balance=0,
+        short_balance=0,
+        foreign_ratio=0.0,
+        sma13=0.0,
+        sma27=0.0,
+        sma54=0.0,
+        rsi14=0.0,
+        atr14=0.0,
+        is_gap=0,
+        excess_return_60d=float(er60) if er60 is not None else 0.0,
+        excess_return_240d=float(er240) if er240 is not None else 0.0,
+        market_cap=float(mc) if mc is not None else 0.0,
+        horizon=horizon or "",
+        zen_summary=rationale or "",
+    )
+
+
+def _build_result_from_picks(rows):
+    """Group 24 Candidate rows into the {bucket: {long, short}} result dict
+    that mr.save_report / mrh.save_html expect. Mirrors ms.PRICE_BUCKETS so
+    the renderer iterates the same buckets.
+    """
+    result = {}
+    for label, _, _ in ms.PRICE_BUCKETS:
+        result[label] = {"long": [], "short": []}
+    for row in rows:
+        c = _row_to_candidate(row)
+        bucket = c.zen_summary and ""  # rationale is the last column; use bucket
+        # row order: (ticker, name, industry, horizon, bucket, close, ...)
+        bucket_label = row[4] if len(row) > 4 else None
+        if not bucket_label or bucket_label not in result:
+            continue
+        result[bucket_label][c.horizon].append(c)
+    return result
+
+
 def repair_only_artifacts(data_date, run_id):
-    """F7: if existing run has missing artifacts but DB is complete,
-    just regenerate the artifacts using the same picks.
+    """D052h-fixup3: full reconstruction of MD + HTML + DD from the 24
+    active picks in market_screen_picks. Reuses existing mr.save_report /
+    mrh.save_html / ddp.render_prompt (no second renderer).
+
+    After generation, re-runs has_complete_run_for_data_date(data_date);
+    only returns success when missing=[].
+
     Returns (success, error_list).
     """
     print(f"[runner] repair-only for data_date={data_date} run_id={run_id}")
-    # Load picks from DB
     conn = pymysql.connect(**DB)
     try:
         cur = conn.cursor()
@@ -302,27 +421,23 @@ def repair_only_artifacts(data_date, run_id):
     if len(rows) != 24:
         return False, [f"expected 24 active picks, got {len(rows)}"]
 
-    # Reconstruct result dict for save_report
-    # We need to fake the Candidate class — easier: write the MD/HTML/DD
-    # directly from the DB rows.
-    # Use the report functions which accept a result dict.
-    # For now, just generate the DD file and let the user know.
-    # TODO: better integration with mr.save_report
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    dd_path = REPORT_DIR / f"deep-dive-prompts-{data_date}.md"
-    try:
-        with open(dd_path, "w", encoding="utf-8") as f:
-            f.write(f"# 24 深度研究 Prompt (repaired {datetime.now().isoformat()})\n\n")
-            for row in rows:
-                ticker, name, industry, horizon, bucket, close, chg_pct, vol, mc, er60, er240, rationale = row
-                f.write(f"## {ticker} {name} ({industry})\n\n")
-                f.write(f"  - horizon: {horizon}\n")
-                f.write(f"  - bucket: {bucket}\n")
-                f.write(f"  - close: {close}\n\n")
-                f.write(f"  {rationale}\n\n---\n\n")
-        return True, []
-    except Exception as e:
-        return False, [str(e)]
+    result = _build_result_from_picks(rows)
+    # Sanity: 4 buckets x (long + short) = 24
+    total = sum(len(result[b]["long"]) + len(result[b]["short"]) for b in result)
+    if total != 24:
+        return False, [f"reconstructed total = {total}, expected 24"]
+
+    paths, errors = generate_artifacts(data_date, result)
+    for p, ok in paths:
+        print(f"[runner]   {'OK' if ok else 'FAIL'}: {p}")
+    if errors:
+        return False, [f"artifact errors: {errors}"]
+
+    # D052h-fixup3: re-verify completeness; only return success if missing=[]
+    _, complete, missing = has_complete_run_for_data_date(data_date)
+    if not complete:
+        return False, [f"after repair, still missing: {missing}"]
+    return True, []
 
 
 def run():
