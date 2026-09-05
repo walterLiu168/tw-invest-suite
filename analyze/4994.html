@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4994 傳奇 | tw-invest-suite</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root { --bg:#0a0e1a; --panel:#131b2e; --ink:#e6ecf5; --muted:#8aa0c0; --acc:#5fb1ff;
+  /* Taiwan convention: 紅漲 (up=positive) = #ec7063, 綠跌 (down=negative) = #58d68d */
+  --red:#ec7063;   /* used for POSITIVE/up — Taiwan 紅漲 */
+  --green:#58d68d; /* used for NEGATIVE/down — Taiwan 綠跌 */
+  --amber:#f5b041; --purple:#bc8cff; --cyan:#39c5cf; --border:#1f2942; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif; line-height: 1.6; }
+.topbar { position: sticky; top: 0; z-index: 100; background: rgba(10, 14, 26, 0.95); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.brand { font-size: 1.2rem; font-weight: 600; color: var(--acc); }
+.brand small { color: var(--muted); font-weight: 400; font-size: 0.7rem; margin-left: 8px; }
+.search-form { display: flex; gap: 6px; }
+.search-form input { background: var(--panel); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 0.85rem; width: 110px; font-family: inherit; }
+.search-form button { background: var(--acc); color: #000; border: none; border-radius: 6px; padding: 6px 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.search-form button:hover { background: var(--cyan); }
+.skillbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 20px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
+.sk { background: var(--panel); color: var(--muted); padding: 3px 8px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.72rem; }
+main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+.hero { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 20px; background: linear-gradient(135deg, rgba(95,177,255,0.1), rgba(57,197,207,0.05)); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px; }
+.hero .ticker { font-size: 2rem; font-weight: 700; color: var(--acc); }
+.hero .name { font-size: 1.3rem; color: var(--ink); margin-left: 8px; }
+.hero .industry { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+.hero .price { font-size: 1.8rem; font-weight: 700; }
+.hero .price.up { color: var(--red); }
+.hero .price.down { color: var(--green); }
+.summary-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px; }
+.card { background: var(--panel); border-radius: 8px; padding: 12px 14px; border: 1px solid var(--border); }
+.card .k { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px; }
+.card .v { font-size: 1.2rem; font-weight: 700; margin-top: 4px; }
+.card .v.pos { color: var(--red); }
+.card .v.neg { color: var(--green); }
+.card .v.muted { color: var(--muted); }
+.section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 14px; }
+.section h2 { color: var(--acc); font-size: 1.05rem; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.section table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.85rem; margin: 4px 0 6px; background: rgba(0,0,0,0.15); border-radius: 6px; overflow: hidden; }
+.section th, .section td { padding: 8px 10px; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.section th { color: var(--muted); font-weight: 600; background: rgba(255,255,255,0.03); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.4px; }
+.section td:first-child, .section th:first-child { text-align: left; }
+.section tr:last-child td { border-bottom: none; }
+.section td.num { font-variant-numeric: tabular-nums; font-weight: 500; }
+.section td.pos { color: var(--red); font-weight: 600; }
+.section td.neg { color: var(--green); font-weight: 600; }
+.section .callout { background: linear-gradient(135deg, rgba(95,177,255,0.1), rgba(57,197,207,0.05)); border: 1px solid rgba(95,177,255,0.3); border-radius: 8px; padding: 10px 12px; margin: 8px 0; font-size: 0.88rem; line-height: 1.7; }
+.section .callout .k { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px; margin-right: 4px; }
+.section .callout .v { font-weight: 600; color: var(--ink); }
+.section .callout .v.pos { color: var(--red); }
+.section .callout .v.neg { color: var(--green); }
+.section .meta { color: var(--muted); font-size: 0.78rem; margin-top: 6px; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.tag { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; background: var(--border); color: var(--ink); }
+/* tag-green / tag-red：語意命名（好/壞），CSS 顏色依台灣慣例
+   tag-green = 正面/看多 → 紅色 / tag-red = 負面/看空 → 綠色 */
+.tag-green { background: rgba(236,112,99,0.18); color: var(--red); }
+.tag-red { background: rgba(88,214,141,0.18); color: var(--green); }
+.tag-yellow { background: rgba(245,176,65,0.18); color: var(--amber); }
+.tag-blue { background: rgba(95,177,255,0.18); color: var(--acc); }
+.tag-cyan { background: rgba(57,197,207,0.18); color: var(--cyan); }
+.tag-purple { background: rgba(188,140,255,0.18); color: var(--purple); }
+.news-item { padding: 6px 0; border-bottom: 1px dashed rgba(255,255,255,0.06); font-size: 0.85rem; }
+.news-item:last-child { border-bottom: none; }
+.news-item a { color: var(--acc); text-decoration: none; }
+.dd-prompt { background: rgba(57,197,207,0.06); border: 1px solid var(--cyan); border-radius: 6px; padding: 8px; margin-top: 8px; }
+.dd-prompt pre { font-size: 0.72rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; max-height: 320px; overflow-y: auto; margin: 0; }
+.copy-btn { background: var(--cyan); color: #000; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: 600; margin-bottom: 4px; }
+.copy-btn:hover { background: #fff; }
+.obs { color: var(--ink); font-size: 0.88rem; line-height: 1.7; }
+.obs li { padding: 3px 0; }
+footer { padding: 24px; color: var(--muted); font-size: 0.8rem; text-align: center; }
+.zen-bullish { color: var(--red); }
+.zen-bearish { color: var(--green); }
+.zen-neutral { color: var(--muted); }
+.muted { color: var(--muted); }
+.disclaimer { background: rgba(245,176,65,0.06); border: 1px solid var(--amber); border-radius: 6px; padding: 10px 14px; margin-top: 18px; color: var(--amber); font-size: 0.85rem; }
+@media (max-width: 700px) {
+  .hero { flex-direction: column; align-items: flex-start; }
+  .summary-bar { grid-template-columns: repeat(2, 1fr); }
+}
+
+.tabs-bar { display: flex; gap: 2px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin: 16px 20px 0; overflow-x: auto; scrollbar-width: thin; position: sticky; top: 64px; z-index: 50; }
+.tabs-bar::-webkit-scrollbar { height: 4px; }
+.tabs-bar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.tab-btn { background: transparent; color: var(--muted); border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500; white-space: nowrap; transition: all 0.15s; display: flex; align-items: center; gap: 4px; }
+.tab-btn:hover { background: rgba(95,177,255,0.1); color: var(--ink); }
+.tab-btn.active { background: linear-gradient(135deg, var(--acc), var(--cyan)); color: #000; font-weight: 600; }
+.tab-btn .ic { font-size: 1rem; }
+.tab-panel { display: none; padding: 20px; max-width: 1400px; margin: 0 auto; }
+.tab-panel.active { display: block; }
+.tab-panel h2 { color: var(--acc); font-size: 1.05rem; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+@media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
+.chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.chart-card h3 { color: var(--muted); font-size: 0.78rem; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; }
+.chart-card canvas { width: 100% !important; height: 240px !important; }
+.action-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 20px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+.action-bar a { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: rgba(95,177,255,0.1); color: var(--acc); border: 1px solid var(--border); border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: all 0.15s; }
+.action-bar a:hover { background: var(--acc); color: #000; border-color: var(--acc); }
+.section-inner { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+.expert-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 12px 0; }
+.expert-card { background: linear-gradient(135deg, rgba(95,177,255,0.06), rgba(57,197,207,0.04)); border: 1px solid var(--border); border-left: 3px solid var(--acc); border-radius: 8px; padding: 12px 14px; transition: all 0.15s; }
+.expert-card:hover { border-left-color: var(--cyan); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(95,177,255,0.1); }
+.expert-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.expert-icon { font-size: 1.4rem; }
+.expert-name { font-weight: 600; color: var(--ink); flex: 1; }
+.expert-count { background: var(--border); color: var(--muted); padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; }
+.expert-views { display: flex; flex-direction: column; gap: 8px; }
+.view-chip { background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.view-title { font-weight: 600; color: var(--acc); font-size: 0.9rem; margin-bottom: 4px; }
+.view-data { color: var(--amber); font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem; font-weight: 500; }
+.view-explain { color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
+.expert-meta { color: var(--muted); font-size: 0.78rem; text-align: right; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.expert-empty { color: var(--muted); padding: 20px; text-align: center; background: rgba(0,0,0,0.2); border-radius: 8px; }
+.news-list { display: flex; flex-direction: column; gap: 6px; }
+.news-item { padding: 8px 12px; background: rgba(0,0,0,0.2); border-left: 3px solid var(--border); border-radius: 4px; transition: all 0.15s; }
+.news-item:hover { background: rgba(95,177,255,0.08); border-left-color: var(--acc); }
+.news-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; font-size: 0.72rem; color: var(--muted); }
+.news-icon { font-size: 0.9rem; }
+.news-icon.news-pos { color: #ec7063; }
+.news-icon.news-neg { color: #58d68d; }
+.news-date { font-family: 'Consolas', 'Monaco', monospace; }
+.news-source { background: var(--border); padding: 1px 6px; border-radius: 4px; font-size: 0.7rem; }
+.news-title { color: var(--ink); font-size: 0.88rem; line-height: 1.5; text-decoration: none; }
+a.news-title:hover { color: var(--acc); text-decoration: underline; }
+.news-empty { color: var(--muted); padding: 20px; text-align: center; }
+
+/* ===== 法人 (Institutional) - 視覺化表格 ===== */
+.inst-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 16px; }
+.inst-sum-card { background: linear-gradient(135deg, rgba(95,177,255,0.08), rgba(57,197,207,0.04)); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.inst-sum-label { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.inst-sum-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: 0.78rem; }
+.inst-sum-key { color: var(--muted); }
+.inst-sum-val { font-family: 'Consolas','Monaco',monospace; font-weight: 600; text-align: right; }
+.inst-sum-val.pos { color: #ec7063; }
+.inst-sum-val.neg { color: #58d68d; }
+.inst-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.inst-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; font-family: 'Consolas','Monaco',monospace; }
+.inst-table thead { background: var(--panel); }
+.inst-table th { padding: 8px 6px; text-align: right; color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.inst-table th.date-col { text-align: left; }
+.inst-table tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+.inst-table tbody tr:hover { background: rgba(95,177,255,0.05); }
+.inst-table tbody tr:last-child { border-bottom: none; }
+.inst-table td { padding: 6px 6px; text-align: right; white-space: nowrap; }
+.inst-table td.date-col { text-align: left; color: var(--ink); font-weight: 500; }
+.inst-table td.zero { color: var(--muted); opacity: 0.55; }
+.inst-cell { display: flex; align-items: center; gap: 4px; justify-content: flex-end; min-width: 60px; }
+.inst-bar-wrap { flex: 1; height: 6px; background: rgba(255,255,255,0.04); border-radius: 3px; overflow: hidden; min-width: 24px; max-width: 50px; }
+.inst-bar { height: 100%; border-radius: 3px; }
+.inst-bar.pos { background: linear-gradient(90deg, #ec7063, #f1948a); }
+.inst-bar.neg { background: linear-gradient(90deg, #58d68d, #82e0aa); }
+.inst-num { font-weight: 600; min-width: 38px; text-align: right; }
+.inst-num.pos { color: #ec7063; }
+.inst-num.neg { color: #58d68d; }
+.inst-num.total { color: var(--amber); font-weight: 700; }
+.inst-table td.total-cell { background: rgba(255,184,77,0.06); }
+.inst-table tr.hot-up { background: rgba(236,112,99,0.07); }
+.inst-table tr.hot-dn { background: rgba(88,214,141,0.07); }
+.inst-source { color: var(--muted); font-size: 0.72rem; margin-top: 10px; text-align: right; }
+
+/* ===== 觀察重點 (Observations) - 卡片式網格 ===== */
+.obs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 8px; }
+.obs-card { background: linear-gradient(135deg, rgba(95,177,255,0.06), rgba(57,197,207,0.03)); border: 1px solid var(--border); border-left: 3px solid var(--acc); border-radius: 8px; padding: 12px 14px; transition: all 0.15s; }
+.obs-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(95,177,255,0.08); }
+.obs-card.s-pos { border-left-color: #ec7063; }
+.obs-card.s-neg { border-left-color: #58d68d; }
+.obs-card.s-neu { border-left-color: var(--muted); }
+.obs-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.obs-icon { font-size: 1.1rem; }
+.obs-cat { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; }
+.obs-val { font-size: 1.3rem; font-weight: 700; color: var(--ink); margin-bottom: 4px; font-family: 'Consolas','Monaco',monospace; }
+.obs-val.s-pos { color: #ec7063; }
+.obs-val.s-neg { color: #58d68d; }
+.obs-title { color: var(--ink); font-weight: 600; font-size: 0.92rem; margin-bottom: 4px; }
+.obs-explain { color: var(--muted); font-size: 0.82rem; line-height: 1.5; }
+.obs-explain code { background: rgba(0,0,0,0.3); padding: 1px 4px; border-radius: 3px; color: var(--amber); font-size: 0.78rem; }
+.obs-foot { color: var(--muted); font-size: 0.72rem; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); text-align: center; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">📊 個股分析 <small>4994 · 傳奇 · 2026-09-04</small></div>
+  <form class="search-form" action="https://groovelab.dev/analyze.html" method="get">
+    <input name="ticker" placeholder="股號" maxlength="6" required>
+    <button type="submit">分析 →</button>
+  </form>
+</div>
+<div class="skillbar"><span class="sk" title="主控">tw-invest-suite</span><span class="sk" title="ROE/營收">finlab</span><span class="sk" title="台股API">finmind</span><span class="sk" title="即時報價">tw-stock-info</span><span class="sk" title="TWSE">twse-api</span><span class="sk" title="Yahoo">yahoo-finance</span><span class="sk" title="華爾街">wall-street-tw-stock-analysis</span><span class="sk" title="大師">hedge-fund-expert-team</span><span class="sk" title="選股">stock-selection-decision</span><span class="sk" title="Minerva">minerva</span><span class="sk" title="纏論">zen</span><span class="sk" title="Dashboard">ticker-dashboard</span><span class="sk" title="Research">ai-telegram-research-check</span><span class="sk" title="UI">ui-development</span></div>
+<main style="max-width:none;padding:0">
+  <div class="hero">
+    <div>
+      <div><span class="ticker">4994</span><span class="name">傳奇</span></div>
+      <div class="industry">資訊服務業 · 上市 · 資料源: db · yfinance_cache · finmind_pe · finmind_div · finmind_fin · finmind_month</div>
+    </div>
+    <div class="price down">81.70 <small style="font-size:0.5em;color:var(--muted)">元</small> <span style="font-size:0.5em">-0.24%</span></div>
+  </div>
+  <div class="summary-bar"><div class="card"><div class="k">收盤</div><div class="v">81.70</div></div><div class="card"><div class="k">P/E</div><div class="v">57.7</div></div><div class="card"><div class="k">P/B</div><div class="v">6.26</div></div><div class="card"><div class="k">ROE</div><div class="v">10.2%</div></div><div class="card"><div class="k">殖利率</div><div class="v">3.61%</div></div><div class="card"><div class="k">市值</div><div class="v">54.37億</div></div><div class="card"><div class="k">RSI(14)</div><div class="v">44.6</div></div></div>
+  <div class="tags"><span class="tag tag-yellow">達摩達蘭</span> 估值偏高 P/E 58<span class="tag tag-purple">伯里</span> 外資棄守 外資 -2 張<span class="tag tag-green">帕布萊</span> 低風險 β 0.44<span class="tag tag-red">估值師</span> 高估 P/E 58<span class="tag tag-red">情緒師</span> 法人看空 -2 張<span class="tag tag-red">技術師</span> 空頭排列<span class="tag tag-red">組合經理</span> 空頭共識 5/5 訊號一致<span class="tag tag-cyan">高股息 3.6%</span></div>
+</main>
+<div class="tabs-bar" id="tabs-bar">
+  <button class="tab-btn" data-tab="zen"><span class="ic">🧘</span><span>纏論 (Chanlun)</span></button><button class="tab-btn" data-tab="tech"><span class="ic">📊</span><span>技術分析</span></button><button class="tab-btn" data-tab="val"><span class="ic">💎</span><span>估值 (雙源驗證)</span></button><button class="tab-btn" data-tab="inst"><span class="ic">🏛</span><span>法人 (近 10 日)</span></button><button class="tab-btn" data-tab="margin"><span class="ic">💴</span><span>融資融券 (近 30 日)</span></button><button class="tab-btn" data-tab="fin"><span class="ic">📊</span><span>季報 (FinMind)</span></button><button class="tab-btn" data-tab="roe"><span class="ic">🧬</span><span>ROE</span></button><button class="tab-btn" data-tab="rev"><span class="ic">📈</span><span>月營收 (FinMind)</span></button><button class="tab-btn" data-tab="div"><span class="ic">💵</span><span>配息歷史</span></button><button class="tab-btn" data-tab="news"><span class="ic">📰</span><span>新聞 (DB)</span></button><button class="tab-btn" data-tab="obs"><span class="ic">💡</span><span>觀察重點</span></button><span style="width:1px;background:var(--border);margin:4px 4px"></span><button class="tab-btn" data-tab="minerva"><span class="ic">🧮</span><span>Minerva 量化評分</span></button><button class="tab-btn" data-tab="thesis"><span class="ic">🎯</span><span>Build-Thesis 多空</span></button><button class="tab-btn" data-tab="backtest"><span class="ic">📊</span><span>Backtest 因子驗證</span></button><button class="tab-btn" data-tab="trader"><span class="ic">💹</span><span>TraderHub 進出場</span></button><button class="tab-btn" data-tab="experts"><span class="ic">🧠</span><span>18 大師解讀</span></button><button class="tab-btn" data-tab="info"><span class="ic">🏢</span><span>公司基本資料</span></button><button class="tab-btn" data-tab="price"><span class="ic">💰</span><span>即時價格</span></button>
+</div>
+<div class="tab-panel" id="tab-info" data-title="🏢 公司基本資料"><div class="section-inner"><table>
+<thead><tr><th>項目</th><th>數值</th></tr></thead>
+<tbody>
+<tr><td>公司全名</td><td class="num">傳奇</td></tr>
+<tr><td>產業分類</td><td class="num">資訊服務業</td></tr>
+<tr><td>市場 (yfinance)</td><td class="num">Communication Services</td></tr>
+<tr><td>上市/上櫃</td><td class="num">上市</td></tr>
+<tr><td>Beta</td><td class="num pos">0.44</td></tr>
+<tr><td>市值</td><td class="num">54.37億 元</td></tr>
+</tbody></table>
+</div></div><div class="tab-panel" id="tab-price" data-title="💰 即時價格"><div class="section-inner"><table>
+<thead><tr><th>項目</th><th>數值</th></tr></thead>
+<tbody>
+<tr><td>最新收盤</td><td class="num">81.70 元</td></tr>
+<tr><td>漲跌</td><td class="num">-0.20 (-0.24%)</td></tr>
+<tr><td>開盤</td><td class="num pos">83.50</td></tr>
+<tr><td>最高</td><td class="num pos">83.50</td></tr>
+<tr><td>最低</td><td class="num pos">81.20</td></tr>
+<tr><td>成交量</td><td class="num">13,010 張 (13K 張)</td></tr>
+<tr><td>資料日期</td><td class="num">2026-09-04</td></tr>
+</tbody></table>
+</div></div><div class="tab-panel" id="tab-tech" data-title="📊 技術分析">
+            <div class="charts-row">
+              <div class="chart-card"><h3>📈 收盤價 + 均線 (近 60 日)</h3><canvas id="c-main"></canvas></div>
+              <div class="chart-card"><h3>📊 RSI(14) — 動能指標 (超買 >70 / 超賣 <30)</h3><canvas id="c-rsi"></canvas></div>
+            </div>
+            <div class="section-inner"><table>
+<thead><tr><th>指標</th><th>數值</th></tr></thead>
+<tbody>
+<tr><td>收盤</td><td class="num pos">81.70</td></tr>
+<tr><td>MA13</td><td class="num pos">83.40</td></tr>
+<tr><td>MA27</td><td class="num pos">85.85</td></tr>
+<tr><td>MA54</td><td class="num pos">88.34</td></tr>
+<tr><td>RSI(14)</td><td class="num">44.55 (中性)</td></tr>
+<tr><td>ATR(14)</td><td class="num pos">2.83</td></tr>
+</tbody></table>
+
+**趨勢判定：**空頭排列** (價 < MA13 < MA27)**
+</div>
+            </div><div class="tab-panel" id="tab-val" data-title="💎 估值 (雙源驗證)"><div class="section-inner"><table>
+<thead><tr><th>指標</th><th>yfinance</th><th>FinMind</th><th>差異</th></tr></thead>
+<tbody>
+<tr><td>P/E</td><td class="num pos">57.68</td><td class="num pos">57.68</td><td class="num">-0.0%</td></tr>
+<tr><td>Forward P/E</td><td class="num pos">24.969513</td><td class="num">—</td><td class="num">—</td></tr>
+<tr><td>P/B</td><td class="num pos">6.26</td><td class="num pos">6.26</td><td class="num">-0.0%</td></tr>
+<tr><td>殖利率</td><td class="num pos">3.61%</td><td class="num pos">3.66%</td><td class="num">-0.05pp</td></tr>
+<tr><td>市值</td><td class="num">54.37億 元</td><td class="num">—</td><td class="num"></td></tr>
+<tr><td>52週高</td><td class="num pos">110.0</td><td class="num">—</td><td class="num"></td></tr>
+<tr><td>52週低</td><td class="num pos">78.9</td><td class="num">—</td><td class="num"></td></tr>
+<tr><td>Beta</td><td class="num pos">0.439</td><td class="num">—</td><td class="num">—</td></tr>
+</tbody></table>
+</div></div><div class="tab-panel" id="tab-fin" data-title="📊 季報 (FinMind)"><div class="section-inner"><table>
+<thead><tr><th>季度</th><th>營收(億)</th><th>毛利(億)</th><th>營業利益(億)</th><th>稅後淨利(億)</th><th>EPS(元)</th></tr></thead>
+<tbody>
+<tr><td>25Q03</td><td class="num pos">3.0</td><td class="num pos">2.0</td><td class="num pos">0.5</td><td class="num pos">0.5</td><td class="num pos">0.82</td></tr>
+<tr><td>25Q06</td><td class="num pos">2.9</td><td class="num pos">2.0</td><td class="num pos">0.5</td><td class="num pos">0.3</td><td class="num pos">0.40</td></tr>
+<tr><td>25Q09</td><td class="num pos">3.1</td><td class="num pos">2.0</td><td class="num pos">0.4</td><td class="num pos">0.3</td><td class="num pos">0.49</td></tr>
+<tr><td>25Q12</td><td class="num pos">2.9</td><td class="num pos">1.9</td><td class="num pos">0.2</td><td class="num pos">0.2</td><td class="num pos">0.25</td></tr>
+<tr><td>26Q03</td><td class="num pos">3.1</td><td class="num pos">2.1</td><td class="num pos">0.4</td><td class="num pos">0.3</td><td class="num pos">0.42</td></tr>
+<tr><td>26Q06</td><td class="num pos">2.9</td><td class="num pos">2.0</td><td class="num pos">0.3</td><td class="num pos">0.2</td><td class="num pos">0.27</td></tr>
+</tbody></table>
+
+_資料來源：FinMind TaiwanStockFinancialStatements（current）_</div></div><div class="tab-panel" id="tab-roe" data-title="🧬 ROE"><div class="section-inner">### ROE 比較
+
+<table>
+<thead><tr><th>期間</th><th>來源</th><th>ROE</th></tr></thead>
+<tbody>
+<tr><td>TTM (近 12 月)</td><td class="num">yfinance</td><td class="num pos"><strong>10.22%</strong></td></tr>
+<tr><td>2026-06-30 (Q)</td><td class="num">FinMind 季報 (年化)</td><td class="num pos">400.74%</td></tr>
+<tr><td>2026-03-31 (Q)</td><td class="num">FinMind 季報 (年化)</td><td class="num pos">400.94%</td></tr>
+<tr><td>2025-12-31 (Q)</td><td class="num">FinMind 季報 (年化)</td><td class="num pos">410.64%</td></tr>
+<tr><td>2025-09-30 (Q)</td><td class="num">FinMind 季報 (年化)</td><td class="num pos">401.33%</td></tr>
+<tr><td>2025-06-30 (Q)</td><td class="num">FinMind 季報 (年化)</td><td class="num pos">395.64%</td></tr>
+<tr><td>2025-03-31 (Q)</td><td class="num">FinMind 季報 (年化)</td><td class="num pos">400.49%</td></tr>
+</tbody></table>
+
+</div></div><div class="tab-panel" id="tab-rev" data-title="📈 月營收 (FinMind)"><div class="section-inner"><table>
+<thead><tr><th>月份</th><th>營收 (元)</th><th>YoY</th></tr></thead>
+<tbody>
+<tr><td>2025-08</td><td class="num pos">96,294,000</td><td class="num neg">-17.9%</td></tr>
+<tr><td>2025-09</td><td class="num pos">83,783,000</td><td class="num neg">-41.3%</td></tr>
+<tr><td>2025-10</td><td class="num pos">86,378,000</td><td class="num neg">-36.4%</td></tr>
+<tr><td>2025-11</td><td class="num pos">96,315,000</td><td class="num neg">-12.6%</td></tr>
+<tr><td>2025-12</td><td class="num">1.08億</td><td class="num pos">+2.4%</td></tr>
+<tr><td>2026-01</td><td class="num pos">88,202,000</td><td class="num neg">-22.4%</td></tr>
+<tr><td>2026-02</td><td class="num pos">99,591,000</td><td class="num pos">+16.4%</td></tr>
+<tr><td>2026-03</td><td class="num">1.23億</td><td class="num pos">+22.9%</td></tr>
+<tr><td>2026-04</td><td class="num">1.08億</td><td class="num pos">+3.6%</td></tr>
+<tr><td>2026-05</td><td class="num pos">97,009,000</td><td class="num neg">-4.8%</td></tr>
+<tr><td>2026-06</td><td class="num pos">87,467,000</td><td class="num pos">+4.2%</td></tr>
+<tr><td>2026-07</td><td class="num pos">89,539,000</td><td class="num neg">-28.7%</td></tr>
+</tbody></table>
+</div></div><div class="tab-panel" id="tab-div" data-title="💵 配息歷史"><div class="section-inner"><table>
+<thead><tr><th>配息年度</th><th>現金股利</th><th>股票股利</th><th>除息日</th></tr></thead>
+<tbody>
+<tr><td>112年</td><td class="num pos">2.30</td><td class="num">0.00</td><td class="num">2024-06-18</td></tr>
+<tr><td>113年</td><td class="num pos">4.40</td><td class="num">0.00</td><td class="num">2025-06-13</td></tr>
+<tr><td>114年</td><td class="num pos">1.76</td><td class="num">0.00</td><td class="num">2026-06-09</td></tr>
+</tbody></table>
+</div></div><div class="tab-panel" id="tab-inst" data-title="🏛 法人 (近 10 日)">
+            <div class="chart-card" style="margin-bottom:14px">
+              <h3>🏛 法人買賣超 (近 20 日，紅=買超 / 綠=賣超)</h3>
+              <canvas id="c-inst" style="width:100%!important;height:280px!important"></canvas>
+            </div>
+            <div class="section-inner"><div class='inst-summary'><div class='inst-sum-card'><div class='inst-sum-label'>近 5 日 累計</div><div class='inst-sum-grid'><span class='inst-sum-key'>合計</span><span class='inst-sum-val neg'>-10 張</span><span class='inst-sum-key'>外資</span><span class='inst-sum-val neg'>-10</span><span class='inst-sum-key'>投信</span><span class='inst-sum-val '>0</span><span class='inst-sum-key'>自營</span><span class='inst-sum-val '>0</span></div></div><div class='inst-sum-card'><div class='inst-sum-label'>近 10 日 累計</div><div class='inst-sum-grid'><span class='inst-sum-key'>合計</span><span class='inst-sum-val neg'>-8 張</span><span class='inst-sum-key'>外資</span><span class='inst-sum-val neg'>-10</span><span class='inst-sum-key'>投信</span><span class='inst-sum-val '>0</span><span class='inst-sum-key'>自營</span><span class='inst-sum-val pos'>+2</span></div></div><div class='inst-sum-card'><div class='inst-sum-label'>近 20 日 累計</div><div class='inst-sum-grid'><span class='inst-sum-key'>合計</span><span class='inst-sum-val neg'>-4 張</span><span class='inst-sum-key'>外資</span><span class='inst-sum-val neg'>-8</span><span class='inst-sum-key'>投信</span><span class='inst-sum-val '>0</span><span class='inst-sum-key'>自營</span><span class='inst-sum-val pos'>+4</span></div></div></div><div class='inst-table-wrap'><table class='inst-table'><thead><tr><th class='date-col'>日期</th><th>外資 (張)</th><th>投信 (張)</th><th>自營 (張)</th><th>合計 (張)</th></tr></thead><tbody><tr class=''><td class='date-col'>2026-09-04</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:33%'></span></span><span class='inst-num neg'>-2</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:17%'></span></span><span class='inst-num pos'>+1</span></span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td></tr><tr class=''><td class='date-col'>2026-09-03</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td></tr><tr class=''><td class='date-col'>2026-09-02</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:33%'></span></span><span class='inst-num neg'>-2</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:33%'></span></span><span class='inst-num neg'>-2</span></span></td></tr><tr class=''><td class='date-col'>2026-09-01</td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-num zero'>0</span></td></tr><tr class='hot-dn'><td class='date-col'>2026-08-31</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:83%'></span></span><span class='inst-num neg'>-5</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:100%'></span></span><span class='inst-num neg'>-6</span></span></td></tr><tr class=''><td class='date-col'>2026-08-28</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:33%'></span></span><span class='inst-num pos'>+2</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:33%'></span></span><span class='inst-num pos'>+2</span></span></td></tr><tr class=''><td class='date-col'>2026-08-27</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:17%'></span></span><span class='inst-num pos'>+1</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:17%'></span></span><span class='inst-num pos'>+1</span></span></td></tr><tr class=''><td class='date-col'>2026-08-26</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:33%'></span></span><span class='inst-num pos'>+2</span></span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:17%'></span></span><span class='inst-num pos'>+1</span></span></td></tr><tr class=''><td class='date-col'>2026-08-25</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td></tr><tr class=''><td class='date-col'>2026-08-24</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td></tr><tr class=''><td class='date-col'>2026-08-21</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:17%'></span></span><span class='inst-num pos'>+1</span></span></td><td class='total-cell'><span class='inst-num zero'>0</span></td></tr><tr class='hot-up'><td class='date-col'>2026-08-20</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:83%'></span></span><span class='inst-num pos'>+5</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:83%'></span></span><span class='inst-num pos'>+5</span></span></td></tr><tr class='hot-dn'><td class='date-col'>2026-08-19</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:83%'></span></span><span class='inst-num neg'>-5</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:83%'></span></span><span class='inst-num neg'>-5</span></span></td></tr><tr class=''><td class='date-col'>2026-08-18</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:32%'></span></span><span class='inst-num neg'>-2</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:32%'></span></span><span class='inst-num neg'>-2</span></span></td></tr><tr class='hot-up'><td class='date-col'>2026-08-17</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:83%'></span></span><span class='inst-num pos'>+5</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:17%'></span></span><span class='inst-num pos'>+1</span></span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:100%'></span></span><span class='inst-num pos'>+6</span></span></td></tr><tr class=''><td class='date-col'>2026-08-14</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td></tr><tr class=''><td class='date-col'>2026-08-13</td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-num zero'>0</span></td></tr><tr class=''><td class='date-col'>2026-08-12</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:17%'></span></span><span class='inst-num pos'>+1</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:17%'></span></span><span class='inst-num pos'>+1</span></span></td></tr><tr class=''><td class='date-col'>2026-08-11</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar neg' style='width:17%'></span></span><span class='inst-num neg'>-1</span></span></td></tr><tr class=''><td class='date-col'>2026-08-07</td><td><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:17%'></span></span><span class='inst-num pos'>+1</span></span></td><td><span class='inst-num zero'>0</span></td><td><span class='inst-num zero'>0</span></td><td class='total-cell'><span class='inst-cell'><span class='inst-bar-wrap'><span class='inst-bar pos' style='width:17%'></span></span><span class='inst-num pos'>+1</span></span></td></tr></tbody></table></div><div class='inst-source'><span style='color:#ec7063'>■ 買超</span> · <span style='color:#58d68d'>■ 賣超</span> · 色塊 = 該日合計相對最大絕對值的比例 · <em>資料來源：MySQL `daily_data2_full`</em></div></div>
+            <script>const INST_DATA = {"dates": ["2026-08-07", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"], "foreign": [1.0, -1.0, 1.0, 0.0, -1.0, 5.0, -1.9, -5.0, 5.0, -1.0, -1.0, -1.0, -1.0, 1.0, 2.0, -5.0, 0.0, -2.0, -1.0, -2.0], "trust": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "dealer": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0], "total": [1.0, -1.0, 1.0, 0.0, -1.0, 6.0, -1.9, -5.0, 5.0, 0.0, -1.0, -1.0, 1.0, 1.0, 2.0, -6.0, 0.0, -2.0, -1.0, -1.0]};</script>
+            </div><div class="tab-panel" id="tab-margin" data-title="💴 融資融券 (近 30 日)"><div class="section-inner"><table>
+<thead><tr><th>項目</th><th>數值</th><th>30 日變化</th></tr></thead>
+<tbody>
+<tr><td>融資餘額</td><td class="num"><strong>1,800 張</strong></td><td class="num">-0 張</td></tr>
+<tr><td>融券餘額</td><td class="num"><strong>2 張</strong></td><td class="num">+0 張</td></tr>
+<tr><td>融資融券比</td><td class="num pos">900.0</td><td class="num">—</td></tr>
+<tr><td>券資比</td><td class="num pos">0.1%</td><td class="num">—</td></tr>
+</tbody></table>
+
+_資料來源：MySQL `daily_data2_full` (DB)_</div></div><div class="tab-panel" id="tab-news" data-title="📰 新聞 (DB)"><div class="section-inner"><div class='news-list'><div class='news-item'><div class='news-meta'><span class='news-icon news-neutral'>😐</span><span class='news-date'>2026-09-04 08:24</span><span class='news-source'>富聯網</span></div><div class='news-title'>盈餘：傳奇(4994)自結1-8月合併稅前利益7128萬元，每股稅前盈餘1.07元 - 富聯網</div></div><div class='news-item'><div class='news-meta'><span class='news-icon news-neutral'>😐</span><span class='news-date'>2026-09-04 05:58</span><span class='news-source'>富聯網</span></div><div class='news-title'>《業績-資服》傳奇8月營收為0.86億元，年減10.94% - 富聯網</div></div><div class='news-item'><div class='news-meta'><span class='news-icon news-neutral'>😐</span><span class='news-date'>2026-09-04 05:52</span><span class='news-source'>富聯網</span></div><div class='news-title'>營收：傳奇(4994)8月營收8575萬元，月增率-4.22%，年增率-10.94% - 富聯網</div></div><div class='news-item'><div class='news-meta'><span class='news-icon news-neutral'>😐</span><span class='news-date'>2026-08-26 14:34</span><span class='news-source'>LINE TODAY</span></div><div class='news-title'>討論牆 | 盤中速報 - 傳奇(4994)急跌-3.08%報83.7元，成交1張 - LINE TODAY</div></div><div class='news-item'><div class='news-meta'><span class='news-icon news-neutral'>😐</span><span class='news-date'>2026-08-21 07:06</span><span class='news-source'>LINE TODAY</span></div><div class='news-title'>討論牆 | 盤中速報 - 傳奇(4994)急跌-4.07%報85.3元，成交3張 - LINE TODAY</div></div><div class='news-item'><div class='news-meta'><span class='news-icon news-neutral'>😐</span><span class='news-date'>2026-08-14 04:23</span><span class='news-source'>CMoney</span></div><div class='news-title'>傳奇(4994)-同學風向與貼文摘要 - 股市爆料同學會 - CMoney</div></div><div class='news-item'><div class='news-meta'><span class='news-icon news-neutral'>😐</span><span class='news-date'>2026-08-07 09:10</span><span class='news-source'>CMoney投資網誌</span></div><div class='news-title'>【2026/07月營收公告】傳奇(4994) 七月營收創近2個月以來新高，月增2.37%-CMoney 小編 - CMoney投資網誌</div></div><div class='news-item'><div class='news-meta'><span class='news-icon news-neutral'>😐</span><span class='news-date'>2026-07-06 23:06</span><span class='news-source'>富聯網</span></div><div class='news-title'>營收：傳奇(4994)6月營收8746萬元，月增率-9.83%，年增率4.21% - 富聯網</div></div><div class='news-item'><div class='news-meta'><span class='news-icon news-neutral'>😐</span><span class='news-date'>2026-06-22 18:58</span><span class='news-source'>Yahoo - 汽機車</span></div><div class='news-title'>個股：傳奇(4994)《幻想神域》下月進軍韓國，法人估全年賺半個股本 - Yahoo - 汽機車</div></div><div class='news-item'><div class='news-meta'><span class='news-icon news-neutral'>😐</span><span class='news-date'>2026-06-12 08:27</span><span class='news-source'>CMoney</span></div><div class='news-title'>4994 傳奇 - 【06/10 產業即時新聞】軟體遊戲股價強勢表態，多檔個股衝刺漲停，市場聚焦旺季題材- 股市爆料同學會 - CMoney</div></div></div></div></div><div class="tab-panel" id="tab-zen" data-title="🧘 纏論 (Chanlun)"><div class="section-inner">**最近中樞**: 80.90 - 84.10（2026-08-20 ~ 2026-09-01）
+
+**位置**: 中樞內震盪 (80.90 - 84.10)
+
+**偏多/偏空**: 中性
+
+**失效條件**: 價格在 80.90-84.10 區間內震盪，方向未明</div></div><div class="tab-panel" id="tab-minerva" data-title="🧮 Minerva 量化評分"><div class="section-inner">### Minerva 量化評分：40/100 ★★★
+
+<table>
+<thead><tr><th>因子</th><th>權重</th><th>分數</th><th>信號</th></tr></thead>
+<tbody>
+<tr><td>動能 (Momentum)</td><td class="num">25-40%</td><td class="num pos">45</td><td class="num">➡️</td></tr>
+<tr><td>價值 (Value)</td><td class="num">25-40%</td><td class="num">0</td><td class="num">⚠️</td></tr>
+<tr><td>品質 (Quality)</td><td class="num">25-40%</td><td class="num pos">61</td><td class="num">✨</td></tr>
+<tr><td>波動 (Volatility)</td><td class="num">25-40%</td><td class="num pos">83</td><td class="num">🛡️</td></tr>
+<tr><td>市值 (Size)</td><td class="num">25-40%</td><td class="num pos">40</td><td class="num">➡️</td></tr>
+<tr><td><strong>加權綜合</strong></td><td class="num pos">100%</td><td class="num pos"><strong>40</strong></td><td class="num">★★★</td></tr>
+</tbody></table>
+
+**原始數據**：
+- 動能：20d +0.0% · 60d -10.2% · 120d -17.1% · 240d -16.6%
+- 價值：P/E 57.7 · P/B 6.26
+- 品質：ROE 10.2%
+- 波動：β 0.44
+- 市值：54.37億
+</div></div><div class="tab-panel" id="tab-thesis" data-title="🎯 Build-Thesis 多空"><div class="section-inner">**🔴 觀望** — LEFT/RIGHT 都沒明顯訊號
+⚪ LEFT 無明顯訊號
+⚪ RIGHT 無明顯訊號
+🔑 前提：等待 LEFT 或 RIGHT 任一訊號強化
+❌ 反證：無明確反轉訊號
+</div></div><div class="tab-panel" id="tab-backtest" data-title="📊 Backtest 因子驗證"><div class="section-inner">### Backtest 多策略回測 (過去 120 日)
+
+_回測期間_: 2026-03-06 ~ 2026-09-04
+
+<table>
+<thead><tr><th>策略</th><th>交易次數</th><th>勝率</th><th>平均報酬</th><th>最大獲利</th><th>最大虧損</th><th>Sharpe</th></tr></thead>
+<tbody>
+<tr><td>MA 趨勢 (close &gt; MA27)</td><td class="num pos">1</td><td class="num">0%</td><td class="num neg">-8.45%</td><td class="num neg">-8.45%</td><td class="num neg">-8.45%</td><td class="num">0.00</td></tr>
+<tr><td>RSI 中性偏低 (30~45)</td><td class="num pos">1</td><td class="num pos">100%</td><td class="num pos">+3.10%</td><td class="num pos">+3.10%</td><td class="num pos">+3.10%</td><td class="num">0.00</td></tr>
+<tr><td>外資 3 日連買</td><td class="num pos">1</td><td class="num">0%</td><td class="num neg">-8.45%</td><td class="num neg">-8.45%</td><td class="num neg">-8.45%</td><td class="num">0.00</td></tr>
+</tbody></table>
+
+**綜合判斷**：
+- 🟢 有 +3.1% 最佳策略報酬，建議關注對應訊號
+
+_來源：backtest-orchestrator skill (OpenAlice) — 簡化版 walk-forward_
+</div></div><div class="tab-panel" id="tab-trader" data-title="💹 TraderHub 進出場"><div class="section-inner">### TraderHub 進出場策略 (ATR-based)
+
+**現價**：81.70 · **ATR(14)**：2.83 (波動度)
+
+<table>
+<thead><tr><th>項目</th><th>價格</th><th>說明</th></tr></thead>
+<tbody>
+<tr><td>進場（積極）</td><td class="num pos"><strong>81.70</strong></td><td class="num">現價直接進場</td></tr>
+<tr><td>進場（保守）</td><td class="num pos"><strong>83.40</strong></td><td class="num">拉回 MA13 進場</td></tr>
+<tr><td>停損</td><td class="num pos"><strong>76.04</strong></td><td class="num">-2 ATR (6.9% from 現價)</td></tr>
+<tr><td>目標 1</td><td class="num pos">87.36</td><td class="num">+2 ATR (6.9%)</td></tr>
+<tr><td>目標 2</td><td class="num pos"><strong>90.19</strong></td><td class="num">+3 ATR (10.4%)</td></tr>
+<tr><td>目標 3</td><td class="num pos">95.84</td><td class="num">+5 ATR (17.3%)</td></tr>
+</tbody></table>
+
+**倉位建議**（Kelly 簡化）
+- 單筆風險佔比：**5%** of capital
+- 每張最大虧損：5,660 元 (假設 1 張 = 1000 股)
+- 100 萬帳戶最多 1 張 (1% 帳戶風險)
+
+_來源：traderhub skill (OpenAlice) — 簡化版 ATR 倉位法_
+</div></div><div class="tab-panel" id="tab-experts" data-title="🧠 18 大師解讀"><div class="section-inner"><div class='expert-grid'><div class='expert-card'><div class='expert-head'><span class='expert-icon'>🧮</span><span class='expert-name'>達摩達蘭</span><span class='expert-count'>1 視角</span></div><div class='expert-views'><div class='view-chip'><div class='view-title'>估值偏高 <span class='view-data'>P/E 57.7</span></div><div class='view-explain'>本益比 57.7 但營收成長跟不上 → 估值教授警告：股價已透支未來</div></div></div></div><div class='expert-card'><div class='expert-head'><span class='expert-icon'>🏛</span><span class='expert-name'>伯里</span><span class='expert-count'>1 視角</span></div><div class='expert-views'><div class='view-chip'><div class='view-title'>外資棄守 <span class='view-data'>外資 -2 張</span></div><div class='view-explain'>外資淨賣超 -2 張且跌破 MA27 — 聰明的錢正在撤離，是伯里逆向布局的訊號</div></div></div></div><div class='expert-card'><div class='expert-head'><span class='expert-icon'>🦁</span><span class='expert-name'>阿克曼</span><span class='expert-count'>1 視角</span></div><div class='expert-views'><div class='view-chip'><div class='view-title'>困境反轉 <span class='view-data'>ROE 10% 跌 -17%</span></div><div class='view-explain'>ROE 10% 體質好但 120d 跌 -17%，阿克曼眼中的「被錯殺的優質股」</div></div></div></div><div class='expert-card'><div class='expert-head'><span class='expert-icon'>💎</span><span class='expert-name'>帕布萊</span><span class='expert-count'>1 視角</span></div><div class='expert-views'><div class='view-chip'><div class='view-title'>低風險 <span class='view-data'>β 0.44</span></div><div class='view-explain'>β 0.44 (&lt;1) 股價波動比大盤小，帕布萊會說「小風險大回報」</div></div></div></div><div class='expert-card'><div class='expert-head'><span class='expert-icon'>💡</span><span class='expert-name'>估值師</span><span class='expert-count'>1 視角</span></div><div class='expert-views'><div class='view-chip'><div class='view-title'>高估 <span class='view-data'>P/E 57.7</span></div><div class='view-explain'>P/E 57.7 過高，估值師建議觀望</div></div></div></div><div class='expert-card'><div class='expert-head'><span class='expert-icon'>💡</span><span class='expert-name'>情緒師</span><span class='expert-count'>1 視角</span></div><div class='expert-views'><div class='view-chip'><div class='view-title'>法人看空 <span class='view-data'>外資 -2 張</span></div><div class='view-explain'>外資賣超 -2 張，法人情緒偏空</div></div></div></div><div class='expert-card'><div class='expert-head'><span class='expert-icon'>💡</span><span class='expert-name'>技術師</span><span class='expert-count'>1 視角</span></div><div class='expert-views'><div class='view-chip'><div class='view-title'>空頭排列 <span class='view-data'>MA13 &lt; MA27</span></div><div class='view-explain'>均線空頭排列（價 82 &lt; MA13 83 &lt; MA27 86），技術派會減碼</div></div></div></div><div class='expert-card'><div class='expert-head'><span class='expert-icon'>💡</span><span class='expert-name'>組合經理</span><span class='expert-count'>1 視角</span></div><div class='expert-views'><div class='view-chip'><div class='view-title'>空頭共識 <span class='view-data'>0/5 訊號反向</span></div><div class='view-explain'>0 個空頭訊號，組合經理建議減碼或避開</div></div></div></div></div><div class='expert-meta'>共觸發 8 個視角，分屬 8 位大師 · 資料來源：hedge-fund-expert-team skill</div></div></div><div class="tab-panel" id="tab-obs" data-title="💡 觀察重點"><div class="section-inner"><div class='obs-grid'><div class='obs-card s-neu'><div class='obs-head'><span class='obs-icon'>⚖️</span><span class='obs-cat'>動能</span></div><div class='obs-val s-neu'>45</div><div class='obs-title'>RSI 中性</div><div class='obs-explain'>RSI 落在 30~70 區間，<b>動能持平</b>，沒有明顯超買或超賣訊號。<br><span style='color:var(--muted);font-size:0.78rem'>💡 RSI = Relative Strength Index，近 14 天漲跌力道指標。70+ 過熱、30- 超冷。</span></div></div><div class='obs-card s-neg'><div class='obs-head'><span class='obs-icon'>💸</span><span class='obs-cat'>法人</span></div><div class='obs-val s-neg'>-2 張</div><div class='obs-title'>外資今日賣超</div><div class='obs-explain'>外資退場可能造成短期賣壓。若連續 <code>3 日以上</code> 賣超且跌破月線，宜減倉觀望。</div></div><div class='obs-card s-neg'><div class='obs-head'><span class='obs-icon'>💎</span><span class='obs-cat'>估值</span></div><div class='obs-val s-neg'>57.7</div><div class='obs-title'>本益比偏高</div><div class='obs-explain'>P/E <code>>30</code> 表示市場對未來成長有很高期待。<b>估值偏貴</b>，需強勁成長支撐，否則有下修風險。</div></div><div class='obs-card s-neu'><div class='obs-head'><span class='obs-icon'>📊</span><span class='obs-cat'>品質</span></div><div class='obs-val s-neu'>10.2%</div><div class='obs-title'>ROE 中等</div><div class='obs-explain'>ROE 落在 5~20%，普通水準。優於 <code>10%</code> 算可接受，<code>>15%</code> 才算優質。</div></div><div class='obs-card s-neg'><div class='obs-head'><span class='obs-icon'>⚠️</span><span class='obs-cat'>營收</span></div><div class='obs-val s-neg'>-28.7%</div><div class='obs-title'>月營收大幅衰退</div><div class='obs-explain'>YoY <code><-20%</code>，較去年同期衰退 20% 以上，<b>業績動能轉弱</b>。需注意是否為單月事件或趨勢性下滑。</div></div></div><div class='obs-foot'>💡 觀察重點 = 快速掃描 <b>動能</b> + <b>法人</b> + <b>估值</b> + <b>品質</b> + <b>營收</b> 5 個維度</div></div></div>
+
+    <div class="action-bar">
+      <a href="https://groovelab.dev/analyze.html?ticker=4994" target="_blank">🔍 重查</a>
+      <a href="https://groovelab.dev/watchlist.html" target="_blank">📊 Market Report</a>
+      <a href="https://groovelab.dev/analyze/patterns.html" target="_blank">🎛 Ticker Dashboard</a>
+      <a href="https://groovelab.dev/analyze.html" target="_blank">🏛 Wall Street</a>
+      <a href="https://groovelab.dev/analyze.html" target="_blank">📚 Research</a>
+    </div>
+    
+<div class="section" style="margin:20px"><h2>🤖 Deep-dive (Perplexity Prompt)</h2><div class="dd-prompt"><button class="copy-btn" onclick="copyText(this)">📋 複製</button><pre># Tiger Global Growth Equity — Deep Dive
+
+You are a **growth equity analyst at Tiger Global**, modeled after the firm&#x27;s
+publicly documented investment framework. Apply this to:
+
+**Target Company**: 4994 傳奇 (資訊服務業)
+**Current Price**: NT$81.70
+**Market Cap**: NT$0M
+**52-Week Return**: +0.0% (60d), +0.0% (240d)
+**Volume (today)**: 13,010 shares
+**Latest News (last 5 days)**:
+  (no recent news in stock_news table)
+
+## Your Task
+
+Produce a **one-page investment memo** with these 10 sections:
+
+1. **Business Quality Assessment** (Score 1-10)
+   - What does this company do in 1-2 sentences?
+   - What is the durable competitive advantage (moat)?
+   - What is the TAM and where in the S-curve is this company?
+
+2. **Rule of 40 Check**
+   - Revenue growth rate (YoY) +
+   - EBITDA margin (or operating margin if EBITDA unavailable) =
+   - Is it &gt; 40%?
+
+3. **Net Revenue Retention**
+   - Estimate NRR from any available data (existing customer growth, expansion, churn)
+   - Target: &gt; 120% for healthy SaaS-like businesses
+
+4. **Unit Economics**
+   - Gross margin trajectory (improving / stable / declining)
+   - Operating margin path to profitability
+   - Any signs of cost discipline?
+
+5. **Capital Allocation**
+   - Where is the company investing? (R&amp;D, M&amp;A, capex)
+   - Insider ownership % and recent transactions
+   - Any buybacks, dividends, dilution?
+
+6. **Comparable Multiples**
+   - Industry peers and their P/E, P/S, EV/EBITDA
+   - Where does 4994 sit relative to peers?
+   - Is the premium / discount justified?
+
+7. **Bull Case** (3-5 bullet points, base rates cited)
+
+8. **Bear Case** (3-5 bullet points, specific downside scenarios)
+
+9. **Catalysts** (next 12 months, ranked by impact)
+   - Product launches, earnings, regulatory, macro
+
+10. **Investment Decision** (1 paragraph)
+    - Position size (small / medium / large)
+    - Entry trigger (price level or condition)
+    - Stop loss level
+    - 12-month price target with reasoning
+    - Conviction level (low / medium / high)
+
+## Constraints
+
+- Cite specific numbers, not vague statements
+- Reference real comparable companies (e.g., for Taiwan semiconductor, compare to TSMC peers)
+- Output should fit on a single printed page
+- Use markdown tables for comparable analysis
+- **No buy/sell recommendation** without explicit risk framework
+</pre></div></div>
+<div class="disclaimer" style="margin:20px">
+  <strong>資料來源：</strong>db · yfinance_cache · finmind_pe · finmind_div · finmind_fin · finmind_month。本報告為研究參考，<strong>非投資建議</strong>。
+</div>
+<footer>tw-invest-suite · 2026-09-04 23:02</footer>
+<script>
+const CHART_DATA = {"dates": ["2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24", "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30", "2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", "2026-05-15", "2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-03", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"], "close": [103.0, 101.5, 99.9, 100.0, 98.0, 97.0, 96.4, 95.5, 95.6, 91.5, 91.6, 89.5, 91.0, 92.5, 91.9, 92.5, 94.0, 96.6, 98.9, 98.0, 98.8, 101.0, 99.6, 99.4, 99.4, 99.5, 96.0, 99.3, 100.5, 100.5, 101.0, 99.5, 99.4, 100.0, 99.6, 98.9, 100.0, 95.9, 94.8, 95.7, 98.0, 98.5, 97.9, 98.0, 96.1, 96.1, 92.2, 91.7, 91.7, 91.2, 90.0, 90.0, 89.4, 95.2, 91.9, 89.5, 90.1, 91.0, 90.1, 87.3, 87.2, 86.8, 87.6, 90.0, 87.2, 85.4, 87.5, 87.1, 86.6, 93.0, 92.9, 91.8, 91.0, 92.8, 91.6, 91.4, 89.1, 90.7, 92.1, 90.5, 89.9, 90.7, 91.0, 90.2, 91.0, 91.0, 89.8, 89.3, 91.5, 91.7, 92.3, 92.6, 93.0, 93.0, 93.4, 92.8, 90.1, 89.2, 88.2, 86.7, 87.2, 87.1, 87.1, 87.3, 85.1, 83.9, 82.7, 82.1, 86.0, 83.2, 84.5, 83.5, 85.6, 85.5, 83.8, 81.9, 83.1, 81.4, 81.9, 81.7], "sma13": [102.6, 102.73, 102.61, 102.49, 102.18, 101.72, 101.29, 100.75, 100.15, 99.26, 98.35, 97.27, 96.19, 95.38, 94.65, 94.08, 93.62, 93.51, 93.65, 93.78, 94.03, 94.45, 95.07, 95.67, 96.43, 97.08, 97.35, 97.92, 98.54, 99.04, 99.38, 99.42, 99.53, 99.62, 99.52, 99.46, 99.51, 99.24, 98.88, 98.85, 98.75, 98.6, 98.4, 98.17, 97.91, 97.65, 97.05, 96.45, 95.89, 95.22, 94.76, 94.39, 93.91, 93.69, 93.18, 92.54, 91.93, 91.54, 91.08, 90.7, 90.35, 89.98, 89.7, 89.7, 89.48, 89.18, 88.58, 88.22, 87.99, 88.22, null, 88.49, null, 89.21, 89.58, 89.87, 89.8, 90.07, 90.58, 90.82, 91.03, 91.35, 91.19, 90.98, 90.92, 90.92, 90.69, 90.52, 90.52, 90.72, 90.85, 90.87, 91.08, 91.32, 91.52, 91.66, 91.65, 91.52, 91.3, 91.06, 90.9, 90.56, 90.21, 89.82, 89.25, 88.55, 87.75, 86.88, 86.36, 85.83, 85.47, 85.11, 85.02, 84.89, 84.64, 84.24, 83.92, 83.63, 83.48, 83.4], "sma27": [103.03, 102.9, 102.73, 102.58, 102.36, 102.21, 101.93, 101.58, 101.25, 100.8, 100.36, 99.88, 99.44, 99.09, 98.73, 98.46, 98.18, 98.0, 97.89, 97.7, 97.58, 97.53, 97.38, 97.25, 97.1, 96.95, 96.61, 96.48, 96.44, 96.46, 96.5, 96.56, 96.64, 96.78, 96.93, 97.05, 97.37, 97.53, 97.72, 97.9, 98.1, 98.34, 98.54, 98.69, 98.67, 98.57, 98.36, 98.09, 97.75, 97.44, 97.09, 96.74, 96.37, 96.34, 96.06, 95.66, 95.27, 94.9, 94.55, 94.1, 93.63, 93.16, 92.74, 92.37, 92.04, 91.7, 91.39, 90.99, 90.55, 90.37, null, 90.02, null, 89.85, 89.85, 89.84, 89.76, 89.79, 89.86, 89.9, 89.71, 89.66, 89.72, 89.72, 89.72, 89.76, 89.85, 89.93, 90.1, 90.25, 90.34, 90.35, 90.82, 91.02, 91.26, 91.49, 91.38, 91.24, 91.11, 90.95, 90.74, 90.57, 90.41, 90.35, 90.14, 89.84, 89.55, 89.26, 89.09, 88.8, 88.59, 88.31, 88.11, 87.95, 87.74, 87.39, 87.07, 86.67, 86.27, 85.85], "sma54": [100.36, 100.46, 100.49, 100.56, 100.58, 100.61, 100.64, 100.65, 100.66, 100.62, 100.59, 100.51, 100.44, 100.37, 100.28, 100.2, 100.14, 100.14, 100.17, 100.18, 100.19, 100.19, 100.15, 100.12, 100.08, 99.99, 99.83, 99.75, 99.67, 99.6, 99.54, 99.46, 99.43, 99.35, 99.25, 99.15, 99.09, 98.94, 98.8, 98.67, 98.59, 98.54, 98.5, 98.44, 98.34, 98.23, 98.03, 97.84, 97.64, 97.41, 97.17, 96.92, 96.66, 96.48, 96.27, 96.05, 95.87, 95.7, 95.55, 95.37, 95.2, 95.04, 94.89, 94.87, 94.79, 94.71, 94.64, 94.54, 94.45, 94.46, null, 94.35, null, 94.1, 93.97, 93.79, 93.6, 93.44, 93.3, 93.14, 93.02, 92.86, 92.69, 92.5, 92.31, 92.15, 91.98, 91.78, 91.63, 91.49, 91.35, 91.36, 91.26, 91.21, 91.12, 91.02, 90.87, 90.71, 90.56, 90.39, 90.3, 90.21, 90.13, 90.05, 89.96, 89.85, 89.73, 89.48, 89.37, 89.26, 89.15, 89.01, 88.93, 88.9, 88.84, 88.74, 88.66, 88.5, 88.4, 88.34], "rsi14": [54.0323, 50.0, 50.3759, 43.5897, 37.2263, 32.3944, 26.087, 26.2774, 24.0602, 13.4146, 14.375, 10.2273, 17.2775, 17.2775, 18.6441, 23.2143, 32.3353, 41.1458, 52.3077, 52.5773, 56.1224, 63.1579, 59.009, 71.5847, 71.4286, 80.8642, 63.7363, 67.0, 70.8738, 70.0, 68.4211, 58.1006, 51.5924, 56.4935, 52.6667, 42.2222, 51.5152, 39.7661, 37.3626, 40.0, 55.618, 47.3333, 40.9722, 41.3793, 34.5912, 38.1944, 30.2198, 27.0718, 27.6836, 28.0, 21.5909, 28.1481, 29.2308, 48.6034, 33.8624, 28.3654, 31.25, 33.7963, 35.4369, 31.1966, 37.2449, 37.4359, 39.9015, 47.2973, 44.1176, 41.0156, 46.4945, 31.3364, 35.9788, 57.6419, null, 51.7699, null, 62.7907, 59.7345, 60.2679, 53.1381, 51.5152, 61.2903, 61.8605, 56.0, 58.8235, 60.8911, 40.411, 43.7908, 47.1831, 45.8904, 36.8421, 49.6503, 51.049, 62.6984, 63.5659, 54.3689, 64.3678, 70.5882, 62.6506, 45.7944, 45.3704, 37.2727, 32.8, 38.9831, 40.3509, 26.087, 26.087, 16.6667, 12.8205, 8.8, 8.3969, 27.7108, 24.4681, 33.908, 33.7143, 43.0108, 46.5116, 40.7609, 37.1287, 40.6542, 37.1179, 42.4528, 44.5545], "volume": [16362.0, 31677.0, 14605.0, 49419.0, 30005.0, 24029.0, 25139.0, 23807.0, 19414.0, 40987.0, 14238.0, 41265.0, 28651.0, 17509.0, 11508.0, 10025.0, 23314.0, 19255.0, 24827.0, 16006.0, 6121.0, 45836.0, 16911.0, 16982.0, 3752.0, 12024.0, 68861.0, 37600.0, 15179.0, 18362.0, 18103.0, 11733.0, 29292.0, 24000.0, 10397.0, 65576.0, 23066.0, 24616.0, 31420.0, 20256.0, 18277.0, 18937.0, 14513.0, 11994.0, 20236.0, 15998.0, 30150.0, 44569.0, 18832.0, 7451.0, 8020.0, 15034.0, 29732.0, 34432.0, 38153.0, 19676.0, 23171.0, 22436.0, 46687.0, 552431.0, 45937.0, 23627.0, 19013.0, 50205.0, 35338.0, 42071.0, 19021.0, 14523.0, 29283.0, 60677.0, 29073.0, 19353.0, 21726.0, 31280.0, 37807.0, 13150.0, 45248.0, 14000.0, 19604.0, 14359.0, 21937.0, 13410.0, 12145.0, 13385.0, 12069.0, 11112.0, 14002.0, 15232.0, 20000.0, 12227.0, 19105.0, 23857.0, 34390.0, 24570.0, 10004.0, 30460.0, 21009.0, 27534.0, 66002.0, 84415.0, 21156.0, 9002.0, 10152.0, 18363.0, 22422.0, 20433.0, 15368.0, 20847.0, 22030.0, 35250.0, 5116.0, 15483.0, 16124.0, 10703.0, 5225.0, 18289.0, 7011.0, 9305.0, 6000.0, 13010.0], "k9": [null, null, null, null, null, null, null, null, 40.26666666666665, 26.844444444444434, 19.240382317801664, 14.245361261513153, 15.507836469424078, 20.447847263769063, 24.624805977264504, 32.43385333549236, 44.13339140115075, 62.75559426743384, 63.28079957531685, 61.72010842176113, 62.37816145314861, 67.24333570560783, 67.41660976865083, 67.09352931945143, 66.87814235331852, 63.673747323864774, 42.44916488257652, 46.39468135028909, 54.739311376383206, 60.302398060445945, 70.75715426251952, 67.68425668783352, 65.12283779188904, 66.49214827151577, 65.35373987331818, 61.00505735144292, 60.397929390757874, 41.827786260505306, 27.885190840336872, 22.75679389355794, 31.091593938988883, 39.13568949166424, 41.51334523324883, 43.595961498782806, 36.6663135138084, 34.86087567587226, 23.24058378391484, 21.27603544777997, 20.480319928149623, 18.09799106321087, 13.499019131746332, 14.049851138335937, 13.853746912736794, 35.90249794182454, 38.37944307232749, 32.343052138308416, 31.0214942183317, 34.19450965906797, 33.76680390773304, 36.96341705736981, 38.86139225736077, 39.1943081249538, 41.28105390148434, 49.41419372524992, 49.31360449533427, 45.696249150735675, 47.426690755322795, 47.79136385660572, 47.0482859635754, 59.176174863290896, 67.0641954709908, 70.15325062957571, 66.97085395507067, 70.90986223267335, 69.49546371067109, 67.63615106484602, 56.90894919474581, 54.60596612983054, 50.488484462140526, 40.23175959447868, 32.522927448950746, 30.892477948423334, 31.121301088422587, 27.76507791859754, 29.036367735205392, 35.04385299994086, 33.48161628567486, 30.4843428299057, 43.452146920617416, 53.45789386544565, 64.21002448172565, 73.41892788577626, 78.64292162082057, 79.20457069803338, 81.76479576590206, 76.89792354542725, 59.8511409494767, 49.06742729965114, 37.711618199767436, 25.925392525335166, 20.02869305610581, 15.705403213874439, 14.54434288332368, 16.012018062566653, 10.674678708377769, 10.872321016852835, 7.686810502463331, 7.261292471727688, 26.5462880044076, 28.550238514566303, 34.924965211261245, 35.88493615710099, 45.06150215351446, 55.79857719325205, 54.37076863388518, 43.82293666501437, 42.851654746373164, 31.300010268073915, 27.2769299223057, 23.312825076408924], "d9": [null, null, null, null, null, null, null, null, 46.75555555555555, 40.11851851851851, 33.15913978494623, 26.854546943801868, 23.072310119009273, 22.197489167262535, 23.006594770596525, 26.14901429222847, 32.14380666186923, 42.3477358637241, 49.32542376758835, 53.45698531897927, 56.430710697035714, 60.03491903322642, 62.49548261170122, 64.02816484761796, 64.97815734951814, 64.54335400763368, 57.178624299281296, 53.58397664961723, 53.96908822520589, 56.08019150361924, 60.97251242325266, 63.209760511446284, 63.84745293826054, 64.72901804934561, 64.93725865733647, 63.62652488870529, 62.55032638938948, 55.64281301309476, 46.390272288842134, 38.51244615708074, 36.03882875105012, 37.071115664588156, 38.55185885414171, 40.233226402355406, 39.0442554395064, 37.649795518295015, 32.84672494016829, 28.98982844270552, 26.15332560452022, 23.468214090750436, 20.145149104415733, 18.113383115722467, 16.69350438139391, 23.096502234870787, 28.19081584735635, 29.57489461100704, 30.057094480115257, 31.436232873099495, 32.21308988464401, 33.796532275552615, 35.484818936155335, 36.72131533242149, 38.24122818877577, 41.96555003426715, 44.41490152128952, 44.84201739777157, 45.70357518362198, 46.39950474128323, 46.615765148713955, 50.80256838690627, 56.22311074826778, 60.86649070870376, 62.90127845749273, 65.57080638255293, 66.87902549192565, 67.1314006828991, 63.72391685351467, 60.684599945619965, 57.28589478446015, 51.601183054466325, 45.24176451929446, 40.458668995670756, 37.34621302658803, 34.15250132392453, 32.44712346101815, 33.31269997399239, 33.36900541121988, 32.40745121744849, 36.08901645183813, 41.87864225637397, 49.3224363314912, 57.35460018291955, 64.45070732888655, 69.36866178526883, 73.5007064454799, 74.63311214546235, 69.70578841346713, 62.8263347088618, 54.45476253916368, 44.944972534554175, 36.63954604173805, 29.661498432450177, 24.622446582741343, 21.752303742683115, 18.05976206458133, 15.663948382005167, 13.004902422157889, 11.090365772014488, 16.242339849478856, 20.34497273784134, 25.204970228981306, 28.764958871687867, 34.197139965630065, 41.397619041504065, 45.72200223896444, 45.08898038098109, 44.34320516944512, 39.99547353565472, 35.75595899787171, 31.608247690717448]};
+function showTab(key) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  const panel = document.getElementById('tab-' + key);
+  const btn = document.querySelector('.tab-btn[data-tab="' + key + '"]');
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (history.replaceState) history.replaceState(null, '', '#' + key);
+  if (key === 'tech') renderCharts();
+  if (key === 'inst') renderInstChart();
+  const bar = document.getElementById('tabs-bar');
+  if (btn && bar) btn.scrollIntoView({behavior: 'smooth', inline: 'center', block: 'nearest'});
+}
+document.querySelectorAll('.tab-btn').forEach(b => {
+  b.addEventListener('click', () => showTab(b.dataset.tab));
+});
+let chartsInited = false;
+function renderCharts() {
+  if (chartsInited) return;
+  if (!CHART_DATA.dates || CHART_DATA.dates.length === 0) return;
+  const d = CHART_DATA;
+  const last60 = d.dates.slice(-60);
+  const close60 = d.close.slice(-60);
+  const sma13_60 = d.sma13.slice(-60);
+  const sma27_60 = d.sma27.slice(-60);
+  const sma54_60 = d.sma54.slice(-60);
+  const rsi60 = d.rsi14.slice(-60);
+  const ctx1 = document.getElementById('c-main');
+  if (ctx1) new Chart(ctx1, {
+    type: 'line',
+    data: {
+      labels: last60,
+      datasets: [
+        { label: '收盤', data: close60, borderColor: '#5fb1ff', backgroundColor: 'rgba(95,177,255,0.1)', borderWidth: 2, pointRadius: 0, tension: 0.2 },
+        { label: 'MA13', data: sma13_60, borderColor: '#58d68d', borderWidth: 1.2, pointRadius: 0, tension: 0.2 },
+        { label: 'MA27', data: sma27_60, borderColor: '#f5b041', borderWidth: 1.2, pointRadius: 0, tension: 0.2 },
+        { label: 'MA54', data: sma54_60, borderColor: '#bc8cff', borderWidth: 1.2, pointRadius: 0, tension: 0.2 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, position: 'top', labels: { color: '#8aa0c0', font: { size: 10 } } } },
+      scales: {
+        x: { ticks: { color: '#8aa0c0', maxTicksLimit: 8, font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#8aa0c0', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+  const ctx2 = document.getElementById('c-rsi');
+  if (ctx2) new Chart(ctx2, {
+    type: 'line',
+    data: { labels: last60, datasets: [{ label: 'RSI(14)', data: rsi60, borderColor: '#39c5cf', borderWidth: 1.5, pointRadius: 0, tension: 0.2, fill: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8aa0c0', maxTicksLimit: 8, font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { min: 0, max: 100, ticks: { color: '#8aa0c0', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+  chartsInited = true;
+}
+// Institutional chart (法人) — Taiwan convention: 紅=買超 (+), 綠=賣超 (-)
+let instChartInited = false;
+function renderInstChart() {
+  if (instChartInited) return;
+  if (typeof INST_DATA === 'undefined' || !INST_DATA.dates || INST_DATA.dates.length === 0) return;
+  const ctx = document.getElementById('c-inst');
+  if (!ctx) return;
+  const d = INST_DATA;
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: d.dates,
+      datasets: [
+        { label: '外資', data: d.foreign, backgroundColor: d.foreign.map(v => v >= 0 ? 'rgba(236,112,99,0.85)' : 'rgba(88,214,141,0.85)'), borderColor: d.foreign.map(v => v >= 0 ? '#ec7063' : '#58d68d'), borderWidth: 1 },
+        { label: '投信', data: d.trust, backgroundColor: d.trust.map(v => v >= 0 ? 'rgba(245,176,65,0.85)' : 'rgba(95,177,255,0.85)'), borderColor: d.trust.map(v => v >= 0 ? '#f5b041' : '#5fb1ff'), borderWidth: 1 },
+        { label: '自營', data: d.dealer, backgroundColor: d.dealer.map(v => v >= 0 ? 'rgba(188,140,255,0.85)' : 'rgba(57,197,207,0.85)'), borderColor: d.dealer.map(v => v >= 0 ? '#bc8cff' : '#39c5cf'), borderWidth: 1 },
+        { label: '合計', data: d.total, type: 'line', borderColor: '#5fb1ff', borderWidth: 2, pointRadius: 2, fill: false, tension: 0.2 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, position: 'top', labels: { color: '#8aa0c0', font: { size: 10 } } } },
+      scales: {
+        x: { stacked: false, ticks: { color: '#8aa0c0', maxTicksLimit: 10, font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#8aa0c0', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+  instChartInited = true;
+}
+// Init default tab from hash or first primary (tech)
+const initKey = (location.hash || '#tech').replace('#', '');
+showTab(initKey);
+function copyText(btn) {
+  const pre = btn.nextElementSibling;
+  const text = pre.textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = '✓ 已複製';
+      setTimeout(() => btn.textContent = orig, 1500);
+    }).catch(err => fallbackCopy(text, btn));
+  } else { fallbackCopy(text, btn); }
+}
+function fallbackCopy(text, btn) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try {
+    document.execCommand('copy');
+    const orig = btn.textContent;
+    btn.textContent = '✓ 已複製';
+    setTimeout(() => btn.textContent = orig, 1500);
+  } catch(e) { alert('複製失敗'); }
+  document.body.removeChild(ta);
+}
+</script>
+</body>
+</html>

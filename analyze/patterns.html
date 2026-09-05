@@ -1,0 +1,4232 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>型態搜尋 · 2026-09-04 · 1927 檔</title>
+<style>
+/* 台灣顏色慣例（與美股相反）：
+   --red  = 紅色 (用於「上漲/正面/多頭」)
+   --green = 綠色 (用於「下跌/負面/空頭」)
+   變數名跟顏色值一致，selector 自行選擇正確變數 */
+:root { --bg:#0a0e1a; --panel:#131b2e; --ink:#e6ecf5; --muted:#8aa0c0; --acc:#5fb1ff; --green:#58d68d; --red:#ec7063; --amber:#f5b041; --purple:#bc8cff; --cyan:#39c5cf; --border:#1f2942; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif; line-height: 1.6; }
+.topbar { position: sticky; top: 0; z-index: 100; background: rgba(10, 14, 26, 0.95); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.brand { font-size: 1.2rem; font-weight: 600; color: var(--acc); }
+.brand small { color: var(--muted); font-weight: 400; font-size: 0.7rem; margin-left: 8px; }
+.search-form { display: flex; gap: 6px; }
+.search-form input { background: var(--panel); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 0.85rem; width: 110px; font-family: inherit; }
+.search-form button { background: var(--acc); color: #000; border: none; border-radius: 6px; padding: 6px 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 20px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
+.chip { padding: 10px 18px; border-radius: 22px; background: var(--panel); color: var(--ink); cursor: pointer; font-size: 0.95rem; border: 1px solid var(--border); transition: all 0.2s; user-select: none; }
+.chip:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(95,177,255,0.2); }
+.chip.active { background: var(--acc); color: #000; border-color: var(--acc); }
+.chip .count { background: rgba(0,0,0,0.3); padding: 1px 8px; border-radius: 10px; font-size: 0.8rem; margin-left: 6px; }
+.pattern-section { padding: 20px; max-width: 1400px; margin: 0 auto; }
+.pattern-header { background: linear-gradient(135deg, rgba(95,177,255,0.1), rgba(57,197,207,0.05)); border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; margin-bottom: 16px; }
+.pattern-title { font-size: 1.5rem; font-weight: 700; color: var(--acc); margin-bottom: 4px; }
+.pattern-desc { color: var(--muted); font-size: 0.95rem; }
+.backtest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 16px 0; }
+.bt-card { background: var(--panel); border-radius: 8px; padding: 12px 16px; border: 1px solid var(--border); }
+.bt-card .label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.4px; }
+.bt-card .val { font-size: 1.4rem; font-weight: 700; margin-top: 4px; }
+.bt-card .sub { color: var(--muted); font-size: 0.7rem; margin-top: 2px; }
+/* 高勝率 = 正面 = 紅 / 低勝率 = 負面 = 綠 (台灣) */
+.win-high { color: var(--red); }
+.win-low { color: var(--green); }
+.stock-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.88rem; margin-top: 12px; background: rgba(0,0,0,0.15); border-radius: 6px; overflow: hidden; }
+.stock-table th { background: rgba(255,255,255,0.04); color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.4px; padding: 8px 10px; text-align: right; }
+.stock-table th:first-child, .stock-table td:first-child { text-align: left; }
+.stock-table td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); text-align: right; }
+.stock-table tr:last-child td { border-bottom: none; }
+.stock-table tr:hover { background: rgba(95,177,255,0.05); }
+/* 漲 = 紅 / 跌 = 綠 (台灣) */
+.stock-table td.pos { color: var(--red); font-weight: 600; }
+.stock-table td.neg { color: var(--green); font-weight: 600; }
+.stock-table a { color: var(--acc); text-decoration: none; font-weight: 600; }
+.stock-table a:hover { text-decoration: underline; }
+.verdict { padding: 12px 16px; border-radius: 8px; margin: 12px 0; font-size: 0.95rem; line-height: 1.7; }
+/* 勝 = 紅 / 敗 = 綠 (台灣) */
+.verdict.win { background: rgba(236,112,99,0.12); border-left: 4px solid var(--red); }
+.verdict.lose { background: rgba(88,214,141,0.12); border-left: 4px solid var(--green); }
+.verdict.neutral { background: rgba(95,177,255,0.12); border-left: 4px solid var(--acc); }
+footer { padding: 24px; color: var(--muted); font-size: 0.8rem; text-align: center; }
+.meta { color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">📊 型態搜尋 <small>tw-invest-suite · 2026-09-04 · 1927 檔</small></div>
+  <form class="search-form" action="https://groovelab.dev/analyze.html" method="get">
+    <input name="ticker" placeholder="個股查詢" maxlength="6" required>
+    <button type="submit">查詢 →</button>
+  </form>
+</div>
+<div class="chips"><a href="#p-hot_breakout" class="chip" style="text-decoration:none;color:inherit">🔥 熱門噴出<span class="count">188</span></a><a href="#p-short_uptrend" class="chip" style="text-decoration:none;color:inherit">📈 短多<span class="count">617</span></a><a href="#p-mid_uptrend" class="chip" style="text-decoration:none;color:inherit">📊 中多<span class="count">393</span></a><a href="#p-long_uptrend" class="chip" style="text-decoration:none;color:inherit">🚀 長多<span class="count">448</span></a><a href="#p-value_undervalued" class="chip" style="text-decoration:none;color:inherit">💎 價值低估<span class="count">340</span></a><a href="#p-short_downtrend" class="chip" style="text-decoration:none;color:inherit">📉 短空<span class="count">626</span></a><a href="#p-mid_downtrend" class="chip" style="text-decoration:none;color:inherit">📊 中空<span class="count">736</span></a><a href="#p-long_drawdown" class="chip" style="text-decoration:none;color:inherit">💀 長空腰斬<span class="count">728</span></a><a href="#p-margin_distress_rebound" class="chip" style="text-decoration:none;color:inherit">🎯 融資反彈候選<span class="count">406</span></a></div>
+<main>
+  
+    <div id="p-hot_breakout" class="pattern-section">
+      <div class="pattern-header">
+        <div class="pattern-title">🔥 熱門噴出 — 短線爆發，外資連買</div>
+        <div class="meta">188 檔符合 · 回測使用過去 240 日資料 · 樣本每 5 日取一次</div>
+      </div>
+      
+    <div class="backtest-grid">
+      <div class="bt-card">
+        <div class="label">20 日 forward 勝率</div>
+        <div class="val ">52.6%</div>
+        <div class="sub">730 trades (240 日回測)</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日平均報酬</div>
+        <div class="val win-high">+7.82%</div>
+        <div class="sub">中位數 +1.01%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日最佳/最差</div>
+        <div class="val win-high">+192.0%</div>
+        <div class="sub win-low">最差 -87.7%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">60 日 forward 勝率</div>
+        <div class="val">59.5%</div>
+        <div class="sub">583 trades</div>
+      </div>
+    </div>
+      <div class="verdict neutral">🟡 歷史勝率 52.6%，這個型態略微正向，沒有顯著優勢</div>
+      
+    <table class="stock-table">
+      <thead>
+        <tr>
+          <th>股號</th><th>現價</th><th>當日%</th>
+          <th>20日%</th><th>60日%</th><th>240日%</th>
+          <th>RSI</th><th>成交量</th><th>外資(張)</th>
+          <th>ROE</th><th>P/E</th><th>P/B</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6225.html">6225</a></td>
+          <td class="num">60.00</td>
+          <td class="num neg">-0.66%</td>
+          <td class="num pos">+138.1%</td>
+          <td class="num pos">+155.3%</td>
+          <td class="num pos">+256.1%</td>
+          <td class="num">66</td>
+          <td class="num">57,656</td>
+          <td class="num pos">+5</td>
+          <td class="num">-2%</td>
+          <td class="num">—</td>
+          <td class="num">19.74</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6538.html">6538</a></td>
+          <td class="num">300.00</td>
+          <td class="num pos">+9.89%</td>
+          <td class="num pos">+100.0%</td>
+          <td class="num pos">+132.6%</td>
+          <td class="num pos">+354.5%</td>
+          <td class="num">84</td>
+          <td class="num">9,563,341</td>
+          <td class="num pos">+1,441</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3406.html">3406</a></td>
+          <td class="num">1055.00</td>
+          <td class="num pos">+6.46%</td>
+          <td class="num pos">+92.9%</td>
+          <td class="num pos">+61.6%</td>
+          <td class="num pos">+140.6%</td>
+          <td class="num">83</td>
+          <td class="num">2,626,231</td>
+          <td class="num pos">+265</td>
+          <td class="num">17%</td>
+          <td class="num">26.8</td>
+          <td class="num">4.13</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6933.html">6933</a></td>
+          <td class="num">317.00</td>
+          <td class="num pos">+4.97%</td>
+          <td class="num pos">+87.6%</td>
+          <td class="num pos">+112.8%</td>
+          <td class="num pos">+112.8%</td>
+          <td class="num">81</td>
+          <td class="num">956,572</td>
+          <td class="num pos">+107</td>
+          <td class="num">15%</td>
+          <td class="num">38.3</td>
+          <td class="num">5.09</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7711.html">7711</a></td>
+          <td class="num">632.00</td>
+          <td class="num pos">+9.91%</td>
+          <td class="num pos">+74.8%</td>
+          <td class="num pos">+94.5%</td>
+          <td class="num pos">+143.5%</td>
+          <td class="num">72</td>
+          <td class="num">2,356,476</td>
+          <td class="num pos">+66</td>
+          <td class="num">47%</td>
+          <td class="num">24.8</td>
+          <td class="num">7.59</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2426.html">2426</a></td>
+          <td class="num">104.50</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+63.5%</td>
+          <td class="num pos">+31.9%</td>
+          <td class="num pos">+502.3%</td>
+          <td class="num">71</td>
+          <td class="num">62,192,930</td>
+          <td class="num pos">+11,199</td>
+          <td class="num">1%</td>
+          <td class="num">1055.6</td>
+          <td class="num">7.45</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3441.html">3441</a></td>
+          <td class="num">143.00</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+61.8%</td>
+          <td class="num pos">+81.0%</td>
+          <td class="num pos">+289.6%</td>
+          <td class="num">78</td>
+          <td class="num">4,835,765</td>
+          <td class="num pos">+89</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5475.html">5475</a></td>
+          <td class="num">190.00</td>
+          <td class="num pos">+4.11%</td>
+          <td class="num pos">+54.5%</td>
+          <td class="num neg">-16.1%</td>
+          <td class="num pos">+106.5%</td>
+          <td class="num">59</td>
+          <td class="num">5,582,619</td>
+          <td class="num pos">+110</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6141.html">6141</a></td>
+          <td class="num">52.50</td>
+          <td class="num pos">+1.55%</td>
+          <td class="num pos">+52.6%</td>
+          <td class="num pos">+40.0%</td>
+          <td class="num pos">+390.7%</td>
+          <td class="num">73</td>
+          <td class="num">2,389,780</td>
+          <td class="num pos">+84</td>
+          <td class="num">-77%</td>
+          <td class="num">—</td>
+          <td class="num">9.78</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6173.html">6173</a></td>
+          <td class="num">260.50</td>
+          <td class="num pos">+8.09%</td>
+          <td class="num pos">+52.3%</td>
+          <td class="num neg">-17.4%</td>
+          <td class="num pos">+285.9%</td>
+          <td class="num">65</td>
+          <td class="num">18,478,287</td>
+          <td class="num pos">+488</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6224.html">6224</a></td>
+          <td class="num">84.80</td>
+          <td class="num pos">+6.53%</td>
+          <td class="num pos">+50.1%</td>
+          <td class="num pos">+4.7%</td>
+          <td class="num pos">+91.9%</td>
+          <td class="num">70</td>
+          <td class="num">3,448,628</td>
+          <td class="num pos">+693</td>
+          <td class="num">3%</td>
+          <td class="num">66.9</td>
+          <td class="num">2.99</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6226.html">6226</a></td>
+          <td class="num">33.50</td>
+          <td class="num pos">+4.69%</td>
+          <td class="num pos">+46.6%</td>
+          <td class="num pos">+45.0%</td>
+          <td class="num pos">+343.1%</td>
+          <td class="num">79</td>
+          <td class="num">4,993,207</td>
+          <td class="num pos">+248</td>
+          <td class="num">-0%</td>
+          <td class="num">—</td>
+          <td class="num">2.95</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5432.html">5432</a></td>
+          <td class="num">155.00</td>
+          <td class="num pos">+1.31%</td>
+          <td class="num pos">+43.5%</td>
+          <td class="num pos">+2.0%</td>
+          <td class="num neg">-14.4%</td>
+          <td class="num">55</td>
+          <td class="num">136,032</td>
+          <td class="num pos">+6</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4939.html">4939</a></td>
+          <td class="num">87.90</td>
+          <td class="num pos">+7.85%</td>
+          <td class="num pos">+43.2%</td>
+          <td class="num pos">+39.5%</td>
+          <td class="num pos">+137.2%</td>
+          <td class="num">74</td>
+          <td class="num">3,736,298</td>
+          <td class="num pos">+783</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4188.html">4188</a></td>
+          <td class="num">14.45</td>
+          <td class="num pos">+2.85%</td>
+          <td class="num pos">+43.1%</td>
+          <td class="num pos">+30.2%</td>
+          <td class="num neg">-1.0%</td>
+          <td class="num">74</td>
+          <td class="num">254,856</td>
+          <td class="num pos">+6</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4908.html">4908</a></td>
+          <td class="num">224.50</td>
+          <td class="num pos">+9.78%</td>
+          <td class="num pos">+43.0%</td>
+          <td class="num pos">+28.3%</td>
+          <td class="num pos">+196.2%</td>
+          <td class="num">69</td>
+          <td class="num">1,795,882</td>
+          <td class="num pos">+114</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2455.html">2455</a></td>
+          <td class="num">528.00</td>
+          <td class="num pos">+0.57%</td>
+          <td class="num pos">+41.9%</td>
+          <td class="num pos">+56.2%</td>
+          <td class="num pos">+242.9%</td>
+          <td class="num">72</td>
+          <td class="num">24,125,544</td>
+          <td class="num pos">+1,267</td>
+          <td class="num">23%</td>
+          <td class="num">127.4</td>
+          <td class="num">26.29</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7792.html">7792</a></td>
+          <td class="num">308.00</td>
+          <td class="num pos">+0.98%</td>
+          <td class="num pos">+41.9%</td>
+          <td class="num pos">+21.0%</td>
+          <td class="num pos">+33.6%</td>
+          <td class="num">80</td>
+          <td class="num">341,377</td>
+          <td class="num pos">+109</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6830.html">6830</a></td>
+          <td class="num">597.00</td>
+          <td class="num pos">+1.19%</td>
+          <td class="num pos">+40.5%</td>
+          <td class="num pos">+35.8%</td>
+          <td class="num pos">+228.9%</td>
+          <td class="num">78</td>
+          <td class="num">3,050,638</td>
+          <td class="num pos">+9</td>
+          <td class="num">0%</td>
+          <td class="num">1966.7</td>
+          <td class="num">9.46</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6617.html">6617</a></td>
+          <td class="num">123.00</td>
+          <td class="num pos">+8.37%</td>
+          <td class="num pos">+40.4%</td>
+          <td class="num pos">+21.2%</td>
+          <td class="num pos">+52.8%</td>
+          <td class="num">69</td>
+          <td class="num">1,232,666</td>
+          <td class="num pos">+208</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3324.html">3324</a></td>
+          <td class="num">1485.00</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+40.1%</td>
+          <td class="num pos">+47.0%</td>
+          <td class="num pos">+51.8%</td>
+          <td class="num">81</td>
+          <td class="num">3,081,121</td>
+          <td class="num pos">+178</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6840.html">6840</a></td>
+          <td class="num">92.80</td>
+          <td class="num pos">+3.00%</td>
+          <td class="num pos">+38.9%</td>
+          <td class="num pos">+42.8%</td>
+          <td class="num pos">+48.0%</td>
+          <td class="num">67</td>
+          <td class="num">395,354</td>
+          <td class="num pos">+34</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8431.html">8431</a></td>
+          <td class="num">68.80</td>
+          <td class="num pos">+8.01%</td>
+          <td class="num pos">+37.6%</td>
+          <td class="num pos">+29.1%</td>
+          <td class="num neg">-11.9%</td>
+          <td class="num">84</td>
+          <td class="num">10,687,557</td>
+          <td class="num pos">+710</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1815.html">1815</a></td>
+          <td class="num">118.50</td>
+          <td class="num neg">-1.25%</td>
+          <td class="num pos">+36.5%</td>
+          <td class="num pos">+19.1%</td>
+          <td class="num pos">+35.4%</td>
+          <td class="num">68</td>
+          <td class="num">50,628,182</td>
+          <td class="num pos">+1,670</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8085.html">8085</a></td>
+          <td class="num">15.20</td>
+          <td class="num pos">+1.33%</td>
+          <td class="num pos">+36.3%</td>
+          <td class="num pos">+24.1%</td>
+          <td class="num neg">-5.9%</td>
+          <td class="num">79</td>
+          <td class="num">390,654</td>
+          <td class="num pos">+63</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3374.html">3374</a></td>
+          <td class="num">430.00</td>
+          <td class="num pos">+7.50%</td>
+          <td class="num pos">+36.1%</td>
+          <td class="num pos">+33.5%</td>
+          <td class="num pos">+156.0%</td>
+          <td class="num">83</td>
+          <td class="num">4,976,882</td>
+          <td class="num pos">+1,340</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6727.html">6727</a></td>
+          <td class="num">541.00</td>
+          <td class="num neg">-1.64%</td>
+          <td class="num pos">+35.2%</td>
+          <td class="num pos">+10.5%</td>
+          <td class="num pos">+211.8%</td>
+          <td class="num">62</td>
+          <td class="num">2,006,486</td>
+          <td class="num pos">+150</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2723.html">2723</a></td>
+          <td class="num">82.50</td>
+          <td class="num neg">-0.36%</td>
+          <td class="num pos">+34.4%</td>
+          <td class="num pos">+22.2%</td>
+          <td class="num pos">+17.5%</td>
+          <td class="num">83</td>
+          <td class="num">315,999</td>
+          <td class="num pos">+29</td>
+          <td class="num">-4%</td>
+          <td class="num">—</td>
+          <td class="num">1.48</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6895.html">6895</a></td>
+          <td class="num">156.50</td>
+          <td class="num pos">+2.29%</td>
+          <td class="num pos">+33.8%</td>
+          <td class="num pos">+5.7%</td>
+          <td class="num neg">-14.5%</td>
+          <td class="num">76</td>
+          <td class="num">48,943</td>
+          <td class="num pos">+7</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3081.html">3081</a></td>
+          <td class="num">3170.00</td>
+          <td class="num pos">+1.60%</td>
+          <td class="num pos">+33.5%</td>
+          <td class="num pos">+58.5%</td>
+          <td class="num pos">+409.6%</td>
+          <td class="num">59</td>
+          <td class="num">5,533,009</td>
+          <td class="num pos">+626</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr></tbody>
+    </table>
+    </div>
+    <div id="p-short_uptrend" class="pattern-section">
+      <div class="pattern-header">
+        <div class="pattern-title">📈 短多 — 20 日動能強，技術面多頭</div>
+        <div class="meta">617 檔符合 · 回測使用過去 240 日資料 · 樣本每 5 日取一次</div>
+      </div>
+      
+    <div class="backtest-grid">
+      <div class="bt-card">
+        <div class="label">20 日 forward 勝率</div>
+        <div class="val ">49.8%</div>
+        <div class="sub">1838 trades (240 日回測)</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日平均報酬</div>
+        <div class="val win-high">+3.49%</div>
+        <div class="sub">中位數 +0.00%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日最佳/最差</div>
+        <div class="val win-high">+184.8%</div>
+        <div class="sub win-low">最差 -63.0%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">60 日 forward 勝率</div>
+        <div class="val">56.9%</div>
+        <div class="sub">1251 trades</div>
+      </div>
+    </div>
+      <div class="verdict lose">⚠️ 歷史勝率 49.8%，這個型態在台股表現較弱</div>
+      
+    <table class="stock-table">
+      <thead>
+        <tr>
+          <th>股號</th><th>現價</th><th>當日%</th>
+          <th>20日%</th><th>60日%</th><th>240日%</th>
+          <th>RSI</th><th>成交量</th><th>外資(張)</th>
+          <th>ROE</th><th>P/E</th><th>P/B</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6538.html">6538</a></td>
+          <td class="num">300.00</td>
+          <td class="num pos">+9.89%</td>
+          <td class="num pos">+100.0%</td>
+          <td class="num pos">+132.6%</td>
+          <td class="num pos">+354.5%</td>
+          <td class="num">84</td>
+          <td class="num">9,563,341</td>
+          <td class="num pos">+1,441</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2221.html">2221</a></td>
+          <td class="num">90.80</td>
+          <td class="num neg">-0.77%</td>
+          <td class="num pos">+96.1%</td>
+          <td class="num pos">+86.8%</td>
+          <td class="num pos">+193.9%</td>
+          <td class="num">87</td>
+          <td class="num">12,726,891</td>
+          <td class="num neg">-836</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3406.html">3406</a></td>
+          <td class="num">1055.00</td>
+          <td class="num pos">+6.46%</td>
+          <td class="num pos">+92.9%</td>
+          <td class="num pos">+61.6%</td>
+          <td class="num pos">+140.6%</td>
+          <td class="num">83</td>
+          <td class="num">2,626,231</td>
+          <td class="num pos">+265</td>
+          <td class="num">17%</td>
+          <td class="num">26.8</td>
+          <td class="num">4.13</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6933.html">6933</a></td>
+          <td class="num">317.00</td>
+          <td class="num pos">+4.97%</td>
+          <td class="num pos">+87.6%</td>
+          <td class="num pos">+112.8%</td>
+          <td class="num pos">+112.8%</td>
+          <td class="num">81</td>
+          <td class="num">956,572</td>
+          <td class="num pos">+107</td>
+          <td class="num">15%</td>
+          <td class="num">38.3</td>
+          <td class="num">5.09</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3234.html">3234</a></td>
+          <td class="num">206.00</td>
+          <td class="num pos">+5.91%</td>
+          <td class="num pos">+86.4%</td>
+          <td class="num pos">+58.5%</td>
+          <td class="num pos">+346.9%</td>
+          <td class="num">77</td>
+          <td class="num">5,549,866</td>
+          <td class="num neg">-459</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7711.html">7711</a></td>
+          <td class="num">632.00</td>
+          <td class="num pos">+9.91%</td>
+          <td class="num pos">+74.8%</td>
+          <td class="num pos">+94.5%</td>
+          <td class="num pos">+143.5%</td>
+          <td class="num">72</td>
+          <td class="num">2,356,476</td>
+          <td class="num pos">+66</td>
+          <td class="num">47%</td>
+          <td class="num">24.8</td>
+          <td class="num">7.59</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2426.html">2426</a></td>
+          <td class="num">104.50</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+63.5%</td>
+          <td class="num pos">+31.9%</td>
+          <td class="num pos">+502.3%</td>
+          <td class="num">71</td>
+          <td class="num">62,192,930</td>
+          <td class="num pos">+11,199</td>
+          <td class="num">1%</td>
+          <td class="num">1055.6</td>
+          <td class="num">7.45</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3441.html">3441</a></td>
+          <td class="num">143.00</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+61.8%</td>
+          <td class="num pos">+81.0%</td>
+          <td class="num pos">+289.6%</td>
+          <td class="num">78</td>
+          <td class="num">4,835,765</td>
+          <td class="num pos">+89</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3008.html">3008</a></td>
+          <td class="num">7400.00</td>
+          <td class="num pos">+3.50%</td>
+          <td class="num pos">+60.0%</td>
+          <td class="num pos">+79.0%</td>
+          <td class="num pos">+190.2%</td>
+          <td class="num">77</td>
+          <td class="num">1,626,455</td>
+          <td class="num neg">-8</td>
+          <td class="num">13%</td>
+          <td class="num">38.0</td>
+          <td class="num">4.88</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2033.html">2033</a></td>
+          <td class="num">26.05</td>
+          <td class="num pos">+1.96%</td>
+          <td class="num pos">+59.3%</td>
+          <td class="num pos">+58.8%</td>
+          <td class="num pos">+52.3%</td>
+          <td class="num">68</td>
+          <td class="num">1,673,188</td>
+          <td class="num neg">-298</td>
+          <td class="num">3%</td>
+          <td class="num">75.1</td>
+          <td class="num">1.93</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5475.html">5475</a></td>
+          <td class="num">190.00</td>
+          <td class="num pos">+4.11%</td>
+          <td class="num pos">+54.5%</td>
+          <td class="num neg">-16.1%</td>
+          <td class="num pos">+106.5%</td>
+          <td class="num">59</td>
+          <td class="num">5,582,619</td>
+          <td class="num pos">+110</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7788.html">7788</a></td>
+          <td class="num">335.00</td>
+          <td class="num pos">+6.35%</td>
+          <td class="num pos">+53.7%</td>
+          <td class="num pos">+40.2%</td>
+          <td class="num pos">+150.0%</td>
+          <td class="num">68</td>
+          <td class="num">4,593,320</td>
+          <td class="num neg">-443</td>
+          <td class="num">11%</td>
+          <td class="num">37.1</td>
+          <td class="num">4.02</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6141.html">6141</a></td>
+          <td class="num">52.50</td>
+          <td class="num pos">+1.55%</td>
+          <td class="num pos">+52.6%</td>
+          <td class="num pos">+40.0%</td>
+          <td class="num pos">+390.7%</td>
+          <td class="num">73</td>
+          <td class="num">2,389,780</td>
+          <td class="num pos">+84</td>
+          <td class="num">-77%</td>
+          <td class="num">—</td>
+          <td class="num">9.78</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6173.html">6173</a></td>
+          <td class="num">260.50</td>
+          <td class="num pos">+8.09%</td>
+          <td class="num pos">+52.3%</td>
+          <td class="num neg">-17.4%</td>
+          <td class="num pos">+285.9%</td>
+          <td class="num">65</td>
+          <td class="num">18,478,287</td>
+          <td class="num pos">+488</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6224.html">6224</a></td>
+          <td class="num">84.80</td>
+          <td class="num pos">+6.53%</td>
+          <td class="num pos">+50.1%</td>
+          <td class="num pos">+4.7%</td>
+          <td class="num pos">+91.9%</td>
+          <td class="num">70</td>
+          <td class="num">3,448,628</td>
+          <td class="num pos">+693</td>
+          <td class="num">3%</td>
+          <td class="num">66.9</td>
+          <td class="num">2.99</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6226.html">6226</a></td>
+          <td class="num">33.50</td>
+          <td class="num pos">+4.69%</td>
+          <td class="num pos">+46.6%</td>
+          <td class="num pos">+45.0%</td>
+          <td class="num pos">+343.1%</td>
+          <td class="num">79</td>
+          <td class="num">4,993,207</td>
+          <td class="num pos">+248</td>
+          <td class="num">-0%</td>
+          <td class="num">—</td>
+          <td class="num">2.95</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5321.html">5321</a></td>
+          <td class="num">79.40</td>
+          <td class="num pos">+3.93%</td>
+          <td class="num pos">+46.2%</td>
+          <td class="num pos">+34.6%</td>
+          <td class="num pos">+120.6%</td>
+          <td class="num">66</td>
+          <td class="num">357,685</td>
+          <td class="num neg">-33</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8103.html">8103</a></td>
+          <td class="num">122.50</td>
+          <td class="num pos">+1.24%</td>
+          <td class="num pos">+45.0%</td>
+          <td class="num pos">+19.5%</td>
+          <td class="num pos">+31.9%</td>
+          <td class="num">83</td>
+          <td class="num">5,723,721</td>
+          <td class="num neg">-400</td>
+          <td class="num">12%</td>
+          <td class="num">23.0</td>
+          <td class="num">2.33</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6426.html">6426</a></td>
+          <td class="num">269.50</td>
+          <td class="num pos">+1.51%</td>
+          <td class="num pos">+44.1%</td>
+          <td class="num pos">+43.4%</td>
+          <td class="num pos">+199.4%</td>
+          <td class="num">62</td>
+          <td class="num">3,252,179</td>
+          <td class="num neg">-147</td>
+          <td class="num">2%</td>
+          <td class="num">67.0</td>
+          <td class="num">11.31</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5432.html">5432</a></td>
+          <td class="num">155.00</td>
+          <td class="num pos">+1.31%</td>
+          <td class="num pos">+43.5%</td>
+          <td class="num pos">+2.0%</td>
+          <td class="num neg">-14.4%</td>
+          <td class="num">55</td>
+          <td class="num">136,032</td>
+          <td class="num pos">+6</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4939.html">4939</a></td>
+          <td class="num">87.90</td>
+          <td class="num pos">+7.85%</td>
+          <td class="num pos">+43.2%</td>
+          <td class="num pos">+39.5%</td>
+          <td class="num pos">+137.2%</td>
+          <td class="num">74</td>
+          <td class="num">3,736,298</td>
+          <td class="num pos">+783</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4188.html">4188</a></td>
+          <td class="num">14.45</td>
+          <td class="num pos">+2.85%</td>
+          <td class="num pos">+43.1%</td>
+          <td class="num pos">+30.2%</td>
+          <td class="num neg">-1.0%</td>
+          <td class="num">74</td>
+          <td class="num">254,856</td>
+          <td class="num pos">+6</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4908.html">4908</a></td>
+          <td class="num">224.50</td>
+          <td class="num pos">+9.78%</td>
+          <td class="num pos">+43.0%</td>
+          <td class="num pos">+28.3%</td>
+          <td class="num pos">+196.2%</td>
+          <td class="num">69</td>
+          <td class="num">1,795,882</td>
+          <td class="num pos">+114</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2455.html">2455</a></td>
+          <td class="num">528.00</td>
+          <td class="num pos">+0.57%</td>
+          <td class="num pos">+41.9%</td>
+          <td class="num pos">+56.2%</td>
+          <td class="num pos">+242.9%</td>
+          <td class="num">72</td>
+          <td class="num">24,125,544</td>
+          <td class="num pos">+1,267</td>
+          <td class="num">23%</td>
+          <td class="num">127.4</td>
+          <td class="num">26.29</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7792.html">7792</a></td>
+          <td class="num">308.00</td>
+          <td class="num pos">+0.98%</td>
+          <td class="num pos">+41.9%</td>
+          <td class="num pos">+21.0%</td>
+          <td class="num pos">+33.6%</td>
+          <td class="num">80</td>
+          <td class="num">341,377</td>
+          <td class="num pos">+109</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6830.html">6830</a></td>
+          <td class="num">597.00</td>
+          <td class="num pos">+1.19%</td>
+          <td class="num pos">+40.5%</td>
+          <td class="num pos">+35.8%</td>
+          <td class="num pos">+228.9%</td>
+          <td class="num">78</td>
+          <td class="num">3,050,638</td>
+          <td class="num pos">+9</td>
+          <td class="num">0%</td>
+          <td class="num">1966.7</td>
+          <td class="num">9.46</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6617.html">6617</a></td>
+          <td class="num">123.00</td>
+          <td class="num pos">+8.37%</td>
+          <td class="num pos">+40.4%</td>
+          <td class="num pos">+21.2%</td>
+          <td class="num pos">+52.8%</td>
+          <td class="num">69</td>
+          <td class="num">1,232,666</td>
+          <td class="num pos">+208</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3324.html">3324</a></td>
+          <td class="num">1485.00</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+40.1%</td>
+          <td class="num pos">+47.0%</td>
+          <td class="num pos">+51.8%</td>
+          <td class="num">81</td>
+          <td class="num">3,081,121</td>
+          <td class="num pos">+178</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2351.html">2351</a></td>
+          <td class="num">239.50</td>
+          <td class="num pos">+7.40%</td>
+          <td class="num pos">+39.7%</td>
+          <td class="num pos">+5.0%</td>
+          <td class="num pos">+211.0%</td>
+          <td class="num">80</td>
+          <td class="num">6,731,626</td>
+          <td class="num neg">-596</td>
+          <td class="num">11%</td>
+          <td class="num">56.3</td>
+          <td class="num">5.28</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6840.html">6840</a></td>
+          <td class="num">92.80</td>
+          <td class="num pos">+3.00%</td>
+          <td class="num pos">+38.9%</td>
+          <td class="num pos">+42.8%</td>
+          <td class="num pos">+48.0%</td>
+          <td class="num">67</td>
+          <td class="num">395,354</td>
+          <td class="num pos">+34</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr></tbody>
+    </table>
+    </div>
+    <div id="p-mid_uptrend" class="pattern-section">
+      <div class="pattern-header">
+        <div class="pattern-title">📊 中多 — 60 日均線多頭排列，趨勢向上</div>
+        <div class="meta">393 檔符合 · 回測使用過去 240 日資料 · 樣本每 5 日取一次</div>
+      </div>
+      
+    <div class="backtest-grid">
+      <div class="bt-card">
+        <div class="label">20 日 forward 勝率</div>
+        <div class="val ">53.3%</div>
+        <div class="sub">1887 trades (240 日回測)</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日平均報酬</div>
+        <div class="val win-high">+4.24%</div>
+        <div class="sub">中位數 +0.75%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日最佳/最差</div>
+        <div class="val win-high">+117.0%</div>
+        <div class="sub win-low">最差 -53.5%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">60 日 forward 勝率</div>
+        <div class="val">60.4%</div>
+        <div class="sub">1274 trades</div>
+      </div>
+    </div>
+      <div class="verdict neutral">🟡 歷史勝率 53.3%，這個型態略微正向，沒有顯著優勢</div>
+      
+    <table class="stock-table">
+      <thead>
+        <tr>
+          <th>股號</th><th>現價</th><th>當日%</th>
+          <th>20日%</th><th>60日%</th><th>240日%</th>
+          <th>RSI</th><th>成交量</th><th>外資(張)</th>
+          <th>ROE</th><th>P/E</th><th>P/B</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6225.html">6225</a></td>
+          <td class="num">60.00</td>
+          <td class="num neg">-0.66%</td>
+          <td class="num pos">+138.1%</td>
+          <td class="num pos">+155.3%</td>
+          <td class="num pos">+256.1%</td>
+          <td class="num">66</td>
+          <td class="num">57,656</td>
+          <td class="num pos">+5</td>
+          <td class="num">-2%</td>
+          <td class="num">—</td>
+          <td class="num">19.74</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6538.html">6538</a></td>
+          <td class="num">300.00</td>
+          <td class="num pos">+9.89%</td>
+          <td class="num pos">+100.0%</td>
+          <td class="num pos">+132.6%</td>
+          <td class="num pos">+354.5%</td>
+          <td class="num">84</td>
+          <td class="num">9,563,341</td>
+          <td class="num pos">+1,441</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2221.html">2221</a></td>
+          <td class="num">90.80</td>
+          <td class="num neg">-0.77%</td>
+          <td class="num pos">+96.1%</td>
+          <td class="num pos">+86.8%</td>
+          <td class="num pos">+193.9%</td>
+          <td class="num">87</td>
+          <td class="num">12,726,891</td>
+          <td class="num neg">-836</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3406.html">3406</a></td>
+          <td class="num">1055.00</td>
+          <td class="num pos">+6.46%</td>
+          <td class="num pos">+92.9%</td>
+          <td class="num pos">+61.6%</td>
+          <td class="num pos">+140.6%</td>
+          <td class="num">83</td>
+          <td class="num">2,626,231</td>
+          <td class="num pos">+265</td>
+          <td class="num">17%</td>
+          <td class="num">26.8</td>
+          <td class="num">4.13</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6933.html">6933</a></td>
+          <td class="num">317.00</td>
+          <td class="num pos">+4.97%</td>
+          <td class="num pos">+87.6%</td>
+          <td class="num pos">+112.8%</td>
+          <td class="num pos">+112.8%</td>
+          <td class="num">81</td>
+          <td class="num">956,572</td>
+          <td class="num pos">+107</td>
+          <td class="num">15%</td>
+          <td class="num">38.3</td>
+          <td class="num">5.09</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3234.html">3234</a></td>
+          <td class="num">206.00</td>
+          <td class="num pos">+5.91%</td>
+          <td class="num pos">+86.4%</td>
+          <td class="num pos">+58.5%</td>
+          <td class="num pos">+346.9%</td>
+          <td class="num">77</td>
+          <td class="num">5,549,866</td>
+          <td class="num neg">-459</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7711.html">7711</a></td>
+          <td class="num">632.00</td>
+          <td class="num pos">+9.91%</td>
+          <td class="num pos">+74.8%</td>
+          <td class="num pos">+94.5%</td>
+          <td class="num pos">+143.5%</td>
+          <td class="num">72</td>
+          <td class="num">2,356,476</td>
+          <td class="num pos">+66</td>
+          <td class="num">47%</td>
+          <td class="num">24.8</td>
+          <td class="num">7.59</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3498.html">3498</a></td>
+          <td class="num">194.00</td>
+          <td class="num pos">+1.04%</td>
+          <td class="num pos">+74.8%</td>
+          <td class="num pos">+56.5%</td>
+          <td class="num pos">+283.4%</td>
+          <td class="num">64</td>
+          <td class="num">3,476,438</td>
+          <td class="num neg">-492</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2426.html">2426</a></td>
+          <td class="num">104.50</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+63.5%</td>
+          <td class="num pos">+31.9%</td>
+          <td class="num pos">+502.3%</td>
+          <td class="num">71</td>
+          <td class="num">62,192,930</td>
+          <td class="num pos">+11,199</td>
+          <td class="num">1%</td>
+          <td class="num">1055.6</td>
+          <td class="num">7.45</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3441.html">3441</a></td>
+          <td class="num">143.00</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+61.8%</td>
+          <td class="num pos">+81.0%</td>
+          <td class="num pos">+289.6%</td>
+          <td class="num">78</td>
+          <td class="num">4,835,765</td>
+          <td class="num pos">+89</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3008.html">3008</a></td>
+          <td class="num">7400.00</td>
+          <td class="num pos">+3.50%</td>
+          <td class="num pos">+60.0%</td>
+          <td class="num pos">+79.0%</td>
+          <td class="num pos">+190.2%</td>
+          <td class="num">77</td>
+          <td class="num">1,626,455</td>
+          <td class="num neg">-8</td>
+          <td class="num">13%</td>
+          <td class="num">38.0</td>
+          <td class="num">4.88</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2033.html">2033</a></td>
+          <td class="num">26.05</td>
+          <td class="num pos">+1.96%</td>
+          <td class="num pos">+59.3%</td>
+          <td class="num pos">+58.8%</td>
+          <td class="num pos">+52.3%</td>
+          <td class="num">68</td>
+          <td class="num">1,673,188</td>
+          <td class="num neg">-298</td>
+          <td class="num">3%</td>
+          <td class="num">75.1</td>
+          <td class="num">1.93</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3490.html">3490</a></td>
+          <td class="num">46.00</td>
+          <td class="num pos">+2.34%</td>
+          <td class="num pos">+54.9%</td>
+          <td class="num pos">+36.5%</td>
+          <td class="num pos">+76.9%</td>
+          <td class="num">55</td>
+          <td class="num">3,016,812</td>
+          <td class="num neg">-11</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7788.html">7788</a></td>
+          <td class="num">335.00</td>
+          <td class="num pos">+6.35%</td>
+          <td class="num pos">+53.7%</td>
+          <td class="num pos">+40.2%</td>
+          <td class="num pos">+150.0%</td>
+          <td class="num">68</td>
+          <td class="num">4,593,320</td>
+          <td class="num neg">-443</td>
+          <td class="num">11%</td>
+          <td class="num">37.1</td>
+          <td class="num">4.02</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6141.html">6141</a></td>
+          <td class="num">52.50</td>
+          <td class="num pos">+1.55%</td>
+          <td class="num pos">+52.6%</td>
+          <td class="num pos">+40.0%</td>
+          <td class="num pos">+390.7%</td>
+          <td class="num">73</td>
+          <td class="num">2,389,780</td>
+          <td class="num pos">+84</td>
+          <td class="num">-77%</td>
+          <td class="num">—</td>
+          <td class="num">9.78</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6224.html">6224</a></td>
+          <td class="num">84.80</td>
+          <td class="num pos">+6.53%</td>
+          <td class="num pos">+50.1%</td>
+          <td class="num pos">+4.7%</td>
+          <td class="num pos">+91.9%</td>
+          <td class="num">70</td>
+          <td class="num">3,448,628</td>
+          <td class="num pos">+693</td>
+          <td class="num">3%</td>
+          <td class="num">66.9</td>
+          <td class="num">2.99</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6226.html">6226</a></td>
+          <td class="num">33.50</td>
+          <td class="num pos">+4.69%</td>
+          <td class="num pos">+46.6%</td>
+          <td class="num pos">+45.0%</td>
+          <td class="num pos">+343.1%</td>
+          <td class="num">79</td>
+          <td class="num">4,993,207</td>
+          <td class="num pos">+248</td>
+          <td class="num">-0%</td>
+          <td class="num">—</td>
+          <td class="num">2.95</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5321.html">5321</a></td>
+          <td class="num">79.40</td>
+          <td class="num pos">+3.93%</td>
+          <td class="num pos">+46.2%</td>
+          <td class="num pos">+34.6%</td>
+          <td class="num pos">+120.6%</td>
+          <td class="num">66</td>
+          <td class="num">357,685</td>
+          <td class="num neg">-33</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8103.html">8103</a></td>
+          <td class="num">122.50</td>
+          <td class="num pos">+1.24%</td>
+          <td class="num pos">+45.0%</td>
+          <td class="num pos">+19.5%</td>
+          <td class="num pos">+31.9%</td>
+          <td class="num">83</td>
+          <td class="num">5,723,721</td>
+          <td class="num neg">-400</td>
+          <td class="num">12%</td>
+          <td class="num">23.0</td>
+          <td class="num">2.33</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6426.html">6426</a></td>
+          <td class="num">269.50</td>
+          <td class="num pos">+1.51%</td>
+          <td class="num pos">+44.1%</td>
+          <td class="num pos">+43.4%</td>
+          <td class="num pos">+199.4%</td>
+          <td class="num">62</td>
+          <td class="num">3,252,179</td>
+          <td class="num neg">-147</td>
+          <td class="num">2%</td>
+          <td class="num">67.0</td>
+          <td class="num">11.31</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5432.html">5432</a></td>
+          <td class="num">155.00</td>
+          <td class="num pos">+1.31%</td>
+          <td class="num pos">+43.5%</td>
+          <td class="num pos">+2.0%</td>
+          <td class="num neg">-14.4%</td>
+          <td class="num">55</td>
+          <td class="num">136,032</td>
+          <td class="num pos">+6</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4939.html">4939</a></td>
+          <td class="num">87.90</td>
+          <td class="num pos">+7.85%</td>
+          <td class="num pos">+43.2%</td>
+          <td class="num pos">+39.5%</td>
+          <td class="num pos">+137.2%</td>
+          <td class="num">74</td>
+          <td class="num">3,736,298</td>
+          <td class="num pos">+783</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4188.html">4188</a></td>
+          <td class="num">14.45</td>
+          <td class="num pos">+2.85%</td>
+          <td class="num pos">+43.1%</td>
+          <td class="num pos">+30.2%</td>
+          <td class="num neg">-1.0%</td>
+          <td class="num">74</td>
+          <td class="num">254,856</td>
+          <td class="num pos">+6</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4908.html">4908</a></td>
+          <td class="num">224.50</td>
+          <td class="num pos">+9.78%</td>
+          <td class="num pos">+43.0%</td>
+          <td class="num pos">+28.3%</td>
+          <td class="num pos">+196.2%</td>
+          <td class="num">69</td>
+          <td class="num">1,795,882</td>
+          <td class="num pos">+114</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2455.html">2455</a></td>
+          <td class="num">528.00</td>
+          <td class="num pos">+0.57%</td>
+          <td class="num pos">+41.9%</td>
+          <td class="num pos">+56.2%</td>
+          <td class="num pos">+242.9%</td>
+          <td class="num">72</td>
+          <td class="num">24,125,544</td>
+          <td class="num pos">+1,267</td>
+          <td class="num">23%</td>
+          <td class="num">127.4</td>
+          <td class="num">26.29</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7792.html">7792</a></td>
+          <td class="num">308.00</td>
+          <td class="num pos">+0.98%</td>
+          <td class="num pos">+41.9%</td>
+          <td class="num pos">+21.0%</td>
+          <td class="num pos">+33.6%</td>
+          <td class="num">80</td>
+          <td class="num">341,377</td>
+          <td class="num pos">+109</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6830.html">6830</a></td>
+          <td class="num">597.00</td>
+          <td class="num pos">+1.19%</td>
+          <td class="num pos">+40.5%</td>
+          <td class="num pos">+35.8%</td>
+          <td class="num pos">+228.9%</td>
+          <td class="num">78</td>
+          <td class="num">3,050,638</td>
+          <td class="num pos">+9</td>
+          <td class="num">0%</td>
+          <td class="num">1966.7</td>
+          <td class="num">9.46</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6617.html">6617</a></td>
+          <td class="num">123.00</td>
+          <td class="num pos">+8.37%</td>
+          <td class="num pos">+40.4%</td>
+          <td class="num pos">+21.2%</td>
+          <td class="num pos">+52.8%</td>
+          <td class="num">69</td>
+          <td class="num">1,232,666</td>
+          <td class="num pos">+208</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3324.html">3324</a></td>
+          <td class="num">1485.00</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+40.1%</td>
+          <td class="num pos">+47.0%</td>
+          <td class="num pos">+51.8%</td>
+          <td class="num">81</td>
+          <td class="num">3,081,121</td>
+          <td class="num pos">+178</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2351.html">2351</a></td>
+          <td class="num">239.50</td>
+          <td class="num pos">+7.40%</td>
+          <td class="num pos">+39.7%</td>
+          <td class="num pos">+5.0%</td>
+          <td class="num pos">+211.0%</td>
+          <td class="num">80</td>
+          <td class="num">6,731,626</td>
+          <td class="num neg">-596</td>
+          <td class="num">11%</td>
+          <td class="num">56.3</td>
+          <td class="num">5.28</td>
+        </tr></tbody>
+    </table>
+    </div>
+    <div id="p-long_uptrend" class="pattern-section">
+      <div class="pattern-header">
+        <div class="pattern-title">🚀 長多 — 240 日大漲，長期持有候選</div>
+        <div class="meta">448 檔符合 · 回測使用過去 240 日資料 · 樣本每 5 日取一次</div>
+      </div>
+      
+    <div class="backtest-grid">
+      <div class="bt-card">
+        <div class="label">20 日 forward 勝率</div>
+        <div class="val win-high">55.7%</div>
+        <div class="sub">2353 trades (240 日回測)</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日平均報酬</div>
+        <div class="val win-high">+5.38%</div>
+        <div class="sub">中位數 +1.46%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日最佳/最差</div>
+        <div class="val win-high">+283.3%</div>
+        <div class="sub win-low">最差 -46.1%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">60 日 forward 勝率</div>
+        <div class="val">67.9%</div>
+        <div class="sub">1510 trades</div>
+      </div>
+    </div>
+      <div class="verdict neutral">🟡 歷史勝率 55.7%，這個型態略微正向，沒有顯著優勢</div>
+      
+    <table class="stock-table">
+      <thead>
+        <tr>
+          <th>股號</th><th>現價</th><th>當日%</th>
+          <th>20日%</th><th>60日%</th><th>240日%</th>
+          <th>RSI</th><th>成交量</th><th>外資(張)</th>
+          <th>ROE</th><th>P/E</th><th>P/B</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6225.html">6225</a></td>
+          <td class="num">60.00</td>
+          <td class="num neg">-0.66%</td>
+          <td class="num pos">+138.1%</td>
+          <td class="num pos">+155.3%</td>
+          <td class="num pos">+256.1%</td>
+          <td class="num">66</td>
+          <td class="num">57,656</td>
+          <td class="num pos">+5</td>
+          <td class="num">-2%</td>
+          <td class="num">—</td>
+          <td class="num">19.74</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6538.html">6538</a></td>
+          <td class="num">300.00</td>
+          <td class="num pos">+9.89%</td>
+          <td class="num pos">+100.0%</td>
+          <td class="num pos">+132.6%</td>
+          <td class="num pos">+354.5%</td>
+          <td class="num">84</td>
+          <td class="num">9,563,341</td>
+          <td class="num pos">+1,441</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2221.html">2221</a></td>
+          <td class="num">90.80</td>
+          <td class="num neg">-0.77%</td>
+          <td class="num pos">+96.1%</td>
+          <td class="num pos">+86.8%</td>
+          <td class="num pos">+193.9%</td>
+          <td class="num">87</td>
+          <td class="num">12,726,891</td>
+          <td class="num neg">-836</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3406.html">3406</a></td>
+          <td class="num">1055.00</td>
+          <td class="num pos">+6.46%</td>
+          <td class="num pos">+92.9%</td>
+          <td class="num pos">+61.6%</td>
+          <td class="num pos">+140.6%</td>
+          <td class="num">83</td>
+          <td class="num">2,626,231</td>
+          <td class="num pos">+265</td>
+          <td class="num">17%</td>
+          <td class="num">26.8</td>
+          <td class="num">4.13</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6933.html">6933</a></td>
+          <td class="num">317.00</td>
+          <td class="num pos">+4.97%</td>
+          <td class="num pos">+87.6%</td>
+          <td class="num pos">+112.8%</td>
+          <td class="num pos">+112.8%</td>
+          <td class="num">81</td>
+          <td class="num">956,572</td>
+          <td class="num pos">+107</td>
+          <td class="num">15%</td>
+          <td class="num">38.3</td>
+          <td class="num">5.09</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3234.html">3234</a></td>
+          <td class="num">206.00</td>
+          <td class="num pos">+5.91%</td>
+          <td class="num pos">+86.4%</td>
+          <td class="num pos">+58.5%</td>
+          <td class="num pos">+346.9%</td>
+          <td class="num">77</td>
+          <td class="num">5,549,866</td>
+          <td class="num neg">-459</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7711.html">7711</a></td>
+          <td class="num">632.00</td>
+          <td class="num pos">+9.91%</td>
+          <td class="num pos">+74.8%</td>
+          <td class="num pos">+94.5%</td>
+          <td class="num pos">+143.5%</td>
+          <td class="num">72</td>
+          <td class="num">2,356,476</td>
+          <td class="num pos">+66</td>
+          <td class="num">47%</td>
+          <td class="num">24.8</td>
+          <td class="num">7.59</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3498.html">3498</a></td>
+          <td class="num">194.00</td>
+          <td class="num pos">+1.04%</td>
+          <td class="num pos">+74.8%</td>
+          <td class="num pos">+56.5%</td>
+          <td class="num pos">+283.4%</td>
+          <td class="num">64</td>
+          <td class="num">3,476,438</td>
+          <td class="num neg">-492</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2426.html">2426</a></td>
+          <td class="num">104.50</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+63.5%</td>
+          <td class="num pos">+31.9%</td>
+          <td class="num pos">+502.3%</td>
+          <td class="num">71</td>
+          <td class="num">62,192,930</td>
+          <td class="num pos">+11,199</td>
+          <td class="num">1%</td>
+          <td class="num">1055.6</td>
+          <td class="num">7.45</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3441.html">3441</a></td>
+          <td class="num">143.00</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+61.8%</td>
+          <td class="num pos">+81.0%</td>
+          <td class="num pos">+289.6%</td>
+          <td class="num">78</td>
+          <td class="num">4,835,765</td>
+          <td class="num pos">+89</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3008.html">3008</a></td>
+          <td class="num">7400.00</td>
+          <td class="num pos">+3.50%</td>
+          <td class="num pos">+60.0%</td>
+          <td class="num pos">+79.0%</td>
+          <td class="num pos">+190.2%</td>
+          <td class="num">77</td>
+          <td class="num">1,626,455</td>
+          <td class="num neg">-8</td>
+          <td class="num">13%</td>
+          <td class="num">38.0</td>
+          <td class="num">4.88</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2033.html">2033</a></td>
+          <td class="num">26.05</td>
+          <td class="num pos">+1.96%</td>
+          <td class="num pos">+59.3%</td>
+          <td class="num pos">+58.8%</td>
+          <td class="num pos">+52.3%</td>
+          <td class="num">68</td>
+          <td class="num">1,673,188</td>
+          <td class="num neg">-298</td>
+          <td class="num">3%</td>
+          <td class="num">75.1</td>
+          <td class="num">1.93</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3490.html">3490</a></td>
+          <td class="num">46.00</td>
+          <td class="num pos">+2.34%</td>
+          <td class="num pos">+54.9%</td>
+          <td class="num pos">+36.5%</td>
+          <td class="num pos">+76.9%</td>
+          <td class="num">55</td>
+          <td class="num">3,016,812</td>
+          <td class="num neg">-11</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7788.html">7788</a></td>
+          <td class="num">335.00</td>
+          <td class="num pos">+6.35%</td>
+          <td class="num pos">+53.7%</td>
+          <td class="num pos">+40.2%</td>
+          <td class="num pos">+150.0%</td>
+          <td class="num">68</td>
+          <td class="num">4,593,320</td>
+          <td class="num neg">-443</td>
+          <td class="num">11%</td>
+          <td class="num">37.1</td>
+          <td class="num">4.02</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6141.html">6141</a></td>
+          <td class="num">52.50</td>
+          <td class="num pos">+1.55%</td>
+          <td class="num pos">+52.6%</td>
+          <td class="num pos">+40.0%</td>
+          <td class="num pos">+390.7%</td>
+          <td class="num">73</td>
+          <td class="num">2,389,780</td>
+          <td class="num pos">+84</td>
+          <td class="num">-77%</td>
+          <td class="num">—</td>
+          <td class="num">9.78</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6173.html">6173</a></td>
+          <td class="num">260.50</td>
+          <td class="num pos">+8.09%</td>
+          <td class="num pos">+52.3%</td>
+          <td class="num neg">-17.4%</td>
+          <td class="num pos">+285.9%</td>
+          <td class="num">65</td>
+          <td class="num">18,478,287</td>
+          <td class="num pos">+488</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6224.html">6224</a></td>
+          <td class="num">84.80</td>
+          <td class="num pos">+6.53%</td>
+          <td class="num pos">+50.1%</td>
+          <td class="num pos">+4.7%</td>
+          <td class="num pos">+91.9%</td>
+          <td class="num">70</td>
+          <td class="num">3,448,628</td>
+          <td class="num pos">+693</td>
+          <td class="num">3%</td>
+          <td class="num">66.9</td>
+          <td class="num">2.99</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6226.html">6226</a></td>
+          <td class="num">33.50</td>
+          <td class="num pos">+4.69%</td>
+          <td class="num pos">+46.6%</td>
+          <td class="num pos">+45.0%</td>
+          <td class="num pos">+343.1%</td>
+          <td class="num">79</td>
+          <td class="num">4,993,207</td>
+          <td class="num pos">+248</td>
+          <td class="num">-0%</td>
+          <td class="num">—</td>
+          <td class="num">2.95</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5321.html">5321</a></td>
+          <td class="num">79.40</td>
+          <td class="num pos">+3.93%</td>
+          <td class="num pos">+46.2%</td>
+          <td class="num pos">+34.6%</td>
+          <td class="num pos">+120.6%</td>
+          <td class="num">66</td>
+          <td class="num">357,685</td>
+          <td class="num neg">-33</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8103.html">8103</a></td>
+          <td class="num">122.50</td>
+          <td class="num pos">+1.24%</td>
+          <td class="num pos">+45.0%</td>
+          <td class="num pos">+19.5%</td>
+          <td class="num pos">+31.9%</td>
+          <td class="num">83</td>
+          <td class="num">5,723,721</td>
+          <td class="num neg">-400</td>
+          <td class="num">12%</td>
+          <td class="num">23.0</td>
+          <td class="num">2.33</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6426.html">6426</a></td>
+          <td class="num">269.50</td>
+          <td class="num pos">+1.51%</td>
+          <td class="num pos">+44.1%</td>
+          <td class="num pos">+43.4%</td>
+          <td class="num pos">+199.4%</td>
+          <td class="num">62</td>
+          <td class="num">3,252,179</td>
+          <td class="num neg">-147</td>
+          <td class="num">2%</td>
+          <td class="num">67.0</td>
+          <td class="num">11.31</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4939.html">4939</a></td>
+          <td class="num">87.90</td>
+          <td class="num pos">+7.85%</td>
+          <td class="num pos">+43.2%</td>
+          <td class="num pos">+39.5%</td>
+          <td class="num pos">+137.2%</td>
+          <td class="num">74</td>
+          <td class="num">3,736,298</td>
+          <td class="num pos">+783</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4908.html">4908</a></td>
+          <td class="num">224.50</td>
+          <td class="num pos">+9.78%</td>
+          <td class="num pos">+43.0%</td>
+          <td class="num pos">+28.3%</td>
+          <td class="num pos">+196.2%</td>
+          <td class="num">69</td>
+          <td class="num">1,795,882</td>
+          <td class="num pos">+114</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2455.html">2455</a></td>
+          <td class="num">528.00</td>
+          <td class="num pos">+0.57%</td>
+          <td class="num pos">+41.9%</td>
+          <td class="num pos">+56.2%</td>
+          <td class="num pos">+242.9%</td>
+          <td class="num">72</td>
+          <td class="num">24,125,544</td>
+          <td class="num pos">+1,267</td>
+          <td class="num">23%</td>
+          <td class="num">127.4</td>
+          <td class="num">26.29</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7792.html">7792</a></td>
+          <td class="num">308.00</td>
+          <td class="num pos">+0.98%</td>
+          <td class="num pos">+41.9%</td>
+          <td class="num pos">+21.0%</td>
+          <td class="num pos">+33.6%</td>
+          <td class="num">80</td>
+          <td class="num">341,377</td>
+          <td class="num pos">+109</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6830.html">6830</a></td>
+          <td class="num">597.00</td>
+          <td class="num pos">+1.19%</td>
+          <td class="num pos">+40.5%</td>
+          <td class="num pos">+35.8%</td>
+          <td class="num pos">+228.9%</td>
+          <td class="num">78</td>
+          <td class="num">3,050,638</td>
+          <td class="num pos">+9</td>
+          <td class="num">0%</td>
+          <td class="num">1966.7</td>
+          <td class="num">9.46</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6617.html">6617</a></td>
+          <td class="num">123.00</td>
+          <td class="num pos">+8.37%</td>
+          <td class="num pos">+40.4%</td>
+          <td class="num pos">+21.2%</td>
+          <td class="num pos">+52.8%</td>
+          <td class="num">69</td>
+          <td class="num">1,232,666</td>
+          <td class="num pos">+208</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3324.html">3324</a></td>
+          <td class="num">1485.00</td>
+          <td class="num pos">+10.00%</td>
+          <td class="num pos">+40.1%</td>
+          <td class="num pos">+47.0%</td>
+          <td class="num pos">+51.8%</td>
+          <td class="num">81</td>
+          <td class="num">3,081,121</td>
+          <td class="num pos">+178</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2351.html">2351</a></td>
+          <td class="num">239.50</td>
+          <td class="num pos">+7.40%</td>
+          <td class="num pos">+39.7%</td>
+          <td class="num pos">+5.0%</td>
+          <td class="num pos">+211.0%</td>
+          <td class="num">80</td>
+          <td class="num">6,731,626</td>
+          <td class="num neg">-596</td>
+          <td class="num">11%</td>
+          <td class="num">56.3</td>
+          <td class="num">5.28</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6840.html">6840</a></td>
+          <td class="num">92.80</td>
+          <td class="num pos">+3.00%</td>
+          <td class="num pos">+38.9%</td>
+          <td class="num pos">+42.8%</td>
+          <td class="num pos">+48.0%</td>
+          <td class="num">67</td>
+          <td class="num">395,354</td>
+          <td class="num pos">+34</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr></tbody>
+    </table>
+    </div>
+    <div id="p-value_undervalued" class="pattern-section">
+      <div class="pattern-header">
+        <div class="pattern-title">💎 價值低估 — 本益比低 + 淨值比低</div>
+        <div class="meta">340 檔符合 · 回測使用過去 240 日資料 · 樣本每 5 日取一次</div>
+      </div>
+      
+    <div class="backtest-grid">
+      <div class="bt-card">
+        <div class="label">20 日 forward 勝率</div>
+        <div class="val win-low">0%</div>
+        <div class="sub">0 trades (240 日回測)</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日平均報酬</div>
+        <div class="val win-low">+0.00%</div>
+        <div class="sub">中位數 +0.00%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日最佳/最差</div>
+        <div class="val win-high">+0.0%</div>
+        <div class="sub win-low">最差 +0.0%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">60 日 forward 勝率</div>
+        <div class="val">0%</div>
+        <div class="sub">0 trades</div>
+      </div>
+    </div>
+      <div class="verdict lose">⚠️ 歷史勝率 0%，這個型態在台股表現較弱</div>
+      
+    <table class="stock-table">
+      <thead>
+        <tr>
+          <th>股號</th><th>現價</th><th>當日%</th>
+          <th>20日%</th><th>60日%</th><th>240日%</th>
+          <th>RSI</th><th>成交量</th><th>外資(張)</th>
+          <th>ROE</th><th>P/E</th><th>P/B</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2615.html">2615</a></td>
+          <td class="num">115.00</td>
+          <td class="num neg">-0.43%</td>
+          <td class="num pos">+36.4%</td>
+          <td class="num pos">+43.8%</td>
+          <td class="num pos">+42.9%</td>
+          <td class="num">65</td>
+          <td class="num">19,809,367</td>
+          <td class="num neg">-518</td>
+          <td class="num">15%</td>
+          <td class="num">7.9</td>
+          <td class="num">1.12</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2851.html">2851</a></td>
+          <td class="num">46.65</td>
+          <td class="num neg">-1.37%</td>
+          <td class="num pos">+33.3%</td>
+          <td class="num pos">+19.3%</td>
+          <td class="num pos">+76.0%</td>
+          <td class="num">69</td>
+          <td class="num">2,671,524</td>
+          <td class="num neg">-361</td>
+          <td class="num">44%</td>
+          <td class="num">12.9</td>
+          <td class="num">1.44</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2030.html">2030</a></td>
+          <td class="num">23.45</td>
+          <td class="num pos">+0.21%</td>
+          <td class="num pos">+30.6%</td>
+          <td class="num pos">+22.1%</td>
+          <td class="num pos">+49.4%</td>
+          <td class="num">78</td>
+          <td class="num">2,348,312</td>
+          <td class="num neg">-191</td>
+          <td class="num">11%</td>
+          <td class="num">12.0</td>
+          <td class="num">1.21</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2103.html">2103</a></td>
+          <td class="num">28.25</td>
+          <td class="num pos">+1.07%</td>
+          <td class="num pos">+24.2%</td>
+          <td class="num pos">+16.7%</td>
+          <td class="num pos">+84.0%</td>
+          <td class="num">57</td>
+          <td class="num">3,274,701</td>
+          <td class="num neg">-248</td>
+          <td class="num">11%</td>
+          <td class="num">11.3</td>
+          <td class="num">1.05</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1709.html">1709</a></td>
+          <td class="num">34.00</td>
+          <td class="num pos">+1.64%</td>
+          <td class="num pos">+23.0%</td>
+          <td class="num pos">+36.8%</td>
+          <td class="num pos">+101.2%</td>
+          <td class="num">52</td>
+          <td class="num">8,132,636</td>
+          <td class="num pos">+1,390</td>
+          <td class="num">10%</td>
+          <td class="num">16.7</td>
+          <td class="num">1.76</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2392.html">2392</a></td>
+          <td class="num">45.60</td>
+          <td class="num pos">+0.55%</td>
+          <td class="num pos">+21.9%</td>
+          <td class="num pos">+14.6%</td>
+          <td class="num pos">+22.7%</td>
+          <td class="num">58</td>
+          <td class="num">3,267,943</td>
+          <td class="num neg">-173</td>
+          <td class="num">-21%</td>
+          <td class="num">5.8</td>
+          <td class="num">0.74</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2606.html">2606</a></td>
+          <td class="num">78.20</td>
+          <td class="num neg">+0.00%</td>
+          <td class="num pos">+21.4%</td>
+          <td class="num pos">+25.7%</td>
+          <td class="num pos">+27.8%</td>
+          <td class="num">67</td>
+          <td class="num">7,702,734</td>
+          <td class="num neg">-919</td>
+          <td class="num">16%</td>
+          <td class="num">11.6</td>
+          <td class="num">1.64</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3518.html">3518</a></td>
+          <td class="num">30.80</td>
+          <td class="num neg">-3.30%</td>
+          <td class="num pos">+20.3%</td>
+          <td class="num neg">-14.6%</td>
+          <td class="num pos">+40.6%</td>
+          <td class="num">62</td>
+          <td class="num">1,515,283</td>
+          <td class="num neg">-110</td>
+          <td class="num">15%</td>
+          <td class="num">15.2</td>
+          <td class="num">1.91</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2881.html">2881</a></td>
+          <td class="num">150.50</td>
+          <td class="num pos">+2.38%</td>
+          <td class="num pos">+19.4%</td>
+          <td class="num pos">+23.9%</td>
+          <td class="num pos">+56.6%</td>
+          <td class="num">80</td>
+          <td class="num">19,146,551</td>
+          <td class="num pos">+3,295</td>
+          <td class="num">26%</td>
+          <td class="num">17.6</td>
+          <td class="num">1.65</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2816.html">2816</a></td>
+          <td class="num">40.00</td>
+          <td class="num pos">+1.14%</td>
+          <td class="num pos">+18.5%</td>
+          <td class="num pos">+13.5%</td>
+          <td class="num pos">+38.9%</td>
+          <td class="num">84</td>
+          <td class="num">615,358</td>
+          <td class="num pos">+150</td>
+          <td class="num">26%</td>
+          <td class="num">8.5</td>
+          <td class="num">0.92</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6272.html">6272</a></td>
+          <td class="num">29.80</td>
+          <td class="num pos">+2.94%</td>
+          <td class="num pos">+18.5%</td>
+          <td class="num neg">-8.3%</td>
+          <td class="num neg">-32.0%</td>
+          <td class="num">77</td>
+          <td class="num">2,206,728</td>
+          <td class="num neg">-358</td>
+          <td class="num">9%</td>
+          <td class="num">14.9</td>
+          <td class="num">1.32</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2882.html">2882</a></td>
+          <td class="num">115.00</td>
+          <td class="num pos">+2.22%</td>
+          <td class="num pos">+17.9%</td>
+          <td class="num pos">+23.1%</td>
+          <td class="num pos">+52.1%</td>
+          <td class="num">80</td>
+          <td class="num">17,419,167</td>
+          <td class="num pos">+2,098</td>
+          <td class="num">—</td>
+          <td class="num">15.9</td>
+          <td class="num">1.49</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2637.html">2637</a></td>
+          <td class="num">99.80</td>
+          <td class="num neg">+0.00%</td>
+          <td class="num pos">+16.7%</td>
+          <td class="num pos">+27.3%</td>
+          <td class="num pos">+44.8%</td>
+          <td class="num">66</td>
+          <td class="num">6,217,733</td>
+          <td class="num neg">-469</td>
+          <td class="num">14%</td>
+          <td class="num">13.9</td>
+          <td class="num">1.51</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1558.html">1558</a></td>
+          <td class="num">106.50</td>
+          <td class="num pos">+0.47%</td>
+          <td class="num pos">+16.4%</td>
+          <td class="num pos">+14.8%</td>
+          <td class="num pos">+2.4%</td>
+          <td class="num">68</td>
+          <td class="num">80,444</td>
+          <td class="num pos">+4</td>
+          <td class="num">10%</td>
+          <td class="num">13.4</td>
+          <td class="num">1.32</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6505.html">6505</a></td>
+          <td class="num">78.10</td>
+          <td class="num pos">+2.09%</td>
+          <td class="num pos">+16.4%</td>
+          <td class="num pos">+31.3%</td>
+          <td class="num pos">+63.7%</td>
+          <td class="num">61</td>
+          <td class="num">14,976,818</td>
+          <td class="num neg">-1,904</td>
+          <td class="num">14%</td>
+          <td class="num">13.3</td>
+          <td class="num">1.50</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5607.html">5607</a></td>
+          <td class="num">56.80</td>
+          <td class="num neg">-0.70%</td>
+          <td class="num pos">+16.3%</td>
+          <td class="num pos">+9.2%</td>
+          <td class="num pos">+17.5%</td>
+          <td class="num">63</td>
+          <td class="num">1,778,056</td>
+          <td class="num pos">+445</td>
+          <td class="num">12%</td>
+          <td class="num">15.7</td>
+          <td class="num">1.89</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2612.html">2612</a></td>
+          <td class="num">63.30</td>
+          <td class="num neg">+0.00%</td>
+          <td class="num pos">+16.1%</td>
+          <td class="num pos">+16.4%</td>
+          <td class="num pos">+3.3%</td>
+          <td class="num">72</td>
+          <td class="num">996,828</td>
+          <td class="num neg">-181</td>
+          <td class="num">8%</td>
+          <td class="num">12.3</td>
+          <td class="num">0.90</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2609.html">2609</a></td>
+          <td class="num">58.20</td>
+          <td class="num pos">+0.69%</td>
+          <td class="num pos">+15.5%</td>
+          <td class="num pos">+9.8%</td>
+          <td class="num pos">+1.0%</td>
+          <td class="num">57</td>
+          <td class="num">29,297,988</td>
+          <td class="num neg">-14</td>
+          <td class="num">5%</td>
+          <td class="num">13.0</td>
+          <td class="num">0.62</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2801.html">2801</a></td>
+          <td class="num">26.60</td>
+          <td class="num neg">+0.00%</td>
+          <td class="num pos">+14.9%</td>
+          <td class="num pos">+13.2%</td>
+          <td class="num pos">+30.1%</td>
+          <td class="num">89</td>
+          <td class="num">25,691,019</td>
+          <td class="num neg">-6,872</td>
+          <td class="num">9%</td>
+          <td class="num">17.2</td>
+          <td class="num">1.40</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2603.html">2603</a></td>
+          <td class="num">233.00</td>
+          <td class="num neg">-2.51%</td>
+          <td class="num pos">+14.2%</td>
+          <td class="num pos">+19.2%</td>
+          <td class="num pos">+19.2%</td>
+          <td class="num">51</td>
+          <td class="num">17,620,657</td>
+          <td class="num neg">-8,089</td>
+          <td class="num">10%</td>
+          <td class="num">9.5</td>
+          <td class="num">0.92</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2607.html">2607</a></td>
+          <td class="num">53.50</td>
+          <td class="num pos">+0.19%</td>
+          <td class="num pos">+13.2%</td>
+          <td class="num pos">+14.4%</td>
+          <td class="num neg">-7.4%</td>
+          <td class="num">77</td>
+          <td class="num">352,808</td>
+          <td class="num pos">+50</td>
+          <td class="num">8%</td>
+          <td class="num">17.0</td>
+          <td class="num">0.91</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1612.html">1612</a></td>
+          <td class="num">34.85</td>
+          <td class="num pos">+0.29%</td>
+          <td class="num pos">+12.6%</td>
+          <td class="num neg">-0.7%</td>
+          <td class="num pos">+1.2%</td>
+          <td class="num">57</td>
+          <td class="num">380,239</td>
+          <td class="num pos">+17</td>
+          <td class="num">15%</td>
+          <td class="num">9.0</td>
+          <td class="num">1.17</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2915.html">2915</a></td>
+          <td class="num">57.60</td>
+          <td class="num pos">+1.41%</td>
+          <td class="num pos">+12.5%</td>
+          <td class="num pos">+9.9%</td>
+          <td class="num pos">+6.7%</td>
+          <td class="num">35</td>
+          <td class="num">1,487,767</td>
+          <td class="num pos">+129</td>
+          <td class="num">27%</td>
+          <td class="num">1.8</td>
+          <td class="num">0.36</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2855.html">2855</a></td>
+          <td class="num">50.70</td>
+          <td class="num pos">+0.20%</td>
+          <td class="num pos">+12.4%</td>
+          <td class="num neg">-2.9%</td>
+          <td class="num pos">+102.0%</td>
+          <td class="num">74</td>
+          <td class="num">4,309,596</td>
+          <td class="num neg">-633</td>
+          <td class="num">38%</td>
+          <td class="num">5.3</td>
+          <td class="num">1.69</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1455.html">1455</a></td>
+          <td class="num">9.96</td>
+          <td class="num neg">-0.10%</td>
+          <td class="num pos">+12.2%</td>
+          <td class="num neg">-8.6%</td>
+          <td class="num pos">+29.5%</td>
+          <td class="num">51</td>
+          <td class="num">891,137</td>
+          <td class="num neg">-288</td>
+          <td class="num">5%</td>
+          <td class="num">18.8</td>
+          <td class="num">0.85</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1605.html">1605</a></td>
+          <td class="num">38.40</td>
+          <td class="num pos">+2.13%</td>
+          <td class="num pos">+12.1%</td>
+          <td class="num pos">+5.1%</td>
+          <td class="num neg">-3.2%</td>
+          <td class="num">49</td>
+          <td class="num">15,702,040</td>
+          <td class="num neg">-314</td>
+          <td class="num">8%</td>
+          <td class="num">11.4</td>
+          <td class="num">0.82</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2605.html">2605</a></td>
+          <td class="num">35.85</td>
+          <td class="num pos">+0.99%</td>
+          <td class="num pos">+12.0%</td>
+          <td class="num pos">+16.4%</td>
+          <td class="num pos">+32.0%</td>
+          <td class="num">62</td>
+          <td class="num">9,121,757</td>
+          <td class="num neg">-728</td>
+          <td class="num">17%</td>
+          <td class="num">7.2</td>
+          <td class="num">1.07</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2613.html">2613</a></td>
+          <td class="num">22.70</td>
+          <td class="num pos">+0.89%</td>
+          <td class="num pos">+11.8%</td>
+          <td class="num pos">+2.5%</td>
+          <td class="num neg">-5.6%</td>
+          <td class="num">57</td>
+          <td class="num">357,182</td>
+          <td class="num pos">+66</td>
+          <td class="num">5%</td>
+          <td class="num">17.0</td>
+          <td class="num">0.94</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2474.html">2474</a></td>
+          <td class="num">209.50</td>
+          <td class="num pos">+1.45%</td>
+          <td class="num pos">+11.7%</td>
+          <td class="num pos">+6.9%</td>
+          <td class="num pos">+1.0%</td>
+          <td class="num">62</td>
+          <td class="num">2,055,216</td>
+          <td class="num pos">+148</td>
+          <td class="num">6%</td>
+          <td class="num">15.2</td>
+          <td class="num">0.80</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2617.html">2617</a></td>
+          <td class="num">32.45</td>
+          <td class="num pos">+0.46%</td>
+          <td class="num pos">+11.5%</td>
+          <td class="num pos">+5.4%</td>
+          <td class="num pos">+4.3%</td>
+          <td class="num">73</td>
+          <td class="num">2,542,585</td>
+          <td class="num pos">+170</td>
+          <td class="num">9%</td>
+          <td class="num">8.7</td>
+          <td class="num">0.75</td>
+        </tr></tbody>
+    </table>
+    </div>
+    <div id="p-short_downtrend" class="pattern-section">
+      <div class="pattern-header">
+        <div class="pattern-title">📉 短空 — 20 日動能弱，技術面空頭</div>
+        <div class="meta">626 檔符合 · 回測使用過去 240 日資料 · 樣本每 5 日取一次</div>
+      </div>
+      
+    <div class="backtest-grid">
+      <div class="bt-card">
+        <div class="label">20 日 forward 勝率</div>
+        <div class="val win-low">44.0%</div>
+        <div class="sub">2175 trades (240 日回測)</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日平均報酬</div>
+        <div class="val win-high">+0.56%</div>
+        <div class="sub">中位數 -0.66%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日最佳/最差</div>
+        <div class="val win-high">+244.5%</div>
+        <div class="sub win-low">最差 -63.0%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">60 日 forward 勝率</div>
+        <div class="val">40.4%</div>
+        <div class="sub">1610 trades</div>
+      </div>
+    </div>
+      <div class="verdict lose">⚠️ 歷史勝率 44.0%，這個型態在台股表現較弱</div>
+      
+    <table class="stock-table">
+      <thead>
+        <tr>
+          <th>股號</th><th>現價</th><th>當日%</th>
+          <th>20日%</th><th>60日%</th><th>240日%</th>
+          <th>RSI</th><th>成交量</th><th>外資(張)</th>
+          <th>ROE</th><th>P/E</th><th>P/B</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6669.html">6669</a></td>
+          <td class="num">2565.00</td>
+          <td class="num pos">+3.64%</td>
+          <td class="num neg">-59.1%</td>
+          <td class="num neg">-49.1%</td>
+          <td class="num neg">-45.1%</td>
+          <td class="num">23</td>
+          <td class="num">3,721,234</td>
+          <td class="num neg">-432</td>
+          <td class="num">51%</td>
+          <td class="num">25.2</td>
+          <td class="num">10.05</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4503.html">4503</a></td>
+          <td class="num">23.70</td>
+          <td class="num pos">+1.72%</td>
+          <td class="num neg">-29.1%</td>
+          <td class="num neg">-48.6%</td>
+          <td class="num neg">-39.8%</td>
+          <td class="num">40</td>
+          <td class="num">202,129</td>
+          <td class="num pos">+46</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4127.html">4127</a></td>
+          <td class="num">61.30</td>
+          <td class="num neg">-7.12%</td>
+          <td class="num neg">-28.7%</td>
+          <td class="num neg">-20.1%</td>
+          <td class="num pos">+103.7%</td>
+          <td class="num">13</td>
+          <td class="num">1,525,164</td>
+          <td class="num pos">+221</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8291.html">8291</a></td>
+          <td class="num">29.90</td>
+          <td class="num neg">-6.56%</td>
+          <td class="num neg">-27.1%</td>
+          <td class="num neg">-19.2%</td>
+          <td class="num pos">+74.9%</td>
+          <td class="num">34</td>
+          <td class="num">15,057</td>
+          <td class="num neg">0</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3625.html">3625</a></td>
+          <td class="num">12.35</td>
+          <td class="num neg">-5.36%</td>
+          <td class="num neg">-26.7%</td>
+          <td class="num neg">-32.9%</td>
+          <td class="num neg">-38.2%</td>
+          <td class="num">30</td>
+          <td class="num">205,714</td>
+          <td class="num neg">-87</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3609.html">3609</a></td>
+          <td class="num">18.75</td>
+          <td class="num pos">+4.17%</td>
+          <td class="num neg">-26.2%</td>
+          <td class="num neg">-33.9%</td>
+          <td class="num neg">-52.7%</td>
+          <td class="num">22</td>
+          <td class="num">184,328</td>
+          <td class="num pos">+48</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2067.html">2067</a></td>
+          <td class="num">4.82</td>
+          <td class="num neg">-0.21%</td>
+          <td class="num neg">-24.8%</td>
+          <td class="num neg">-29.1%</td>
+          <td class="num neg">-50.8%</td>
+          <td class="num">26</td>
+          <td class="num">14,715</td>
+          <td class="num neg">0</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8069.html">8069</a></td>
+          <td class="num">148.50</td>
+          <td class="num pos">+1.02%</td>
+          <td class="num neg">-24.2%</td>
+          <td class="num neg">-27.7%</td>
+          <td class="num neg">-17.7%</td>
+          <td class="num">31</td>
+          <td class="num">5,360,833</td>
+          <td class="num neg">-503</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5225.html">5225</a></td>
+          <td class="num">57.40</td>
+          <td class="num neg">-5.90%</td>
+          <td class="num neg">-23.4%</td>
+          <td class="num neg">-25.1%</td>
+          <td class="num neg">-42.3%</td>
+          <td class="num">35</td>
+          <td class="num">1,162,649</td>
+          <td class="num neg">-205</td>
+          <td class="num">17%</td>
+          <td class="num">9.2</td>
+          <td class="num">1.52</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4303.html">4303</a></td>
+          <td class="num">34.70</td>
+          <td class="num neg">-2.25%</td>
+          <td class="num neg">-23.2%</td>
+          <td class="num neg">-26.5%</td>
+          <td class="num neg">-42.4%</td>
+          <td class="num">24</td>
+          <td class="num">853,966</td>
+          <td class="num neg">-88</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8096.html">8096</a></td>
+          <td class="num">104.50</td>
+          <td class="num pos">+0.48%</td>
+          <td class="num neg">-22.9%</td>
+          <td class="num neg">-37.6%</td>
+          <td class="num pos">+93.2%</td>
+          <td class="num">31</td>
+          <td class="num">1,575,102</td>
+          <td class="num pos">+563</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4123.html">4123</a></td>
+          <td class="num">30.15</td>
+          <td class="num neg">-1.31%</td>
+          <td class="num neg">-22.2%</td>
+          <td class="num neg">-24.2%</td>
+          <td class="num neg">-23.5%</td>
+          <td class="num">29</td>
+          <td class="num">1,853,142</td>
+          <td class="num neg">-410</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3209.html">3209</a></td>
+          <td class="num">46.60</td>
+          <td class="num neg">-0.85%</td>
+          <td class="num neg">-21.0%</td>
+          <td class="num neg">-22.8%</td>
+          <td class="num pos">+44.0%</td>
+          <td class="num">28</td>
+          <td class="num">1,153,069</td>
+          <td class="num neg">-453</td>
+          <td class="num">27%</td>
+          <td class="num">8.3</td>
+          <td class="num">1.97</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7805.html">7805</a></td>
+          <td class="num">508.00</td>
+          <td class="num pos">+1.20%</td>
+          <td class="num neg">-20.9%</td>
+          <td class="num neg">-23.3%</td>
+          <td class="num neg">-25.5%</td>
+          <td class="num">13</td>
+          <td class="num">46,393</td>
+          <td class="num neg">-9</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5490.html">5490</a></td>
+          <td class="num">26.50</td>
+          <td class="num neg">-1.12%</td>
+          <td class="num neg">-20.5%</td>
+          <td class="num neg">-12.8%</td>
+          <td class="num neg">-3.8%</td>
+          <td class="num">10</td>
+          <td class="num">538,755</td>
+          <td class="num neg">-236</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5536.html">5536</a></td>
+          <td class="num">853.00</td>
+          <td class="num pos">+4.41%</td>
+          <td class="num neg">-20.3%</td>
+          <td class="num neg">-40.6%</td>
+          <td class="num pos">+6.4%</td>
+          <td class="num">37</td>
+          <td class="num">552,179</td>
+          <td class="num pos">+69</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/9958.html">9958</a></td>
+          <td class="num">88.10</td>
+          <td class="num neg">-0.34%</td>
+          <td class="num neg">-20.3%</td>
+          <td class="num neg">-26.9%</td>
+          <td class="num neg">-36.6%</td>
+          <td class="num">16</td>
+          <td class="num">1,659,464</td>
+          <td class="num pos">+362</td>
+          <td class="num">13%</td>
+          <td class="num">12.7</td>
+          <td class="num">1.85</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6863.html">6863</a></td>
+          <td class="num">104.50</td>
+          <td class="num pos">+0.48%</td>
+          <td class="num neg">-20.2%</td>
+          <td class="num pos">+12.5%</td>
+          <td class="num neg">-11.4%</td>
+          <td class="num">40</td>
+          <td class="num">87,350</td>
+          <td class="num pos">+17</td>
+          <td class="num">4%</td>
+          <td class="num">36.5</td>
+          <td class="num">1.25</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6919.html">6919</a></td>
+          <td class="num">86.40</td>
+          <td class="num pos">+2.25%</td>
+          <td class="num neg">-19.6%</td>
+          <td class="num neg">-13.6%</td>
+          <td class="num neg">-38.9%</td>
+          <td class="num">33</td>
+          <td class="num">8,669,515</td>
+          <td class="num neg">-1,855</td>
+          <td class="num">-3%</td>
+          <td class="num">—</td>
+          <td class="num">14.28</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7715.html">7715</a></td>
+          <td class="num">28.95</td>
+          <td class="num pos">+0.17%</td>
+          <td class="num neg">-19.6%</td>
+          <td class="num neg">-16.2%</td>
+          <td class="num neg">-5.1%</td>
+          <td class="num">31</td>
+          <td class="num">34,140</td>
+          <td class="num neg">-2</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4943.html">4943</a></td>
+          <td class="num">7.11</td>
+          <td class="num neg">-10.00%</td>
+          <td class="num neg">-19.0%</td>
+          <td class="num neg">-19.9%</td>
+          <td class="num neg">-43.1%</td>
+          <td class="num">31</td>
+          <td class="num">158,672</td>
+          <td class="num neg">0</td>
+          <td class="num">-76%</td>
+          <td class="num">—</td>
+          <td class="num">5.18</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2539.html">2539</a></td>
+          <td class="num">35.00</td>
+          <td class="num neg">-0.28%</td>
+          <td class="num neg">-18.8%</td>
+          <td class="num neg">-11.8%</td>
+          <td class="num neg">-25.6%</td>
+          <td class="num">23</td>
+          <td class="num">840,293</td>
+          <td class="num pos">+141</td>
+          <td class="num">28%</td>
+          <td class="num">10.2</td>
+          <td class="num">2.55</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3018.html">3018</a></td>
+          <td class="num">11.80</td>
+          <td class="num pos">+1.29%</td>
+          <td class="num neg">-18.6%</td>
+          <td class="num neg">-2.1%</td>
+          <td class="num pos">+3.5%</td>
+          <td class="num">35</td>
+          <td class="num">38,745</td>
+          <td class="num neg">0</td>
+          <td class="num">-51%</td>
+          <td class="num">—</td>
+          <td class="num">2.20</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3577.html">3577</a></td>
+          <td class="num">112.50</td>
+          <td class="num pos">+2.74%</td>
+          <td class="num neg">-18.5%</td>
+          <td class="num neg">-15.7%</td>
+          <td class="num pos">+81.7%</td>
+          <td class="num">26</td>
+          <td class="num">262,999</td>
+          <td class="num pos">+106</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6955.html">6955</a></td>
+          <td class="num">100.00</td>
+          <td class="num pos">+1.11%</td>
+          <td class="num neg">-18.4%</td>
+          <td class="num neg">-17.0%</td>
+          <td class="num neg">-36.5%</td>
+          <td class="num">13</td>
+          <td class="num">3,000</td>
+          <td class="num pos">+1</td>
+          <td class="num">17%</td>
+          <td class="num">28.2</td>
+          <td class="num">4.58</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6223.html">6223</a></td>
+          <td class="num">5155.00</td>
+          <td class="num pos">+2.18%</td>
+          <td class="num neg">-18.2%</td>
+          <td class="num neg">-24.8%</td>
+          <td class="num pos">+139.2%</td>
+          <td class="num">38</td>
+          <td class="num">555,526</td>
+          <td class="num pos">+30</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1467.html">1467</a></td>
+          <td class="num">8.19</td>
+          <td class="num neg">-0.24%</td>
+          <td class="num neg">-18.0%</td>
+          <td class="num neg">-12.0%</td>
+          <td class="num pos">+7.3%</td>
+          <td class="num">41</td>
+          <td class="num">193,561</td>
+          <td class="num pos">+21</td>
+          <td class="num">2%</td>
+          <td class="num">31.6</td>
+          <td class="num">0.67</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1526.html">1526</a></td>
+          <td class="num">15.75</td>
+          <td class="num pos">+2.27%</td>
+          <td class="num neg">-17.8%</td>
+          <td class="num pos">+5.0%</td>
+          <td class="num neg">-5.1%</td>
+          <td class="num">30</td>
+          <td class="num">123,410</td>
+          <td class="num neg">-28</td>
+          <td class="num">-4%</td>
+          <td class="num">—</td>
+          <td class="num">0.70</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5388.html">5388</a></td>
+          <td class="num">75.60</td>
+          <td class="num pos">+0.67%</td>
+          <td class="num neg">-17.6%</td>
+          <td class="num neg">-7.1%</td>
+          <td class="num neg">-5.0%</td>
+          <td class="num">20</td>
+          <td class="num">2,650,839</td>
+          <td class="num neg">-512</td>
+          <td class="num">9%</td>
+          <td class="num">17.2</td>
+          <td class="num">1.39</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3036.html">3036</a></td>
+          <td class="num">192.50</td>
+          <td class="num pos">+1.05%</td>
+          <td class="num neg">-17.6%</td>
+          <td class="num neg">-12.1%</td>
+          <td class="num pos">+30.5%</td>
+          <td class="num">35</td>
+          <td class="num">7,410,058</td>
+          <td class="num neg">-2,273</td>
+          <td class="num">24%</td>
+          <td class="num">9.7</td>
+          <td class="num">1.95</td>
+        </tr></tbody>
+    </table>
+    </div>
+    <div id="p-mid_downtrend" class="pattern-section">
+      <div class="pattern-header">
+        <div class="pattern-title">📊 中空 — 60 日均線空頭排列</div>
+        <div class="meta">736 檔符合 · 回測使用過去 240 日資料 · 樣本每 5 日取一次</div>
+      </div>
+      
+    <div class="backtest-grid">
+      <div class="bt-card">
+        <div class="label">20 日 forward 勝率</div>
+        <div class="val win-low">42.9%</div>
+        <div class="sub">2184 trades (240 日回測)</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日平均報酬</div>
+        <div class="val win-low">-0.21%</div>
+        <div class="sub">中位數 -0.75%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日最佳/最差</div>
+        <div class="val win-high">+324.9%</div>
+        <div class="sub win-low">最差 -63.0%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">60 日 forward 勝率</div>
+        <div class="val">36.0%</div>
+        <div class="sub">1650 trades</div>
+      </div>
+    </div>
+      <div class="verdict lose">⚠️ 歷史勝率 42.9%，這個型態在台股表現較弱</div>
+      
+    <table class="stock-table">
+      <thead>
+        <tr>
+          <th>股號</th><th>現價</th><th>當日%</th>
+          <th>20日%</th><th>60日%</th><th>240日%</th>
+          <th>RSI</th><th>成交量</th><th>外資(張)</th>
+          <th>ROE</th><th>P/E</th><th>P/B</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6669.html">6669</a></td>
+          <td class="num">2565.00</td>
+          <td class="num pos">+3.64%</td>
+          <td class="num neg">-59.1%</td>
+          <td class="num neg">-49.1%</td>
+          <td class="num neg">-45.1%</td>
+          <td class="num">23</td>
+          <td class="num">3,721,234</td>
+          <td class="num neg">-432</td>
+          <td class="num">51%</td>
+          <td class="num">25.2</td>
+          <td class="num">10.05</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5314.html">5314</a></td>
+          <td class="num">32.00</td>
+          <td class="num pos">+3.23%</td>
+          <td class="num neg">-46.2%</td>
+          <td class="num neg">-52.7%</td>
+          <td class="num neg">-65.8%</td>
+          <td class="num">72</td>
+          <td class="num">3,572,364</td>
+          <td class="num pos">+1,174</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4503.html">4503</a></td>
+          <td class="num">23.70</td>
+          <td class="num pos">+1.72%</td>
+          <td class="num neg">-29.1%</td>
+          <td class="num neg">-48.6%</td>
+          <td class="num neg">-39.8%</td>
+          <td class="num">40</td>
+          <td class="num">202,129</td>
+          <td class="num pos">+46</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4127.html">4127</a></td>
+          <td class="num">61.30</td>
+          <td class="num neg">-7.12%</td>
+          <td class="num neg">-28.7%</td>
+          <td class="num neg">-20.1%</td>
+          <td class="num pos">+103.7%</td>
+          <td class="num">13</td>
+          <td class="num">1,525,164</td>
+          <td class="num pos">+221</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8291.html">8291</a></td>
+          <td class="num">29.90</td>
+          <td class="num neg">-6.56%</td>
+          <td class="num neg">-27.1%</td>
+          <td class="num neg">-19.2%</td>
+          <td class="num pos">+74.9%</td>
+          <td class="num">34</td>
+          <td class="num">15,057</td>
+          <td class="num neg">0</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3625.html">3625</a></td>
+          <td class="num">12.35</td>
+          <td class="num neg">-5.36%</td>
+          <td class="num neg">-26.7%</td>
+          <td class="num neg">-32.9%</td>
+          <td class="num neg">-38.2%</td>
+          <td class="num">30</td>
+          <td class="num">205,714</td>
+          <td class="num neg">-87</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3609.html">3609</a></td>
+          <td class="num">18.75</td>
+          <td class="num pos">+4.17%</td>
+          <td class="num neg">-26.2%</td>
+          <td class="num neg">-33.9%</td>
+          <td class="num neg">-52.7%</td>
+          <td class="num">22</td>
+          <td class="num">184,328</td>
+          <td class="num pos">+48</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2067.html">2067</a></td>
+          <td class="num">4.82</td>
+          <td class="num neg">-0.21%</td>
+          <td class="num neg">-24.8%</td>
+          <td class="num neg">-29.1%</td>
+          <td class="num neg">-50.8%</td>
+          <td class="num">26</td>
+          <td class="num">14,715</td>
+          <td class="num neg">0</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8069.html">8069</a></td>
+          <td class="num">148.50</td>
+          <td class="num pos">+1.02%</td>
+          <td class="num neg">-24.2%</td>
+          <td class="num neg">-27.7%</td>
+          <td class="num neg">-17.7%</td>
+          <td class="num">31</td>
+          <td class="num">5,360,833</td>
+          <td class="num neg">-503</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5225.html">5225</a></td>
+          <td class="num">57.40</td>
+          <td class="num neg">-5.90%</td>
+          <td class="num neg">-23.4%</td>
+          <td class="num neg">-25.1%</td>
+          <td class="num neg">-42.3%</td>
+          <td class="num">35</td>
+          <td class="num">1,162,649</td>
+          <td class="num neg">-205</td>
+          <td class="num">17%</td>
+          <td class="num">9.2</td>
+          <td class="num">1.52</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4303.html">4303</a></td>
+          <td class="num">34.70</td>
+          <td class="num neg">-2.25%</td>
+          <td class="num neg">-23.2%</td>
+          <td class="num neg">-26.5%</td>
+          <td class="num neg">-42.4%</td>
+          <td class="num">24</td>
+          <td class="num">853,966</td>
+          <td class="num neg">-88</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8096.html">8096</a></td>
+          <td class="num">104.50</td>
+          <td class="num pos">+0.48%</td>
+          <td class="num neg">-22.9%</td>
+          <td class="num neg">-37.6%</td>
+          <td class="num pos">+93.2%</td>
+          <td class="num">31</td>
+          <td class="num">1,575,102</td>
+          <td class="num pos">+563</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4123.html">4123</a></td>
+          <td class="num">30.15</td>
+          <td class="num neg">-1.31%</td>
+          <td class="num neg">-22.2%</td>
+          <td class="num neg">-24.2%</td>
+          <td class="num neg">-23.5%</td>
+          <td class="num">29</td>
+          <td class="num">1,853,142</td>
+          <td class="num neg">-410</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2425.html">2425</a></td>
+          <td class="num">37.90</td>
+          <td class="num pos">+4.26%</td>
+          <td class="num neg">-21.3%</td>
+          <td class="num neg">-8.9%</td>
+          <td class="num pos">+24.9%</td>
+          <td class="num">49</td>
+          <td class="num">969,164</td>
+          <td class="num pos">+415</td>
+          <td class="num">3%</td>
+          <td class="num">58.6</td>
+          <td class="num">1.39</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3209.html">3209</a></td>
+          <td class="num">46.60</td>
+          <td class="num neg">-0.85%</td>
+          <td class="num neg">-21.0%</td>
+          <td class="num neg">-22.8%</td>
+          <td class="num pos">+44.0%</td>
+          <td class="num">28</td>
+          <td class="num">1,153,069</td>
+          <td class="num neg">-453</td>
+          <td class="num">27%</td>
+          <td class="num">8.3</td>
+          <td class="num">1.97</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7805.html">7805</a></td>
+          <td class="num">508.00</td>
+          <td class="num pos">+1.20%</td>
+          <td class="num neg">-20.9%</td>
+          <td class="num neg">-23.3%</td>
+          <td class="num neg">-25.5%</td>
+          <td class="num">13</td>
+          <td class="num">46,393</td>
+          <td class="num neg">-9</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5490.html">5490</a></td>
+          <td class="num">26.50</td>
+          <td class="num neg">-1.12%</td>
+          <td class="num neg">-20.5%</td>
+          <td class="num neg">-12.8%</td>
+          <td class="num neg">-3.8%</td>
+          <td class="num">10</td>
+          <td class="num">538,755</td>
+          <td class="num neg">-236</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5536.html">5536</a></td>
+          <td class="num">853.00</td>
+          <td class="num pos">+4.41%</td>
+          <td class="num neg">-20.3%</td>
+          <td class="num neg">-40.6%</td>
+          <td class="num pos">+6.4%</td>
+          <td class="num">37</td>
+          <td class="num">552,179</td>
+          <td class="num pos">+69</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/9958.html">9958</a></td>
+          <td class="num">88.10</td>
+          <td class="num neg">-0.34%</td>
+          <td class="num neg">-20.3%</td>
+          <td class="num neg">-26.9%</td>
+          <td class="num neg">-36.6%</td>
+          <td class="num">16</td>
+          <td class="num">1,659,464</td>
+          <td class="num pos">+362</td>
+          <td class="num">13%</td>
+          <td class="num">12.7</td>
+          <td class="num">1.85</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8210.html">8210</a></td>
+          <td class="num">986.00</td>
+          <td class="num pos">+4.01%</td>
+          <td class="num neg">-20.2%</td>
+          <td class="num neg">-23.6%</td>
+          <td class="num pos">+1.1%</td>
+          <td class="num">46</td>
+          <td class="num">923,601</td>
+          <td class="num pos">+174</td>
+          <td class="num">49%</td>
+          <td class="num">25.1</td>
+          <td class="num">9.53</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6919.html">6919</a></td>
+          <td class="num">86.40</td>
+          <td class="num pos">+2.25%</td>
+          <td class="num neg">-19.6%</td>
+          <td class="num neg">-13.6%</td>
+          <td class="num neg">-38.9%</td>
+          <td class="num">33</td>
+          <td class="num">8,669,515</td>
+          <td class="num neg">-1,855</td>
+          <td class="num">-3%</td>
+          <td class="num">—</td>
+          <td class="num">14.28</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7715.html">7715</a></td>
+          <td class="num">28.95</td>
+          <td class="num pos">+0.17%</td>
+          <td class="num neg">-19.6%</td>
+          <td class="num neg">-16.2%</td>
+          <td class="num neg">-5.1%</td>
+          <td class="num">31</td>
+          <td class="num">34,140</td>
+          <td class="num neg">-2</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4943.html">4943</a></td>
+          <td class="num">7.11</td>
+          <td class="num neg">-10.00%</td>
+          <td class="num neg">-19.0%</td>
+          <td class="num neg">-19.9%</td>
+          <td class="num neg">-43.1%</td>
+          <td class="num">31</td>
+          <td class="num">158,672</td>
+          <td class="num neg">0</td>
+          <td class="num">-76%</td>
+          <td class="num">—</td>
+          <td class="num">5.18</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2539.html">2539</a></td>
+          <td class="num">35.00</td>
+          <td class="num neg">-0.28%</td>
+          <td class="num neg">-18.8%</td>
+          <td class="num neg">-11.8%</td>
+          <td class="num neg">-25.6%</td>
+          <td class="num">23</td>
+          <td class="num">840,293</td>
+          <td class="num pos">+141</td>
+          <td class="num">28%</td>
+          <td class="num">10.2</td>
+          <td class="num">2.55</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3018.html">3018</a></td>
+          <td class="num">11.80</td>
+          <td class="num pos">+1.29%</td>
+          <td class="num neg">-18.6%</td>
+          <td class="num neg">-2.1%</td>
+          <td class="num pos">+3.5%</td>
+          <td class="num">35</td>
+          <td class="num">38,745</td>
+          <td class="num neg">0</td>
+          <td class="num">-51%</td>
+          <td class="num">—</td>
+          <td class="num">2.20</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3577.html">3577</a></td>
+          <td class="num">112.50</td>
+          <td class="num pos">+2.74%</td>
+          <td class="num neg">-18.5%</td>
+          <td class="num neg">-15.7%</td>
+          <td class="num pos">+81.7%</td>
+          <td class="num">26</td>
+          <td class="num">262,999</td>
+          <td class="num pos">+106</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3259.html">3259</a></td>
+          <td class="num">12.15</td>
+          <td class="num neg">+0.00%</td>
+          <td class="num neg">-18.5%</td>
+          <td class="num neg">-27.5%</td>
+          <td class="num neg">-44.9%</td>
+          <td class="num">47</td>
+          <td class="num">90,488</td>
+          <td class="num pos">+22</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6955.html">6955</a></td>
+          <td class="num">100.00</td>
+          <td class="num pos">+1.11%</td>
+          <td class="num neg">-18.4%</td>
+          <td class="num neg">-17.0%</td>
+          <td class="num neg">-36.5%</td>
+          <td class="num">13</td>
+          <td class="num">3,000</td>
+          <td class="num pos">+1</td>
+          <td class="num">17%</td>
+          <td class="num">28.2</td>
+          <td class="num">4.58</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6223.html">6223</a></td>
+          <td class="num">5155.00</td>
+          <td class="num pos">+2.18%</td>
+          <td class="num neg">-18.2%</td>
+          <td class="num neg">-24.8%</td>
+          <td class="num pos">+139.2%</td>
+          <td class="num">38</td>
+          <td class="num">555,526</td>
+          <td class="num pos">+30</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1467.html">1467</a></td>
+          <td class="num">8.19</td>
+          <td class="num neg">-0.24%</td>
+          <td class="num neg">-18.0%</td>
+          <td class="num neg">-12.0%</td>
+          <td class="num pos">+7.3%</td>
+          <td class="num">41</td>
+          <td class="num">193,561</td>
+          <td class="num pos">+21</td>
+          <td class="num">2%</td>
+          <td class="num">31.6</td>
+          <td class="num">0.67</td>
+        </tr></tbody>
+    </table>
+    </div>
+    <div id="p-long_drawdown" class="pattern-section">
+      <div class="pattern-header">
+        <div class="pattern-title">💀 長空腰斬 — 240 日腰斬，長期弱勢</div>
+        <div class="meta">728 檔符合 · 回測使用過去 240 日資料 · 樣本每 5 日取一次</div>
+      </div>
+      
+    <div class="backtest-grid">
+      <div class="bt-card">
+        <div class="label">20 日 forward 勝率</div>
+        <div class="val win-low">38.5%</div>
+        <div class="sub">2826 trades (240 日回測)</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日平均報酬</div>
+        <div class="val win-low">-1.37%</div>
+        <div class="sub">中位數 -1.24%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日最佳/最差</div>
+        <div class="val win-high">+42.9%</div>
+        <div class="sub win-low">最差 -63.0%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">60 日 forward 勝率</div>
+        <div class="val">24.8%</div>
+        <div class="sub">2015 trades</div>
+      </div>
+    </div>
+      <div class="verdict lose">⚠️ 歷史勝率 38.5%，這個型態在台股表現較弱</div>
+      
+    <table class="stock-table">
+      <thead>
+        <tr>
+          <th>股號</th><th>現價</th><th>當日%</th>
+          <th>20日%</th><th>60日%</th><th>240日%</th>
+          <th>RSI</th><th>成交量</th><th>外資(張)</th>
+          <th>ROE</th><th>P/E</th><th>P/B</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6669.html">6669</a></td>
+          <td class="num">2565.00</td>
+          <td class="num pos">+3.64%</td>
+          <td class="num neg">-59.1%</td>
+          <td class="num neg">-49.1%</td>
+          <td class="num neg">-45.1%</td>
+          <td class="num">23</td>
+          <td class="num">3,721,234</td>
+          <td class="num neg">-432</td>
+          <td class="num">51%</td>
+          <td class="num">25.2</td>
+          <td class="num">10.05</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5314.html">5314</a></td>
+          <td class="num">32.00</td>
+          <td class="num pos">+3.23%</td>
+          <td class="num neg">-46.2%</td>
+          <td class="num neg">-52.7%</td>
+          <td class="num neg">-65.8%</td>
+          <td class="num">72</td>
+          <td class="num">3,572,364</td>
+          <td class="num pos">+1,174</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4503.html">4503</a></td>
+          <td class="num">23.70</td>
+          <td class="num pos">+1.72%</td>
+          <td class="num neg">-29.1%</td>
+          <td class="num neg">-48.6%</td>
+          <td class="num neg">-39.8%</td>
+          <td class="num">40</td>
+          <td class="num">202,129</td>
+          <td class="num pos">+46</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3625.html">3625</a></td>
+          <td class="num">12.35</td>
+          <td class="num neg">-5.36%</td>
+          <td class="num neg">-26.7%</td>
+          <td class="num neg">-32.9%</td>
+          <td class="num neg">-38.2%</td>
+          <td class="num">30</td>
+          <td class="num">205,714</td>
+          <td class="num neg">-87</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3609.html">3609</a></td>
+          <td class="num">18.75</td>
+          <td class="num pos">+4.17%</td>
+          <td class="num neg">-26.2%</td>
+          <td class="num neg">-33.9%</td>
+          <td class="num neg">-52.7%</td>
+          <td class="num">22</td>
+          <td class="num">184,328</td>
+          <td class="num pos">+48</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2067.html">2067</a></td>
+          <td class="num">4.82</td>
+          <td class="num neg">-0.21%</td>
+          <td class="num neg">-24.8%</td>
+          <td class="num neg">-29.1%</td>
+          <td class="num neg">-50.8%</td>
+          <td class="num">26</td>
+          <td class="num">14,715</td>
+          <td class="num neg">0</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8069.html">8069</a></td>
+          <td class="num">148.50</td>
+          <td class="num pos">+1.02%</td>
+          <td class="num neg">-24.2%</td>
+          <td class="num neg">-27.7%</td>
+          <td class="num neg">-17.7%</td>
+          <td class="num">31</td>
+          <td class="num">5,360,833</td>
+          <td class="num neg">-503</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5225.html">5225</a></td>
+          <td class="num">57.40</td>
+          <td class="num neg">-5.90%</td>
+          <td class="num neg">-23.4%</td>
+          <td class="num neg">-25.1%</td>
+          <td class="num neg">-42.3%</td>
+          <td class="num">35</td>
+          <td class="num">1,162,649</td>
+          <td class="num neg">-205</td>
+          <td class="num">17%</td>
+          <td class="num">9.2</td>
+          <td class="num">1.52</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4303.html">4303</a></td>
+          <td class="num">34.70</td>
+          <td class="num neg">-2.25%</td>
+          <td class="num neg">-23.2%</td>
+          <td class="num neg">-26.5%</td>
+          <td class="num neg">-42.4%</td>
+          <td class="num">24</td>
+          <td class="num">853,966</td>
+          <td class="num neg">-88</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4123.html">4123</a></td>
+          <td class="num">30.15</td>
+          <td class="num neg">-1.31%</td>
+          <td class="num neg">-22.2%</td>
+          <td class="num neg">-24.2%</td>
+          <td class="num neg">-23.5%</td>
+          <td class="num">29</td>
+          <td class="num">1,853,142</td>
+          <td class="num neg">-410</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7805.html">7805</a></td>
+          <td class="num">508.00</td>
+          <td class="num pos">+1.20%</td>
+          <td class="num neg">-20.9%</td>
+          <td class="num neg">-23.3%</td>
+          <td class="num neg">-25.5%</td>
+          <td class="num">13</td>
+          <td class="num">46,393</td>
+          <td class="num neg">-9</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5490.html">5490</a></td>
+          <td class="num">26.50</td>
+          <td class="num neg">-1.12%</td>
+          <td class="num neg">-20.5%</td>
+          <td class="num neg">-12.8%</td>
+          <td class="num neg">-3.8%</td>
+          <td class="num">10</td>
+          <td class="num">538,755</td>
+          <td class="num neg">-236</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/9958.html">9958</a></td>
+          <td class="num">88.10</td>
+          <td class="num neg">-0.34%</td>
+          <td class="num neg">-20.3%</td>
+          <td class="num neg">-26.9%</td>
+          <td class="num neg">-36.6%</td>
+          <td class="num">16</td>
+          <td class="num">1,659,464</td>
+          <td class="num pos">+362</td>
+          <td class="num">13%</td>
+          <td class="num">12.7</td>
+          <td class="num">1.85</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6863.html">6863</a></td>
+          <td class="num">104.50</td>
+          <td class="num pos">+0.48%</td>
+          <td class="num neg">-20.2%</td>
+          <td class="num pos">+12.5%</td>
+          <td class="num neg">-11.4%</td>
+          <td class="num">40</td>
+          <td class="num">87,350</td>
+          <td class="num pos">+17</td>
+          <td class="num">4%</td>
+          <td class="num">36.5</td>
+          <td class="num">1.25</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6919.html">6919</a></td>
+          <td class="num">86.40</td>
+          <td class="num pos">+2.25%</td>
+          <td class="num neg">-19.6%</td>
+          <td class="num neg">-13.6%</td>
+          <td class="num neg">-38.9%</td>
+          <td class="num">33</td>
+          <td class="num">8,669,515</td>
+          <td class="num neg">-1,855</td>
+          <td class="num">-3%</td>
+          <td class="num">—</td>
+          <td class="num">14.28</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7715.html">7715</a></td>
+          <td class="num">28.95</td>
+          <td class="num pos">+0.17%</td>
+          <td class="num neg">-19.6%</td>
+          <td class="num neg">-16.2%</td>
+          <td class="num neg">-5.1%</td>
+          <td class="num">31</td>
+          <td class="num">34,140</td>
+          <td class="num neg">-2</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4943.html">4943</a></td>
+          <td class="num">7.11</td>
+          <td class="num neg">-10.00%</td>
+          <td class="num neg">-19.0%</td>
+          <td class="num neg">-19.9%</td>
+          <td class="num neg">-43.1%</td>
+          <td class="num">31</td>
+          <td class="num">158,672</td>
+          <td class="num neg">0</td>
+          <td class="num">-76%</td>
+          <td class="num">—</td>
+          <td class="num">5.18</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2539.html">2539</a></td>
+          <td class="num">35.00</td>
+          <td class="num neg">-0.28%</td>
+          <td class="num neg">-18.8%</td>
+          <td class="num neg">-11.8%</td>
+          <td class="num neg">-25.6%</td>
+          <td class="num">23</td>
+          <td class="num">840,293</td>
+          <td class="num pos">+141</td>
+          <td class="num">28%</td>
+          <td class="num">10.2</td>
+          <td class="num">2.55</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3259.html">3259</a></td>
+          <td class="num">12.15</td>
+          <td class="num neg">+0.00%</td>
+          <td class="num neg">-18.5%</td>
+          <td class="num neg">-27.5%</td>
+          <td class="num neg">-44.9%</td>
+          <td class="num">47</td>
+          <td class="num">90,488</td>
+          <td class="num pos">+22</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6955.html">6955</a></td>
+          <td class="num">100.00</td>
+          <td class="num pos">+1.11%</td>
+          <td class="num neg">-18.4%</td>
+          <td class="num neg">-17.0%</td>
+          <td class="num neg">-36.5%</td>
+          <td class="num">13</td>
+          <td class="num">3,000</td>
+          <td class="num pos">+1</td>
+          <td class="num">17%</td>
+          <td class="num">28.2</td>
+          <td class="num">4.58</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1526.html">1526</a></td>
+          <td class="num">15.75</td>
+          <td class="num pos">+2.27%</td>
+          <td class="num neg">-17.8%</td>
+          <td class="num pos">+5.0%</td>
+          <td class="num neg">-5.1%</td>
+          <td class="num">30</td>
+          <td class="num">123,410</td>
+          <td class="num neg">-28</td>
+          <td class="num">-4%</td>
+          <td class="num">—</td>
+          <td class="num">0.70</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5388.html">5388</a></td>
+          <td class="num">75.60</td>
+          <td class="num pos">+0.67%</td>
+          <td class="num neg">-17.6%</td>
+          <td class="num neg">-7.1%</td>
+          <td class="num neg">-5.0%</td>
+          <td class="num">20</td>
+          <td class="num">2,650,839</td>
+          <td class="num neg">-512</td>
+          <td class="num">9%</td>
+          <td class="num">17.2</td>
+          <td class="num">1.39</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6914.html">6914</a></td>
+          <td class="num">121.00</td>
+          <td class="num neg">-0.82%</td>
+          <td class="num neg">-17.4%</td>
+          <td class="num neg">-16.3%</td>
+          <td class="num neg">-15.7%</td>
+          <td class="num">15</td>
+          <td class="num">93,581</td>
+          <td class="num neg">-17</td>
+          <td class="num">19%</td>
+          <td class="num">14.7</td>
+          <td class="num">2.69</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2233.html">2233</a></td>
+          <td class="num">168.50</td>
+          <td class="num pos">+2.12%</td>
+          <td class="num neg">-17.4%</td>
+          <td class="num neg">-36.3%</td>
+          <td class="num neg">-19.4%</td>
+          <td class="num">28</td>
+          <td class="num">460,742</td>
+          <td class="num pos">+185</td>
+          <td class="num">11%</td>
+          <td class="num">24.3</td>
+          <td class="num">2.41</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4137.html">4137</a></td>
+          <td class="num">79.30</td>
+          <td class="num neg">-0.75%</td>
+          <td class="num neg">-16.4%</td>
+          <td class="num neg">-17.8%</td>
+          <td class="num neg">-22.3%</td>
+          <td class="num">8</td>
+          <td class="num">318,575</td>
+          <td class="num neg">-38</td>
+          <td class="num">12%</td>
+          <td class="num">10.6</td>
+          <td class="num">1.34</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6541.html">6541</a></td>
+          <td class="num">31.70</td>
+          <td class="num pos">+1.44%</td>
+          <td class="num neg">-16.2%</td>
+          <td class="num neg">-23.9%</td>
+          <td class="num neg">-39.6%</td>
+          <td class="num">25</td>
+          <td class="num">441,700</td>
+          <td class="num pos">+86</td>
+          <td class="num">-30%</td>
+          <td class="num">—</td>
+          <td class="num">1.45</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3290.html">3290</a></td>
+          <td class="num">45.50</td>
+          <td class="num neg">-2.26%</td>
+          <td class="num neg">-15.1%</td>
+          <td class="num neg">-35.4%</td>
+          <td class="num neg">-3.6%</td>
+          <td class="num">9</td>
+          <td class="num">1,164,160</td>
+          <td class="num pos">+102</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/7740.html">7740</a></td>
+          <td class="num">132.00</td>
+          <td class="num pos">+2.33%</td>
+          <td class="num neg">-14.8%</td>
+          <td class="num neg">-9.0%</td>
+          <td class="num neg">-15.9%</td>
+          <td class="num">32</td>
+          <td class="num">78,660</td>
+          <td class="num pos">+4</td>
+          <td class="num">31%</td>
+          <td class="num">17.8</td>
+          <td class="num">5.19</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6901.html">6901</a></td>
+          <td class="num">14.95</td>
+          <td class="num pos">+0.34%</td>
+          <td class="num neg">-14.6%</td>
+          <td class="num neg">-20.9%</td>
+          <td class="num neg">-9.1%</td>
+          <td class="num">30</td>
+          <td class="num">1,355,411</td>
+          <td class="num neg">-144</td>
+          <td class="num">27%</td>
+          <td class="num">4.3</td>
+          <td class="num">1.03</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6186.html">6186</a></td>
+          <td class="num">31.30</td>
+          <td class="num neg">-1.42%</td>
+          <td class="num neg">-14.4%</td>
+          <td class="num neg">-28.7%</td>
+          <td class="num neg">-40.2%</td>
+          <td class="num">35</td>
+          <td class="num">1,473,956</td>
+          <td class="num neg">-219</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr></tbody>
+    </table>
+    </div>
+    <div id="p-margin_distress_rebound" class="pattern-section">
+      <div class="pattern-header">
+        <div class="pattern-title">🎯 融資反彈候選 — 240d 平均維持率 &lt; 133% + 融資餘額大，潛在 forced-sell 反彈</div>
+        <div class="meta">406 檔符合 · 回測使用過去 240 日資料 · 樣本每 5 日取一次</div>
+      </div>
+      
+    <div class="backtest-grid">
+      <div class="bt-card">
+        <div class="label">20 日 forward 勝率</div>
+        <div class="val win-low">0%</div>
+        <div class="sub">0 trades (240 日回測)</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日平均報酬</div>
+        <div class="val win-low">+0.00%</div>
+        <div class="sub">中位數 +0.00%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">20 日最佳/最差</div>
+        <div class="val win-high">+0.0%</div>
+        <div class="sub win-low">最差 +0.0%</div>
+      </div>
+      <div class="bt-card">
+        <div class="label">60 日 forward 勝率</div>
+        <div class="val">0%</div>
+        <div class="sub">0 trades</div>
+      </div>
+    </div>
+      <div class="verdict lose">⚠️ 歷史勝率 0%，這個型態在台股表現較弱</div>
+      
+    <table class="stock-table">
+      <thead>
+        <tr>
+          <th>股號</th><th>現價</th><th>當日%</th>
+          <th>20日%</th><th>60日%</th><th>240日%</th>
+          <th>RSI</th><th>成交量</th><th>外資(張)</th>
+          <th>ROE</th><th>P/E</th><th>P/B</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6173.html">6173</a></td>
+          <td class="num">260.50</td>
+          <td class="num pos">+8.09%</td>
+          <td class="num pos">+52.3%</td>
+          <td class="num neg">-17.4%</td>
+          <td class="num pos">+285.9%</td>
+          <td class="num">65</td>
+          <td class="num">18,478,287</td>
+          <td class="num pos">+488</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8103.html">8103</a></td>
+          <td class="num">122.50</td>
+          <td class="num pos">+1.24%</td>
+          <td class="num pos">+45.0%</td>
+          <td class="num pos">+19.5%</td>
+          <td class="num pos">+31.9%</td>
+          <td class="num">83</td>
+          <td class="num">5,723,721</td>
+          <td class="num neg">-400</td>
+          <td class="num">12%</td>
+          <td class="num">23.0</td>
+          <td class="num">2.33</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4908.html">4908</a></td>
+          <td class="num">224.50</td>
+          <td class="num pos">+9.78%</td>
+          <td class="num pos">+43.0%</td>
+          <td class="num pos">+28.3%</td>
+          <td class="num pos">+196.2%</td>
+          <td class="num">69</td>
+          <td class="num">1,795,882</td>
+          <td class="num pos">+114</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2351.html">2351</a></td>
+          <td class="num">239.50</td>
+          <td class="num pos">+7.40%</td>
+          <td class="num pos">+39.7%</td>
+          <td class="num pos">+5.0%</td>
+          <td class="num pos">+211.0%</td>
+          <td class="num">80</td>
+          <td class="num">6,731,626</td>
+          <td class="num neg">-596</td>
+          <td class="num">11%</td>
+          <td class="num">56.3</td>
+          <td class="num">5.28</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8431.html">8431</a></td>
+          <td class="num">68.80</td>
+          <td class="num pos">+8.01%</td>
+          <td class="num pos">+37.6%</td>
+          <td class="num pos">+29.1%</td>
+          <td class="num neg">-11.9%</td>
+          <td class="num">84</td>
+          <td class="num">10,687,557</td>
+          <td class="num pos">+710</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1815.html">1815</a></td>
+          <td class="num">118.50</td>
+          <td class="num neg">-1.25%</td>
+          <td class="num pos">+36.5%</td>
+          <td class="num pos">+19.1%</td>
+          <td class="num pos">+35.4%</td>
+          <td class="num">68</td>
+          <td class="num">50,628,182</td>
+          <td class="num pos">+1,670</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2615.html">2615</a></td>
+          <td class="num">115.00</td>
+          <td class="num neg">-0.43%</td>
+          <td class="num pos">+36.4%</td>
+          <td class="num pos">+43.8%</td>
+          <td class="num pos">+42.9%</td>
+          <td class="num">65</td>
+          <td class="num">19,809,367</td>
+          <td class="num neg">-518</td>
+          <td class="num">15%</td>
+          <td class="num">7.9</td>
+          <td class="num">1.12</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6727.html">6727</a></td>
+          <td class="num">541.00</td>
+          <td class="num neg">-1.64%</td>
+          <td class="num pos">+35.2%</td>
+          <td class="num pos">+10.5%</td>
+          <td class="num pos">+211.8%</td>
+          <td class="num">62</td>
+          <td class="num">2,006,486</td>
+          <td class="num pos">+150</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4977.html">4977</a></td>
+          <td class="num">185.00</td>
+          <td class="num pos">+7.25%</td>
+          <td class="num pos">+33.6%</td>
+          <td class="num pos">+16.4%</td>
+          <td class="num pos">+43.4%</td>
+          <td class="num">65</td>
+          <td class="num">6,114,009</td>
+          <td class="num neg">-262</td>
+          <td class="num">7%</td>
+          <td class="num">52.3</td>
+          <td class="num">3.24</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3081.html">3081</a></td>
+          <td class="num">3170.00</td>
+          <td class="num pos">+1.60%</td>
+          <td class="num pos">+33.5%</td>
+          <td class="num pos">+58.5%</td>
+          <td class="num pos">+409.6%</td>
+          <td class="num">59</td>
+          <td class="num">5,533,009</td>
+          <td class="num pos">+626</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3094.html">3094</a></td>
+          <td class="num">46.50</td>
+          <td class="num pos">+9.93%</td>
+          <td class="num pos">+30.6%</td>
+          <td class="num pos">+8.4%</td>
+          <td class="num pos">+79.9%</td>
+          <td class="num">85</td>
+          <td class="num">17,920,641</td>
+          <td class="num pos">+2,836</td>
+          <td class="num">5%</td>
+          <td class="num">68.2</td>
+          <td class="num">3.39</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8358.html">8358</a></td>
+          <td class="num">500.00</td>
+          <td class="num pos">+6.38%</td>
+          <td class="num pos">+30.2%</td>
+          <td class="num neg">-11.2%</td>
+          <td class="num pos">+88.0%</td>
+          <td class="num">64</td>
+          <td class="num">4,455,967</td>
+          <td class="num pos">+908</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5608.html">5608</a></td>
+          <td class="num">17.20</td>
+          <td class="num neg">-1.43%</td>
+          <td class="num pos">+29.8%</td>
+          <td class="num pos">+15.1%</td>
+          <td class="num neg">-4.4%</td>
+          <td class="num">65</td>
+          <td class="num">9,849,972</td>
+          <td class="num neg">-2,199</td>
+          <td class="num">-1%</td>
+          <td class="num">193.9</td>
+          <td class="num">0.70</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2489.html">2489</a></td>
+          <td class="num">41.00</td>
+          <td class="num pos">+0.24%</td>
+          <td class="num pos">+29.3%</td>
+          <td class="num neg">-0.1%</td>
+          <td class="num pos">+144.8%</td>
+          <td class="num">75</td>
+          <td class="num">30,904,519</td>
+          <td class="num pos">+847</td>
+          <td class="num">7%</td>
+          <td class="num">30.5</td>
+          <td class="num">1.90</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/4979.html">4979</a></td>
+          <td class="num">629.00</td>
+          <td class="num pos">+9.96%</td>
+          <td class="num pos">+28.9%</td>
+          <td class="num pos">+37.6%</td>
+          <td class="num pos">+113.2%</td>
+          <td class="num">63</td>
+          <td class="num">19,025,771</td>
+          <td class="num pos">+1,118</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/5864.html">5864</a></td>
+          <td class="num">37.15</td>
+          <td class="num pos">+2.34%</td>
+          <td class="num pos">+27.4%</td>
+          <td class="num neg">-18.4%</td>
+          <td class="num pos">+124.5%</td>
+          <td class="num">69</td>
+          <td class="num">2,170,812</td>
+          <td class="num pos">+279</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6499.html">6499</a></td>
+          <td class="num">73.20</td>
+          <td class="num pos">+2.09%</td>
+          <td class="num pos">+27.1%</td>
+          <td class="num pos">+0.7%</td>
+          <td class="num neg">-19.7%</td>
+          <td class="num">66</td>
+          <td class="num">253,929</td>
+          <td class="num neg">-20</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/1727.html">1727</a></td>
+          <td class="num">94.70</td>
+          <td class="num pos">+6.17%</td>
+          <td class="num pos">+26.3%</td>
+          <td class="num neg">-6.7%</td>
+          <td class="num pos">+82.1%</td>
+          <td class="num">66</td>
+          <td class="num">5,890,316</td>
+          <td class="num pos">+280</td>
+          <td class="num">4%</td>
+          <td class="num">129.3</td>
+          <td class="num">5.31</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3532.html">3532</a></td>
+          <td class="num">399.00</td>
+          <td class="num pos">+4.72%</td>
+          <td class="num pos">+26.3%</td>
+          <td class="num neg">-1.7%</td>
+          <td class="num pos">+235.3%</td>
+          <td class="num">58</td>
+          <td class="num">6,836,299</td>
+          <td class="num pos">+556</td>
+          <td class="num">2%</td>
+          <td class="num">300.0</td>
+          <td class="num">6.08</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6290.html">6290</a></td>
+          <td class="num">270.00</td>
+          <td class="num pos">+9.98%</td>
+          <td class="num pos">+26.2%</td>
+          <td class="num neg">-16.4%</td>
+          <td class="num pos">+51.7%</td>
+          <td class="num">72</td>
+          <td class="num">6,100,525</td>
+          <td class="num pos">+1,469</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6547.html">6547</a></td>
+          <td class="num">61.50</td>
+          <td class="num neg">-0.49%</td>
+          <td class="num pos">+25.8%</td>
+          <td class="num pos">+28.1%</td>
+          <td class="num pos">+69.7%</td>
+          <td class="num">77</td>
+          <td class="num">3,244,370</td>
+          <td class="num neg">-681</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/8937.html">8937</a></td>
+          <td class="num">30.00</td>
+          <td class="num pos">+3.09%</td>
+          <td class="num pos">+25.5%</td>
+          <td class="num pos">+8.3%</td>
+          <td class="num neg">-79.9%</td>
+          <td class="num">73</td>
+          <td class="num">155,978</td>
+          <td class="num pos">+3</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3455.html">3455</a></td>
+          <td class="num">236.50</td>
+          <td class="num neg">-1.05%</td>
+          <td class="num pos">+24.8%</td>
+          <td class="num neg">-4.1%</td>
+          <td class="num pos">+104.8%</td>
+          <td class="num">41</td>
+          <td class="num">1,907,761</td>
+          <td class="num neg">-4</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6672.html">6672</a></td>
+          <td class="num">289.00</td>
+          <td class="num pos">+9.89%</td>
+          <td class="num pos">+24.3%</td>
+          <td class="num neg">-6.2%</td>
+          <td class="num pos">+219.0%</td>
+          <td class="num">52</td>
+          <td class="num">5,927,842</td>
+          <td class="num pos">+266</td>
+          <td class="num">14%</td>
+          <td class="num">38.1</td>
+          <td class="num">4.47</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2103.html">2103</a></td>
+          <td class="num">28.25</td>
+          <td class="num pos">+1.07%</td>
+          <td class="num pos">+24.2%</td>
+          <td class="num pos">+16.7%</td>
+          <td class="num pos">+84.0%</td>
+          <td class="num">57</td>
+          <td class="num">3,274,701</td>
+          <td class="num neg">-248</td>
+          <td class="num">11%</td>
+          <td class="num">11.3</td>
+          <td class="num">1.05</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6271.html">6271</a></td>
+          <td class="num">237.00</td>
+          <td class="num pos">+9.98%</td>
+          <td class="num pos">+23.4%</td>
+          <td class="num neg">-12.9%</td>
+          <td class="num pos">+83.0%</td>
+          <td class="num">71</td>
+          <td class="num">15,374,517</td>
+          <td class="num pos">+4,343</td>
+          <td class="num">7%</td>
+          <td class="num">24.4</td>
+          <td class="num">1.65</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3624.html">3624</a></td>
+          <td class="num">93.20</td>
+          <td class="num pos">+9.91%</td>
+          <td class="num pos">+23.3%</td>
+          <td class="num neg">-37.0%</td>
+          <td class="num pos">+55.3%</td>
+          <td class="num">57</td>
+          <td class="num">9,178,333</td>
+          <td class="num pos">+3,653</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/6278.html">6278</a></td>
+          <td class="num">200.00</td>
+          <td class="num pos">+4.44%</td>
+          <td class="num pos">+23.1%</td>
+          <td class="num neg">-1.2%</td>
+          <td class="num pos">+106.8%</td>
+          <td class="num">66</td>
+          <td class="num">4,324,695</td>
+          <td class="num neg">-499</td>
+          <td class="num">13%</td>
+          <td class="num">19.5</td>
+          <td class="num">2.39</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/3044.html">3044</a></td>
+          <td class="num">488.50</td>
+          <td class="num pos">+0.21%</td>
+          <td class="num pos">+22.9%</td>
+          <td class="num neg">-3.5%</td>
+          <td class="num pos">+53.9%</td>
+          <td class="num">52</td>
+          <td class="num">1,979,532</td>
+          <td class="num neg">-339</td>
+          <td class="num">24%</td>
+          <td class="num">21.0</td>
+          <td class="num">4.60</td>
+        </tr>
+        <tr>
+          <td><a href="https://groovelab.dev/analyze/2301.html">2301</a></td>
+          <td class="num">308.00</td>
+          <td class="num pos">+3.01%</td>
+          <td class="num pos">+22.0%</td>
+          <td class="num pos">+37.5%</td>
+          <td class="num pos">+88.4%</td>
+          <td class="num">65</td>
+          <td class="num">27,528,977</td>
+          <td class="num pos">+4,775</td>
+          <td class="num">22%</td>
+          <td class="num">35.3</td>
+          <td class="num">7.08</td>
+        </tr></tbody>
+    </table>
+    </div>
+  <footer>
+    tw-invest-suite · 2026-09-04 23:40 · 從 MySQL `daily_data2_full` 計算 + yfinance 補 ROE/P/E/P/B · 過去 240 日 walk-forward 回測
+  </footer>
+</main>
+</body>
+</html>
