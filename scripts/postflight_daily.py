@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-postflight_daily.py — D052h-fixup
+postflight_daily.py — D052h-fixup2
 Run at 00:05 daily. Verifies all 8 tw-invest-suite-* tasks ran on the
-previous operational date and data integrity holds.
+previous calendar day and data integrity holds.
 
-D052h-fixup changes:
+D052h-fixup2 changes (per ChatGPT visible UI F3 + F4):
+  - F3: PUBLISH log path uses repo scripts/_debug (not runtime _debug).
+    Pattern is publish_ghpages_YYYYMMDD_HHMMSS.log (not publish_full_*.log).
+    Also check for "done (exit 0)" success marker.
+  - F4: Separate execution_date (previous calendar day for Scheduler
+    task check) from data_date (latest trading data in DB for picks/
+    company_null check).
+
+D052h-fixup changes (kept):
   - Use Get-ScheduledTaskInfo (PowerShell) + JSON parsing instead of
     locale-dependent schtasks /Query string parsing.
-  - Check previous operational date (not today) since 00:05 may run on
-    Sun/Mon and "today" is not yet operational.
   - 267011 (task killed) is NOT considered success.
   - Active picks must be EXACTLY 24 (not >= 24).
-  - Add publish artifact/date verification.
+
+Pending (NOT addressed in fixup2):
+  - H: existing-ticker reconciliation
+  - J: 7768 per-day quarantine accumulation
+  - T2/T3: live test infrastructure (mocked tests in tests/ post-fixup2)
+  - T4: live stale-OHLCV test (deterministic unit test in tests/)
 
 Exits 0 on all OK, 1 on any failure. Writes JSON status to log file.
 """
@@ -30,7 +41,13 @@ import pymysql
 DB = dict(host="localhost", user="root", password="1234", database="tw_elec",
           connect_timeout=10, charset="utf8mb4")
 
-LOG_DIR = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug")
+# D052h-fixup2 F3: actual publish log is written by publish_ghpages_daily.ps1
+# to C:\Users\icemo\Projects\tw-invest-suite\scripts\_debug (it does
+# Set-Location to repo scripts first). Pattern is publish_ghpages_YYYYMMDD_HHMMSS.log.
+PUBLISH_LOG_DIR = Path(r"C:\Users\icemo\Projects\tw-invest-suite\scripts\_debug")
+PUBLISH_LOG_PATTERN = "publish_ghpages_*.log"
+
+LOG_DIR = Path(r"C:\Users\icemo\Projects\tw-invest-suite\scripts\_debug")
 TASKS = [
     "tw-invest-suite-daily-report",
     "tw-invest-suite-yfinance",
@@ -101,19 +118,35 @@ $out | ConvertTo-Json -Compress
 
 
 def previous_operational_date():
-    """Returns the most recent date that should have data. If today is
-    Sun/Mon, returns last Friday. Else returns yesterday.
+    """D052h-fixup2 F4: execution_date — the previous calendar day for
+    which the Scheduler tasks should have completed.
+
+    For a 00:05 postflight run, this is simply today - 1 day. (On TWSE
+    holidays where no tasks ran, the failure will be detected by the
+    task-run-time check itself; we don't try to skip holidays here.)
+
+    Returns: date
     """
-    today = date.today()
-    wd = today.weekday()  # 0=Mon, 6=Sun
-    if wd == 6:  # Sun
-        return today - timedelta(days=2)  # Fri
-    if wd == 0:  # Mon
-        return today - timedelta(days=3)  # Fri (data from Fri, weekend gap)
-    if wd == 5:  # Sat
-        return today - timedelta(days=1)  # Fri
-    # Tue-Fri: yesterday
-    return today - timedelta(days=1)
+    return date.today() - timedelta(days=1)
+
+
+def latest_trading_data_date():
+    """D052h-fixup2 F4: data_date — the most recent date that has actual
+    OHLCV data in daily_data2_full. This is the date the DB checks
+    (market_screen, company_null) should target.
+
+    Returns: date or None if DB is empty
+    """
+    conn = pymysql.connect(**DB)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT MAX(Date) FROM daily_data2_full")
+        row = cur.fetchone()
+        if row and row[0]:
+            return row[0]
+        return None
+    finally:
+        conn.close()
 
 
 def check_tasks(operational_date):
@@ -243,38 +276,49 @@ def check_quarantine():
         conn.close()
 
 
-def check_publish_artifact(operational_date):
-    """Verify publish cron ran on operational_date and produced artifact.
-    We check the publish_ghpages_daily.ps1 log file in _debug/ dir.
-    """
-    # Find publish log for operational_date
-    expected = LOG_DIR / f"publish_full_{operational_date.strftime('%Y%m%d')}.log"
-    if not expected.exists():
-        # Try the recent one
-        candidates = sorted(LOG_DIR.glob("publish_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if not candidates:
-            return {"pass": False, "reason": "no publish log found"}
-        latest = candidates[0]
-        # Check if latest log is from today or operational_date
-        mtime = datetime.fromtimestamp(latest.stat().st_mtime).date()
-        if mtime != operational_date:
-            return {"pass": False, "reason": f"latest publish log is {mtime}, expected {operational_date}"}
-        log_path = latest
-    else:
-        log_path = expected
+def check_publish_artifact(execution_date):
+    """D052h-fixup2 F3: verify publish cron produced a log for execution_date
+    with explicit success marker.
 
-    # Check log content for "Done" / "pushed" / success marker
+    publish_ghpages_daily.ps1 writes to:
+      C:\\Users\\icemo\\Projects\\tw-invest-suite\\scripts\\_debug
+    Pattern: publish_ghpages_YYYYMMDD_HHMMSS.log
+    Success marker in the log: "done (exit 0)" (last line)
+    """
+    if not PUBLISH_LOG_DIR.exists():
+        return {"pass": False, "reason": f"publish log dir missing: {PUBLISH_LOG_DIR}"}
+    # Match log files whose timestamp is on execution_date (YYYYMMDD prefix)
+    # The filename embeds local time, so the prefix is the publish date
+    prefix = f"publish_ghpages_{execution_date.strftime('%Y%m%d')}_"
+    candidates = sorted(
+        PUBLISH_LOG_DIR.glob(PUBLISH_LOG_PATTERN),
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )
+    matches = [p for p in candidates if p.name.startswith(prefix)]
+    if not matches:
+        # Allow any publish log from execution_date's window as fallback,
+        # but require it to be from execution_date (mtime check)
+        recent = [p for p in candidates
+                  if datetime.fromtimestamp(p.stat().st_mtime).date() == execution_date]
+        if not recent:
+            return {"pass": False, "reason": f"no publish_ghpages log for {execution_date}"}
+        log_path = recent[0]
+    else:
+        log_path = matches[0]
+
+    # Check log content for explicit success marker "done (exit 0)"
     try:
         content = log_path.read_text(encoding="utf-8", errors="ignore")
     except Exception as e:
         return {"pass": False, "reason": f"cannot read log: {e}"}
 
-    # Look for success markers
-    has_pushed = bool(re.search(r"pushed|done|Done|✓|✔|OK", content, re.IGNORECASE))
+    has_done_marker = bool(re.search(r"done\s*\(exit\s*0\)", content, re.IGNORECASE))
+    has_pushed = bool(re.search(r"pushed|Done|✓|✔", content, re.IGNORECASE))
     has_error = bool(re.search(r"error|exception|traceback|failed", content, re.IGNORECASE))
     return {
-        "pass": has_pushed and not has_error,
+        "pass": has_done_marker and not has_error,
         "log": str(log_path),
+        "has_done_marker": has_done_marker,
         "has_pushed": has_pushed,
         "has_error": has_error,
     }
@@ -283,18 +327,21 @@ def check_publish_artifact(operational_date):
 def main():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    op_date = previous_operational_date()
-    print(f"[postflight] checking operational_date = {op_date}")
+    # D052h-fixup2 F4: separate execution_date (Scheduler) from
+    # data_date (DB / latest OHLCV).
+    exec_date = previous_operational_date()
+    data_date = latest_trading_data_date()
+    print(f"[postflight] execution_date = {exec_date}  data_date = {data_date}")
 
     checks = {}
     overall_pass = True
 
     per_check = [
-        ("market_screen", lambda: check_market_screen(op_date)),
-        ("company_null", lambda: check_company_null(op_date)),
+        ("market_screen", lambda: check_market_screen(data_date)),
+        ("company_null", lambda: check_company_null(data_date)),
         ("industry_count", check_industry_count),
         ("quarantine", check_quarantine),
-        ("publish_artifact", lambda: check_publish_artifact(op_date)),
+        ("publish_artifact", lambda: check_publish_artifact(exec_date)),
     ]
     for name, fn in per_check:
         try:
@@ -306,7 +353,7 @@ def main():
             overall_pass = False
 
     try:
-        checks["tasks"] = check_tasks(op_date)
+        checks["tasks"] = check_tasks(exec_date)
         if not checks["tasks"].get("all_pass", False):
             overall_pass = False
     except Exception as e:
@@ -314,7 +361,8 @@ def main():
         overall_pass = False
 
     summary = {
-        "operational_date": op_date.isoformat(),
+        "execution_date": exec_date.isoformat(),
+        "data_date": data_date.isoformat() if data_date else None,
         "ts": datetime.now().isoformat(),
         "overall_pass": overall_pass,
         "checks": checks,
