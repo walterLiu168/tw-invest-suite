@@ -257,6 +257,13 @@ def main():
             quarantine.append((ticker, name_v, type_v, date_v, sorted(cats),
                               f"missing required field (name={name_v}, cats={cats})"))
             continue
+        # I (D052h): multi-name on current_date is ambiguous (e.g. name
+        # suffix change "基米" vs "基米-創" on lifecycle transition).
+        # Don't pick arbitrarily with next(iter(names)); quarantine.
+        if len(names) > 1:
+            quarantine.append((ticker, sorted(names), type_v, date_v, sorted(cats),
+                              f"multi-name on current_date: {sorted(names)}"))
+            continue
         # ETF/ETN/warrant name check
         etf_hit = [kw for kw in ETF_KEYWORDS if kw in name_v]
         if etf_hit:

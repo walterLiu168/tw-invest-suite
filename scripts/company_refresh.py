@@ -35,6 +35,20 @@ def main():
                     help="count but do not update")
     args = ap.parse_args()
 
+    # Phase 5 (D052h): --days must be positive integer
+    if args.days <= 0:
+        print(f"ERROR: --days must be > 0 (got {args.days})", file=sys.stderr)
+        sys.exit(2)
+
+    # Phase 5 (D052h): --date must parse cleanly; use parameterized SQL
+    if args.date:
+        try:
+            from datetime import datetime as _dt
+            _dt.strptime(args.date, "%Y-%m-%d")
+        except ValueError:
+            print(f"ERROR: --date must be YYYY-MM-DD (got {args.date!r})", file=sys.stderr)
+            sys.exit(2)
+
     conn = pymysql.connect(**DB)
     cur = conn.cursor()
 
@@ -85,12 +99,16 @@ def main():
         return 0
 
     # Update via JOIN. Use UPDATE ... JOIN syntax (MySQL).
+    # L (D052h): source i.company must be non-blank — don't overwrite
+    # valid daily_data2_full.company with NULL/blank from industry_type.
     t0 = time.time()
     cur.execute(f"""
         UPDATE daily_data2_full d
         JOIN industry_type i ON d.ticker = i.ticker
         SET d.company = i.company
         WHERE {date_filter}
+          AND i.company IS NOT NULL
+          AND TRIM(i.company) <> ''
           AND (d.company IS NULL OR TRIM(d.company) = '' OR d.company != i.company)
     """)
     affected = cur.rowcount
