@@ -1,95 +1,194 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-sync_legacy_tables_fixed.py — D052h replacement for runtime sync_legacy_tables.py
-Differences from runtime:
-  - Does NOT close all active market_screen_picks (chatGPT F2 D)
-    Closing is handled by market_screen_runner.py after new run
-    succeeds. This prevents the 23:30 sync-legacy from closing
-    today's 18:00 picks before they get a full day of active
-    performance updates.
-  - Otherwise delegates to runtime's sync_legacy_tables for the
-    legacy 4 tables.
+sync_legacy_tables.py — D052h-fixup
+Sync latest date from daily_data2_full -> 4 legacy tables:
+  1. daily_data  (26 cols)
+  2. daily_data2 (35 cols)
+  3. chip_daily  (5 cols)
+  4. chipscore_daily (12 cols)
 
-Schedule: daily 23:30 (before publish at 23:50).
+D052h-fixup changes from runtime:
+  - Self-contained (no runtime import, no monkey-patch)
+  - Step 5 (close market_screen_picks) is NOT executed; that job is done
+    by market_screen_runner.py. This is the versioned skip-close interface.
+  - Returns exit code via sys.exit.
+  - SQL column lists MATCH runtime exactly (verified against information_schema).
 """
-import os
 import sys
-import runpy
+import logging
+import traceback
+from datetime import datetime
 from pathlib import Path
 
-RUNTIME_DIR = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts")
-RUNTIME_SCRIPT = RUNTIME_DIR / "sync_legacy_tables.py"
+import pymysql
 
-# Step 1: run the runtime version with monkey-patch to disable close
-sys.path.insert(0, str(RUNTIME_DIR))
-import sync_legacy_tables as _runtime
+SCRIPT_VERSION = "D052h-fixup-1"
+__SKIP_CLOSE_PICKS = True  # versioned: market_screen_runner handles closes
 
-# Monkey-patch: make the "close prior picks" step a no-op
-def _no_op(*args, **kwargs):
-    print("[sync-legacy-fixed] close_prior_picks SKIPPED (handled by market_screen_runner)")
-    return 0
+DB = dict(host='localhost', user='root', password='1234', database='tw_elec',
+          connect_timeout=10, charset='utf8mb4')
 
-# Find the close function inside runtime module
-# The runtime script has it as: cur.execute("UPDATE market_screen_picks SET status='closed' WHERE status='active'")
-# We can't easily intercept that, so we run the script with a wrapper.
-# Simpler approach: just import and run, but skip the market_screen step entirely.
+LOG_DIR = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / f"sync_legacy_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
-# Actually, since the runtime's main() does everything in sequence, the
-# cleanest approach is to NOT call its main() but replicate the 4-table
-# sync logic and skip step 5 entirely.
-# But to avoid duplicating, we just exec the runtime script with
-# patched 'main' that skips step 5.
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(message)s',
+    datefmt='%H:%M:%S',
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding='utf-8'),
+        logging.StreamHandler(),
+    ],
+)
+log = logging.getLogger(__name__)
 
-# Simpler: override the function that's used.
-# After import, _runtime.main is the main function. We replace it
-# with a wrapper that calls the original but skips step 5.
 
-import logging
-log = logging.getLogger("sync-legacy-fixed")
+# SQL strings match runtime's sync_legacy_tables.py exactly (verified
+# against information_schema on 2026-09-05).
+SQL_DAILY_DATA = """
+INSERT INTO daily_data
+  (Ticker, Date, Open, High, Low, Close, Volume, ForeignBuy, ForeignSell, ForeignNet,
+   InvestmentBuy, InvestmentSell, InvestmentNet, DealerBuy, DealerSell, DealerNet,
+   ThreeNet, SharesOutstanding_shares, MarginBalance, ShortBalance, DayTradeVol,
+   DayTradeBuyAmt, DayTradeSellAmt, ForeignRatio, ForeignShare, company)
+  SELECT Ticker, Date, Open, High, Low, Close, Volume, ForeignBuy, ForeignSell, ForeignNet,
+         InvestmentBuy, InvestmentSell, InvestmentNet, DealerBuy, DealerSell, DealerNet,
+         ThreeNet, SharesOutstanding_shares, MarginBalance, ShortBalance, DayTradeVol,
+         DayTradeBuyAmt, DayTradeSellAmt, ForeignRatio, ForeignShare, company
+  FROM daily_data2_full WHERE Date = %s
+"""
 
-# Approach: just call the runtime's main with a global flag the runtime
-# doesn't know about, so we need to replicate the flow.
-# BUT: we can monkey-patch the function in the runtime module that
-# closes picks. Looking at the code, it does cur.execute inline. So
-# the simplest is to skip the whole step 5 by truncating main's logic.
+SQL_DAILY_DATA2 = """
+INSERT INTO daily_data2
+SELECT * FROM daily_data2_full WHERE Date = %s
+"""
 
-# Cleanest: load and exec the runtime script, intercept at the
-# right point. Since the runtime is just a script (not a module with
-# exposed functions), let's just exec it line-by-line with a guard.
+SQL_CHIP_DAILY = """
+INSERT INTO chip_daily (Ticker, Date, ForeignNet, InvestmentNet, DealerNet)
+SELECT Ticker, Date, ForeignNet, InvestmentNet, DealerNet
+FROM daily_data2_full WHERE Date = %s
+"""
 
-# Actually, the runtime's main() doesn't take args. Let's just call
-# it but wrap the database cursor.execute to skip the close.
+SQL_CHIPSCORE_DAILY = """
+INSERT INTO chipscore_daily
+  (Date, Ticker, Inv_FirstIn, Inv_BuyPercent, Inv_FirstBigBuy, VolumeBurst,
+   BollingerBreakout, KD_GoldenCross, ForeignBuyRatio, InvestBuyRatio, ChipScore)
+  SELECT
+    f.Date, f.Ticker,
+    CASE WHEN f.InvestmentNet > 0 THEN 1 ELSE 0 END,
+    CASE WHEN (f.InvestmentBuy + f.InvestmentSell) > 0
+         THEN f.InvestmentBuy / (f.InvestmentBuy + f.InvestmentSell) ELSE 0 END,
+    CASE WHEN f.InvestmentNet > 5000000 THEN 1 ELSE 0 END,
+    0,
+    CASE WHEN f.Close > f.sma_27 * 1.05 THEN 1 ELSE 0 END,
+    0,
+    CASE WHEN (f.ForeignBuy + f.ForeignSell) > 0
+         THEN f.ForeignBuy / (f.ForeignBuy + f.ForeignSell) ELSE 0 END,
+    CASE WHEN (f.ForeignBuy + f.InvestmentBuy + f.DealerBuy) > 0
+         THEN f.InvestmentBuy / (f.ForeignBuy + f.InvestmentBuy + f.DealerBuy) ELSE 0 END,
+    (CASE WHEN f.InvestmentNet > 0 THEN 1 ELSE 0 END) * 0.20 +
+    (CASE WHEN f.InvestmentNet > 5000000 THEN 1 ELSE 0 END) * 0.15 +
+    (CASE WHEN f.Close > f.sma_27 * 1.05 THEN 1 ELSE 0 END) * 0.15 +
+    (CASE WHEN (f.ForeignBuy + f.ForeignSell) > 0
+          THEN f.ForeignBuy / (f.ForeignBuy + f.ForeignSell) ELSE 0 END) * 0.25 +
+    (CASE WHEN (f.InvestmentBuy + f.InvestmentSell) > 0
+          THEN f.InvestmentBuy / (f.InvestmentBuy + f.InvestmentSell) ELSE 0 END) * 0.25
+  FROM daily_data2_full f WHERE f.Date = %s
+"""
 
-# Simplest robust approach: replicate the 4-table sync by exec'ing
-# the runtime file with a patch to the SQL.
 
-_orig_main = _runtime.main
+def sync_one(cur, target, step_name, sql):
+    log.info(f'[{step_name}] DELETE+INSERT for {target}')
+    cur.execute(f'DELETE FROM {step_name} WHERE Date = %s', (target,))
+    deleted = cur.rowcount
+    cur.execute(sql, (target,))
+    inserted = cur.rowcount
+    log.info(f'  deleted {deleted}, inserted {inserted}')
+    return inserted
 
-def _patched_main():
-    """Same as runtime.main but skip the close-picks step.
 
-    We do this by intercepting pymysql connection's cursor.execute
-    and rewriting the close SQL to a no-op.
-    """
-    import pymysql
-    _orig_execute = pymysql.cursors.Cursor.execute
+def main():
+    log.info('=' * 60)
+    log.info(f'sync_legacy_tables.py v={SCRIPT_VERSION} daily 23:30 cron')
+    if __SKIP_CLOSE_PICKS:
+        log.info('  SKIP_CLOSE_PICKS=True (market_screen_runner handles closes)')
+    log.info('=' * 60)
 
-    CLOSE_PICKS_SQL = "UPDATE market_screen_picks SET status = 'closed' WHERE status = 'active'"
-
-    def _intercepted_execute(self, query, args=None):
-        # Detect the close-picks SQL and skip it
-        if isinstance(query, str) and "UPDATE market_screen_picks SET status = 'closed'" in query:
-            log.info(f"[sync-legacy-fixed] SKIPPED close-picks SQL (handled by market_screen_runner)")
-            # Return a fake result so .rowcount etc. don't blow up
-            return 0
-        return _orig_execute(self, query, args)
-
-    pymysql.cursors.Cursor.execute = _intercepted_execute
+    exit_code = 0
+    conn = pymysql.connect(**DB)
     try:
-        return _orig_main()
+        cur = conn.cursor()
+
+        # Step 0: get target date
+        cur.execute('SELECT MAX(Date) FROM daily_data2_full')
+        row = cur.fetchone()
+        if not row or not row[0]:
+            log.error('daily_data2_full is empty -> abort')
+            return 1
+        target = row[0]
+        log.info(f'Target date: {target}')
+
+        cur.execute('SELECT COUNT(*) FROM daily_data2_full WHERE Date = %s', (target,))
+        n_full = cur.fetchone()[0]
+        if n_full == 0:
+            log.error(f'daily_data2_full has no data for {target} -> abort')
+            return 1
+        log.info(f'daily_data2_full rows for {target}: {n_full}')
+
+        # Step 1: daily_data
+        try:
+            sync_one(cur, target, 'daily_data', SQL_DAILY_DATA)
+        except Exception as e:
+            log.error(f'daily_data sync failed: {e}')
+            return 1
+
+        # Step 2: daily_data2
+        try:
+            sync_one(cur, target, 'daily_data2', SQL_DAILY_DATA2)
+        except Exception as e:
+            log.error(f'daily_data2 sync failed: {e}')
+            return 1
+
+        # Step 3: chip_daily
+        try:
+            sync_one(cur, target, 'chip_daily', SQL_CHIP_DAILY)
+        except Exception as e:
+            log.error(f'chip_daily sync failed: {e}')
+            return 1
+
+        # Step 4: chipscore_daily
+        try:
+            sync_one(cur, target, 'chipscore_daily', SQL_CHIPSCORE_DAILY)
+        except Exception as e:
+            log.error(f'chipscore_daily sync failed: {e}')
+            return 1
+
+        conn.commit()
+
+        # Step 5 SKIPPED per D052h-fixup
+        if __SKIP_CLOSE_PICKS:
+            log.info('[5/5] SKIPPED close-picks (market_screen_runner handles it)')
+
+        # Summary
+        log.info('=' * 60)
+        log.info('Summary:')
+        for tbl in ['daily_data2_full', 'daily_data', 'daily_data2', 'chip_daily', 'chipscore_daily']:
+            cur.execute(f'SELECT MAX(Date), COUNT(*) FROM {tbl}')
+            r = cur.fetchone()
+            log.info(f'  {tbl:25} MAX={r[0]}, total={r[1]}')
+
+    except Exception as e:
+        log.error(f'sync_legacy_tables.py FATAL: {e}')
+        traceback.print_exc()
+        exit_code = 1
     finally:
-        pymysql.cursors.Cursor.execute = _orig_execute
+        conn.close()
+
+    log.info(f'=== sync_legacy_tables.py done (exit {exit_code}) ===')
+    return exit_code
+
 
 if __name__ == "__main__":
-    _patched_main()
+    sys.exit(main())
