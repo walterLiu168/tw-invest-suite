@@ -5,6 +5,36 @@
 > 這份 MD 僅記錄需要的 SQL 與刪除前/後的證據。
 > **不自動執行**；請 Walter 看完之後決定。
 
+## Cleanup 執行順序（D052h-live-verification 9/7 09:57 修訂）
+
+依 9/7 live verification 紀律，cleanup 必須依序進行，**不可跳步**：
+
+1. **先保留 9/5 last-known-good files**（不可先刪）
+   - `~/.claude/skills/tw-invest-suite/reports/market-screen-2026-09-05.{md,html}`
+   - `~/.claude/skills/tw-invest-suite/reports/deep-dive-prompts-2026-09-05.md`
+   - 這是 9/4 資料的 last-known-good artifacts，目前是唯一可用的 9/4 報告
+
+2. **等 9/7 18:20 成功建立並驗證 9/7 MD/HTML/DD**
+   - 9/7 17:35+17:55 OHLCV landing 後才有 9/7 資料
+   - 9/7 18:10 metadata-backfill 寫新 marker（target=2026-09-07，無 BOM）
+   - 9/7 18:20 market-screen 跑 screener，建立 9/7 run + artifacts
+   - 9/7 MD/HTML/DD 三檔必須都存在且內容是 9/7 資料
+
+3. **確認無 consumer 引用 9/5 檔案**
+   - grep 程式碼與 docs：搜尋 `2026-09-05` 字串
+   - 確認沒有 hard-coded reference
+   - 確認 GitHub Pages 沒有 link 到 9/5 URL
+
+4. **等待 Walter 核准清理 9/5 files**
+   - 此時 9/7 artifacts 已就位，9/5 檔案可清
+   - Walter 給 push 授權時一併決定
+
+5. **production DB residue cleanup（A/B/C）**
+   - 在 9/7 排程驗證完成後再決定
+   - 仍保持 PENDING
+
+**任何步驟沒完成就不得跳下一步。** 不可先刪 9/5 檔案「預防 9/7 失敗時無備援」。
+
 ## 為什麼要清
 
 `market_screen_runs` 與 `market_screen_picks` 內目前有 3 筆 9/5 測試階段注入的殘留 run (`id=3, 4, 6`)。它們都是 D052h-fixup 與 D052h-fixup2 開發期間用 `--force --data-date=...` 留下的。
@@ -15,11 +45,11 @@
 - `market-screen-2026-09-04.html`：**不存在**（同上）
 - `deep-dive-prompts-2026-09-04.md`：存在（DD generation 一開始就使用 data_date）
 
-D052h-fixup3 已把 `data_date` 參數加進 `mr.save_report` / `mrh.save_html`，未來 daily run / `--force` / repair 全部會用 data_date 命名。但**已經誤命名的 9/5 檔案仍留在 `~/.claude/skills/tw-invest-suite/reports/`**。
+D052h-fixup3 已把 `data_date` 參數加進 `mr.save_report` / `mrh.save_html`，未來 daily run / `--force` / repair 全部會用 data_date 命名。但**已經誤命名的 9/5 檔案仍留在 `~/.claude/skills/tw-invest-suite/reports/`**，且**目前是 9/4 資料的 last-known-good artifacts**。刪除前必須依上述 Cleanup 執行順序。
 
 **重要警告**：**不要**用 `python market_screen_runner.py --force --data-date=2026-09-04` 來「重新生成 9/4 artifacts」當作 cleanup 手段。`--force --data-date=...` 會重跑 `ms.screen_market()` 並**改寫 production DB**（建立新一筆 `market_screen_runs` + 24 picks，可能 close 既有 active picks）。這違反「不要 DELETE production DB」與「不污染 production 狀態」的 fixup4 紀律。
 
-正確做法：若要清理 9/5 誤命名的 artifacts，直接在檔案層刪除 `~/.claude/skills/tw-invest-suite/reports/market-screen-2026-09-05.{md,html}`（與對應的 `deep-dive-prompts-2026-09-05.md` 留或不留都行，DD 內容也是 9/4 資料）。下次 18:20 真的跑 daily run 時，新版的 renderer（`data_date=2026-09-07` 之類）會自然產出正確命名的 artifact。
+正確做法：在 9/7 排程驗證完成後，若 9/7 artifacts 正常產出，再在檔案層刪除 `~/.claude/skills/tw-invest-suite/reports/market-screen-2026-09-05.{md,html}`（與對應的 `deep-dive-prompts-2026-09-05.md` 留或不留都行，DD 內容也是 9/4 資料）。下次 18:20 真的跑 daily run 時，新版的 renderer（`data_date=2026-09-07` 之類）會自然產出正確命名的 artifact。
 
 **postflight 目前仍未檢查 market-screen MD/HTML/DD 存在性**：postflight 只檢查 24 active picks、company_null、industry_count、quarantine、publish_artifact、tasks。不會看到 `market-screen-2026-09-04.{md,html}` 缺失。9/5 誤命名的 artifact 問題必須靠人工或下次 daily run 自然覆蓋。
 
