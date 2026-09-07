@@ -1,4 +1,4 @@
-# metadata_backfill_daily.ps1 — D052d + D052h-fixup3
+# metadata_backfill_daily.ps1 — D052d + D052h-fixup3 + D052h-fixup4
 # Daily 18:10 cron: scan daily_data2_full latest date for tickers missing
 # from industry_type, pass as --batch to metadata_backfill.py.
 # Per ChatGPT F7: must run AFTER 17:35+17:55 OHLCV landing, BEFORE 22:25
@@ -16,6 +16,19 @@
 #   - marker is written via same-directory temp file + Move-Item
 #     (atomic rename on NTFS) so market_screen_runner never observes
 #     a half-written marker.
+#
+# D052h-fixup4:
+#   - Marker is written as UTF-8 *without* BOM. The previous
+#     `Set-Content -Encoding UTF8` (default on Windows PowerShell 5.1)
+#     emits a BOM (EF BB BF), which the Python consumer (D052h-fixup3
+#     and earlier) could not strip — has_metadata_marker would return
+#     False because the first key parsed as "\ufefftarget_date".
+#     Windows PowerShell 5.1 has no `utf8NoBOM` encoding literal, so
+#     we use [System.IO.File]::WriteAllText with a UTF8Encoding $False
+#     instance (encoderShouldEmitUTF8Identifier = $False). The Python
+#     consumer is also updated (D052h-fixup4: utf-8-sig) to accept
+#     either form, so existing BOM markers still validate while new
+#     markers are produced BOM-less.
 #
 # Path strategy: this .ps1 lives in BOTH C:\Users\icemo\Projects\tw-invest-suite\scripts\
 # (git repo) and C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\ (runtime). The
@@ -95,6 +108,12 @@ if ([string]::IsNullOrWhiteSpace($Missing)) {
 # 4. Atomic marker write: temp file in same directory, then Move-Item.
 #    Move-Item within the same NTFS volume is atomic, so market_screen_runner
 #    either sees the previous marker or the new one, never a half-written one.
+#    D052h-fixup4: write UTF-8 without BOM. Use [System.IO.File]::WriteAllText
+#    with a UTF8Encoding($false) instance — this is the only reliable way
+#    to suppress the BOM on Windows PowerShell 5.1 (no `utf8NoBOM`
+#    encoding literal exists in 5.1). The Python consumer (market_screen_runner
+#    D052h-fixup4) reads with utf-8-sig so it still accepts legacy BOM
+#    markers written by older runs.
 $MissingCount = if ([string]::IsNullOrWhiteSpace($Missing)) { 0 } else { ($Missing -split ',').Count }
 $MarkerContent = @"
 target_date=$TargetDate
@@ -103,7 +122,8 @@ missing_count=$MissingCount
 status=ok
 "@
 $TempMarker = Join-Path $MarkerDir ("metadata_target_${TargetDate}_OK.marker.tmp." + (Get-Date -Format 'HHmmssffff'))
-Set-Content -Path $TempMarker -Value $MarkerContent -Encoding UTF8
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($False)
+[System.IO.File]::WriteAllText($TempMarker, $MarkerContent, $Utf8NoBom)
 Move-Item -Path $TempMarker -Destination $MarkerFile -Force
-Write-Output "[metadata-backfill-daily] wrote success marker (atomic): $MarkerFile"
+Write-Output "[metadata-backfill-daily] wrote success marker (atomic, UTF-8 no BOM): $MarkerFile"
 exit 0

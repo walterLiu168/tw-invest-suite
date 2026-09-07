@@ -15,9 +15,13 @@
 - `market-screen-2026-09-04.html`：**不存在**（同上）
 - `deep-dive-prompts-2026-09-04.md`：存在（DD generation 一開始就使用 data_date）
 
-D052h-fixup3 已把 `data_date` 參數加進 `mr.save_report` / `mrh.save_html`，未來 daily run / `--force` / repair 全部會用 data_date 命名。但**已經誤命名的 9/5 檔案仍留在 `~/.claude/skills/tw-invest-suite/reports/`**，需要手動清理或重新生成（`python market_screen_runner.py --force --data-date=2026-09-04`）。
+D052h-fixup3 已把 `data_date` 參數加進 `mr.save_report` / `mrh.save_html`，未來 daily run / `--force` / repair 全部會用 data_date 命名。但**已經誤命名的 9/5 檔案仍留在 `~/.claude/skills/tw-invest-suite/reports/`**。
 
-**本批 D052h-fixup3 不處理**：9/5 那個誤命名的檔案待 Walter 決定是否一併清掉；postflight 9/6 00:05 跑完後，post-marker check 會看到 `market-screen-2026-09-04.{md,html}` 缺失但 `market-screen-2026-09-05.{md,html}` 存在，並回報這個錯位（不會自動修正）。
+**重要警告**：**不要**用 `python market_screen_runner.py --force --data-date=2026-09-04` 來「重新生成 9/4 artifacts」當作 cleanup 手段。`--force --data-date=...` 會重跑 `ms.screen_market()` 並**改寫 production DB**（建立新一筆 `market_screen_runs` + 24 picks，可能 close 既有 active picks）。這違反「不要 DELETE production DB」與「不污染 production 狀態」的 fixup4 紀律。
+
+正確做法：若要清理 9/5 誤命名的 artifacts，直接在檔案層刪除 `~/.claude/skills/tw-invest-suite/reports/market-screen-2026-09-05.{md,html}`（與對應的 `deep-dive-prompts-2026-09-05.md` 留或不留都行，DD 內容也是 9/4 資料）。下次 18:20 真的跑 daily run 時，新版的 renderer（`data_date=2026-09-07` 之類）會自然產出正確命名的 artifact。
+
+**postflight 目前仍未檢查 market-screen MD/HTML/DD 存在性**：postflight 只檢查 24 active picks、company_null、industry_count、quarantine、publish_artifact、tasks。不會看到 `market-screen-2026-09-04.{md,html}` 缺失。9/5 誤命名的 artifact 問題必須靠人工或下次 daily run 自然覆蓋。
 
 | id | run_date | run_at | picks active | 性質 | 建議 |
 |---|---|---|---|---|---|
@@ -62,14 +66,17 @@ SELECT run_id, COUNT(*) total, SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) 
 FROM market_screen_picks GROUP BY run_id ORDER BY run_id;
 
 -- 5. 確認沒有任何 artifact 用 2026-09-01 / 2026-09-02 (id=3, 6) 命名
---    （id=4 的 2026-09-04 會有 artifact，那才是真實 run）
+--    （id=4 的 2026-09-04 對應的 MD/HTML 實際上不存在 — D052h-fixup3 前的
+--     renderer 用 datetime.now() 命名，所以 9/4 run 寫到了 9/5 檔案。
+--     market-screen-2026-09-05.{md,html} 是 9/4 資料的誤命名 artifact。）
 SELECT * FROM information_schema.tables
 WHERE table_schema='tw_elec' AND table_name='reports';  -- sanity only
 -- 改用檔案系統檢查：
 --   C:\Users\icemo\.claude\skills\tw-invest-suite\reports\
 --     market-screen-2026-09-01.* 應該沒有
 --     market-screen-2026-09-02.* 應該沒有
---     market-screen-2026-09-04.* 應該有
+--     market-screen-2026-09-04.* 不存在（D052h-fixup3 前的 date contract bug）
+--     market-screen-2026-09-05.* 存在（誤命名，內容是 9/4 資料）
 ```
 
 預期結果：
@@ -78,7 +85,7 @@ WHERE table_schema='tw_elec' AND table_name='reports';  -- sanity only
 - step 2：id=3 有 24 / 0 active；id=4 有 24 / 24 active；id=6 有 24 / 0 active。
 - step 3：id = 1, 2, 3, 4, 6 共 5 列。
 - step 4：id=4 有 24 / 24 active；其它都 0 / 0。
-- step 5：reports 目錄下應只有 `market-screen-2026-09-04.*` 系列。
+- step 5：reports 目錄下**沒有** `market-screen-2026-09-04.*`；有 `market-screen-2026-09-05.{md,html}`（誤命名）。
 
 ## 刪除（transactional）
 
@@ -156,7 +163,7 @@ python C:\Users\icemo\Projects\tw-invest-suite\scripts\postflight_daily.py
 ## 風險評估
 
 - `market_screen_picks` 沒有 FK 強制連到 `market_screen_runs.id`（觀察 runtime 行為後），所以兩個 DELETE 順序顛倒也安全；但保持 `picks → runs` 順序比較語義清楚。
-- 沒有任何對外 artifact（`reports/market-screen-2026-09-01.*` 與 `market-screen-2026-09-02.*`）存在；`market-screen-2026-09-04.*`（id=4）存在，但那是 9/4 真實資料的 artifacts，跟 run_at 是測試時段無關。
+- 沒有任何對外 artifact（`reports/market-screen-2026-09-01.*` 與 `market-screen-2026-09-02.*`）存在；id=4 對應 9/4 資料，但當初 D052h-fixup3 前用舊版 renderer 產出時，MD/HTML 檔名是用 `datetime.now()` 寫的（執行當下 9/5），所以實體檔案是 `market-screen-2026-09-05.{md,html}`（**誤命名**）。DD 倒是從一開始就傳 data_date，所以 `deep-dive-prompts-2026-09-04.md` 存在。
 - 若 Walter 想保留審計軌跡，建議刪除前先做：
   ```sql
   CREATE TABLE market_screen_runs_audit_2026_09_05 AS

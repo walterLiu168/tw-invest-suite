@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-market_screen_runner.py — D052h-fixup3
+market_screen_runner.py — D052h-fixup4
 Master runner for daily market screen.
 
-D052h-fixup3 changes (per ChatGPT manager review):
+D052h-fixup4 changes (per ChatGPT manager read-only review):
+  - has_metadata_marker now reads the marker with `utf-8-sig` so it
+    accepts both BOM and BOM-less markers. The producer
+    (metadata_backfill_daily.ps1) historically wrote UTF-8 with BOM on
+    Windows PowerShell 5.1; the consumer must tolerate that until the
+    producer is upgraded to UTF-8 without BOM.
+  - SCRIPT_VERSION bumped to "D052h-fixup4".
+
+D052h-fixup3 changes (kept):
   - Repair-only fully reconstructs MD + HTML + DD using the existing
     mr.save_report / mrh.save_html / ddp.render_prompt (no second
     renderer). After generation, re-runs has_complete_run_for_data_date;
@@ -31,14 +39,13 @@ D052h-fixup changes (kept):
   - Weekend skip via is_trading_day (weekday-only, NOT full TWSE holiday)
   - Artifact failure -> exit 1 (DB already committed)
 
-Pending (NOT addressed in fixup3):
+Pending (NOT addressed in fixup4):
   - H: existing-ticker reconciliation
   - J: 7768 per-day quarantine accumulation
   - T2/T3 live: mocked tests in tests/ pass; live needs disposable DB
   - T4 live: deterministic unit test passes; live stale-OHLCV needs
     a real trading day with no fresh data
-  - 3 new crons (metadata-backfill, market-screen, postflight) first
-    effective live run
+  - 9/7 trading-day live cron (today is Mon 9/7; first real run)
   - health-check LastResult=1 root cause
   - production residue cleanup (run_id=3, 4, 6) — pending Walter
   - push approval (origin/main still at 8d48318)
@@ -86,11 +93,11 @@ METADATA_MARKER_DIR = Path(r"C:\Users\icemo\Projects\tw-invest-suite\scripts\_de
 MIN_TICKERS_FOR_RUN = 1900
 TOTAL_UNIVERSE = 1927
 
-SCRIPT_VERSION = "D052h-fixup2"
+SCRIPT_VERSION = "D052h-fixup4"
 
 
 def has_metadata_marker(data_date):
-    """D052h-fixup3: parse marker file content, verify both target_date
+    """D052h-fixup4: parse marker file content, verify both target_date
     AND status. The marker is metadata_target_YYYY-MM-DD_OK.marker and
     contains a small key=value block written by metadata_backfill_daily.ps1:
 
@@ -98,6 +105,11 @@ def has_metadata_marker(data_date):
         finished_at=ISO8601
         missing_count=N
         status=ok
+
+    The producer (Windows PowerShell 5.1 `Set-Content -Encoding UTF8`)
+    writes UTF-8 with BOM. We use `utf-8-sig` to strip any leading BOM
+    on read so both BOM and BOM-less markers are accepted. (Future
+    producer fix is in metadata_backfill_daily.ps1 to write UTF8NoBOM.)
 
     Returns True only if:
       - file exists
@@ -108,7 +120,10 @@ def has_metadata_marker(data_date):
     if not marker.exists():
         return False
     try:
-        content = marker.read_text(encoding="utf-8", errors="ignore")
+        # D052h-fixup4: utf-8-sig strips a leading BOM if present.
+        # Without this, the first key would be "\ufefftarget_date" and
+        # info.get("target_date") would silently return None.
+        content = marker.read_text(encoding="utf-8-sig", errors="ignore")
     except OSError:
         return False
     info = {}

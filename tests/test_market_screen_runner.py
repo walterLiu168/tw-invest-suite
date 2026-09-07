@@ -1,9 +1,11 @@
 """
-test_market_screen_runner.py — D052h-fixup3 unit tests
+test_market_screen_runner.py — D052h-fixup4 unit tests
 Mocked pymysql tests for T2 (save_picks rollback) and T3 (close-picks
 rollback). Deterministic T4 stale-OHLCV tests (fixed_today). Repair-only
 tests (D052h-fixup3): missing MD/HTML/DD, renderer failure, post-repair
-re-verify. No live MySQL needed.
+re-verify. BOM interop tests (D052h-fixup4): raw EF BB BF markers,
+real PowerShell producer -> Python consumer round-trip. Company-refresh
+wrapper path/smoke test (D052h-fixup4). No live MySQL needed.
 
 Run:
     cd C:\\Users\\icemo\\Projects\\tw-invest-suite
@@ -578,6 +580,215 @@ class TestHasMetadataMarkerParse(unittest.TestCase):
             f"target_date={d.isoformat()}\n", encoding="utf-8",
         )
         self.assertFalse(msr.has_metadata_marker(d))
+
+
+# ===========================================================================
+# D052h-fixup4 — BOM interoperability
+# ===========================================================================
+
+class TestBOMMarkerInterop(unittest.TestCase):
+    """D052h-fixup4: the existing on-disk marker was written by PowerShell
+    5.1's `Set-Content -Encoding UTF8`, which emits a UTF-8 BOM
+    (EF BB BF). Before fixup4, `has_metadata_marker` read with plain
+    `utf-8` and the first key parsed as `"\ufefftarget_date"`, so the
+    function returned False even though the file is valid.
+
+    After fixup4, the Python consumer reads with `utf-8-sig` (strips
+    any leading BOM). The producer is also upgraded to write BOM-less
+    UTF-8, but legacy BOM markers must still validate.
+    """
+
+    BOM = b"\xef\xbb\xbf"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.marker_dir = Path(self._tmp.name)
+        self._patch = patch.object(msr, "METADATA_MARKER_DIR", self.marker_dir)
+        self._patch.start()
+
+    def tearDown(self):
+        self._patch.stop()
+
+    def test_raw_bom_marker_returns_true(self):
+        """Raw EF BB BF + UTF-8 body must validate (the regression case)."""
+        d = date(2026, 9, 4)
+        body = f"target_date={d.isoformat()}\nstatus=ok\nmissing_count=0\n".encode("utf-8")
+        (self.marker_dir / f"metadata_target_{d.isoformat()}_OK.marker").write_bytes(self.BOM + body)
+        # Sanity: the file actually has the BOM
+        raw = (self.marker_dir / f"metadata_target_{d.isoformat()}_OK.marker").read_bytes()
+        self.assertEqual(raw[:3], self.BOM, "test fixture must include BOM")
+        # The fix
+        self.assertTrue(msr.has_metadata_marker(d),
+                        "BOM marker must validate after fixup4")
+
+    def test_bom_less_marker_returns_true(self):
+        """BOM-less marker (new producer) also works."""
+        d = date(2026, 9, 4)
+        body = f"target_date={d.isoformat()}\nstatus=ok\nmissing_count=0\n".encode("utf-8")
+        (self.marker_dir / f"metadata_target_{d.isoformat()}_OK.marker").write_bytes(body)
+        self.assertTrue(msr.has_metadata_marker(d))
+
+    def test_bom_marker_with_wrong_status_returns_false(self):
+        """BOM + wrong status must still reject."""
+        d = date(2026, 9, 4)
+        body = f"target_date={d.isoformat()}\nstatus=failed\n".encode("utf-8")
+        (self.marker_dir / f"metadata_target_{d.isoformat()}_OK.marker").write_bytes(self.BOM + body)
+        self.assertFalse(msr.has_metadata_marker(d))
+
+    def test_bom_marker_with_wrong_target_returns_false(self):
+        """BOM + wrong target_date must still reject."""
+        body = b"target_date=2026-09-05\nstatus=ok\n"
+        (self.marker_dir / "metadata_target_2026-09-04_OK.marker").write_bytes(self.BOM + body)
+        self.assertFalse(msr.has_metadata_marker(date(2026, 9, 4)))
+
+
+class TestPowerShellProducerIntegration(unittest.TestCase):
+    """D052h-fixup4: real PowerShell producer -> Python consumer round-trip.
+
+    The actual `metadata_backfill_daily.ps1` shell wrapper is too
+    heavy to invoke end-to-end here (it needs DB access, has a temp
+    file + Move-Item flow, etc.). Instead we replicate just the
+    marker-write step the .ps1 performs:
+
+        [System.IO.File]::WriteAllText($path, $content, $Utf8NoBom)
+
+    via a fresh `powershell.exe -NoProfile -Command ...` invocation.
+    This catches any PowerShell-vs-Python encoding drift (e.g. an
+    accidental re-introduction of `Set-Content -Encoding UTF8` which
+    would re-emit the BOM).
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.marker_dir = Path(self._tmp.name)
+        self._patch = patch.object(msr, "METADATA_MARKER_DIR", self.marker_dir)
+        self._patch.start()
+
+    def tearDown(self):
+        self._patch.stop()
+
+    def test_powershell_utf8nobom_producer_then_python_consumer(self):
+        """PowerShell writes the marker (no BOM), Python consumer validates."""
+        import base64
+        import subprocess
+        d = date(2026, 9, 4)
+        marker_name = f"metadata_target_{d.isoformat()}_OK.marker"
+        marker_path = self.marker_dir / marker_name
+
+        # Pass the marker body via base64 to dodge PowerShell single-quote
+        # vs backtick-n escape ambiguity. Decode at the .ps1 side.
+        body = (
+            f"target_date={d.isoformat()}\n"
+            f"status=ok\n"
+            f"missing_count=0\n"
+        )
+        b64 = base64.b64encode(body.encode("utf-8")).decode("ascii")
+        ps = (
+            "$Utf8NoBom = New-Object System.Text.UTF8Encoding($False); "
+            f"$bytes = [System.Convert]::FromBase64String('{b64}'); "
+            f"$text = [System.Text.Encoding]::UTF8.GetString($bytes); "
+            f"[System.IO.File]::WriteAllText('{str(marker_path)}', $text, $Utf8NoBom)"
+        )
+        r = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(r.returncode, 0,
+                         f"powershell.exe failed: {r.stderr}")
+
+        # Sanity: PowerShell wrote a BOM-less file
+        raw = marker_path.read_bytes()
+        self.assertNotEqual(raw[:3], b"\xef\xbb\xbf",
+                            "PowerShell producer wrote a BOM (regression!)")
+        # The Python consumer must accept it
+        self.assertTrue(msr.has_metadata_marker(d))
+
+    def test_powershell_setcontent_utf8_writes_bom(self):
+        """Documents the LEGACY behavior we are moving away from:
+        `Set-Content -Encoding UTF8` on Windows PowerShell 5.1 emits a
+        BOM. The new producer uses [System.IO.File]::WriteAllText to
+        avoid this. The Python consumer must still accept legacy BOM
+        markers (regression test for the utf-8-sig fix).
+        """
+        import base64
+        import subprocess
+        d = date(2026, 9, 4)
+        marker_name = f"metadata_target_{d.isoformat()}_OK.marker"
+        marker_path = self.marker_dir / marker_name
+
+        # Use base64 to avoid the same backtick-n issue
+        body = f"target_date={d.isoformat()}\nstatus=ok\n"
+        b64 = base64.b64encode(body.encode("utf-8")).decode("ascii")
+        ps = (
+            f"$bytes = [System.Convert]::FromBase64String('{b64}'); "
+            f"$text = [System.Text.Encoding]::UTF8.GetString($bytes); "
+            f"Set-Content -Path '{str(marker_path)}' -Value $text -Encoding UTF8"
+        )
+        r = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(r.returncode, 0,
+                         f"powershell.exe failed: {r.stderr}")
+
+        raw = marker_path.read_bytes()
+        # Document the legacy behavior: Set-Content -Encoding UTF8 in PS 5.1
+        # writes a BOM. The Python consumer must tolerate it.
+        self.assertEqual(raw[:3], b"\xef\xbb\xbf",
+                         "expected Set-Content UTF8 to emit BOM (PS 5.1 baseline)")
+        # And the fix: the Python consumer still validates
+        self.assertTrue(msr.has_metadata_marker(d),
+                        "BOM marker must validate (utf-8-sig fix)")
+
+
+# ===========================================================================
+# D052h-fixup4 — company_refresh_daily.ps1 path/smoke test
+# ===========================================================================
+
+class TestCompanyRefreshWrapper(unittest.TestCase):
+    """D052h-fixup4: verify the company_refresh_daily.ps1 wrapper points
+    to a real file path. We don't invoke the production refresh (it
+    would write to the live MySQL); we just assert the path exists and
+    the .ps1 has the Test-Path fail-fast preflight.
+    """
+
+    WRAPPER_REPO = Path(r"C:\Users\icemo\Projects\tw-invest-suite\scripts\company_refresh_daily.ps1")
+    WRAPPER_RUNTIME = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\company_refresh_daily.ps1")
+    TARGET_SCRIPT = Path(r"C:\Users\icemo\Projects\tw-invest-suite\scripts\company_refresh.py")
+
+    def test_target_script_exists(self):
+        """company_refresh.py must exist at the path the .ps1 points to."""
+        self.assertTrue(self.TARGET_SCRIPT.exists(),
+                        f"company_refresh.py missing at {self.TARGET_SCRIPT}")
+
+    def test_wrapper_points_to_repo_path(self):
+        """Both wrapper copies must point to the git-repo path, not the
+        (non-existent) runtime path."""
+        for path in (self.WRAPPER_REPO, self.WRAPPER_RUNTIME):
+            if not path.exists():
+                self.skipTest(f"wrapper missing at {path}")
+            content = path.read_text(encoding="utf-8")
+            self.assertIn("company_refresh.py", content)
+            # The configured path must be the repo path
+            self.assertIn(str(self.TARGET_SCRIPT), content)
+            # And must NOT point to the runtime path (which doesn't exist)
+            self.assertNotIn(
+                r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\company_refresh.py",
+                content,
+            )
+
+    def test_wrapper_has_testpath_failfast(self):
+        """Both wrapper copies must include the Test-Path fail-fast preflight."""
+        for path in (self.WRAPPER_REPO, self.WRAPPER_RUNTIME):
+            if not path.exists():
+                self.skipTest(f"wrapper missing at {path}")
+            content = path.read_text(encoding="utf-8")
+            self.assertIn("Test-Path", content,
+                          f"wrapper {path} missing Test-Path preflight")
+            self.assertIn("FATAL", content,
+                          f"wrapper {path} missing FATAL message")
 
 
 if __name__ == "__main__":
