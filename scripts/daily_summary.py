@@ -39,7 +39,7 @@ GH_TIMEOUT_SEC = 10
 
 
 def get_git_head():
-    """Returns the SHA of HEAD in the tw-invest-suite repo, or None."""
+    """D054-fixup: Returns the FULL 40-char SHA of HEAD in the tw-invest-suite repo, or None."""
     try:
         r = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -47,7 +47,7 @@ def get_git_head():
             capture_output=True, text=True, timeout=5,
         )
         if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip()[:12]
+            return r.stdout.strip()  # full SHA, not truncated
     except Exception:
         pass
     return None
@@ -133,7 +133,7 @@ def sha256_of_file(path: Path):
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
-    return h.hexdigest()[:16]  # short SHA
+    return h.hexdigest()  # D054-fixup: full SHA-256 (was short 16-char)
 
 
 def render_summary_md(postflight_summary, picks_data, integrity, artifacts, remote_verify, git_head):
@@ -152,6 +152,7 @@ def render_summary_md(postflight_summary, picks_data, integrity, artifacts, remo
     lines.append(f"**Data date**: {data_date}  ")
     lines.append(f"**Generated at**: {ts}  ")
     if git_head:
+        # D054-fixup: full source commit SHA (was truncated to 12)
         lines.append(f"**Source commit**: `{git_head}`  ")
     lines.append("")
 
@@ -212,7 +213,7 @@ def render_summary_md(postflight_summary, picks_data, integrity, artifacts, remo
     # Artifacts
     lines.append("## Artifacts")
     lines.append("")
-    lines.append("| Path | Size | SHA-256 (short) |")
+    lines.append("| Path | Size | SHA-256 (full) |")
     lines.append("|---|---|---|")
     for a in artifacts:
         size = a.get("size", 0) or 0
@@ -263,20 +264,27 @@ def collect_artifacts(data_date):
     return found
 
 
-def remote_verify(data_date, expected_picks_count):
-    """Returns list of verify entries: {name, url, http_status, check, ok, note}."""
+def remote_verify(data_date, expected_picks_count, expected_first_ticker):
+    """D054-fixup: strict remote verify.
+    - watchlist.html: must contain exact data_date AND exact 24 pick rows
+    - analyze.html: must be reachable
+    - analyze/{first_ticker}.html: must be reachable (using ACTUAL picks, not 2330 hardcode)
+    - publish_manifest.json: must exist + be exact match with local manifest
+    - canonical failures cause ok=False; postflight will exit 1
+    """
     out = []
-    # 1. watchlist.html
+    data_date_str = data_date.isoformat() if hasattr(data_date, 'isoformat') else str(data_date)
+
+    # 1. watchlist.html - exact date + exact 24 pick rows
     url = f"{GITHUB_PAGES_BASE}/watchlist.html"
     status, body, _ = fetch_with_meta(url)
-    data_date_str = data_date.isoformat() if hasattr(data_date, 'isoformat') else str(data_date)
     if status == 200:
         date_match = data_date_str in body
-        # Count pick rows in watchlist table
+        # D054-fixup: exact 24, not >=20
         n_picks = len(re.findall(r"<tr>\s*<td[^>]*><b>\d{4}</b>", body))
-        ok = date_match and (n_picks >= 20)  # tolerance
-        note = f"date_in_body={date_match}, rows={n_picks}" if ok else f"date_in_body={date_match}, rows={n_picks} (expected ~{expected_picks_count})"
-        out.append({"name": "watchlist.html", "url": url, "http_status": status, "check": note, "ok": ok, "note": ""})
+        ok = date_match and (n_picks == 24)
+        check = f"date_in_body={date_match}, rows={n_picks}, expected=24"
+        out.append({"name": "watchlist.html", "url": url, "http_status": status, "check": check, "ok": ok, "note": ""})
     else:
         out.append({"name": "watchlist.html", "url": url, "http_status": status, "check": "HTTP failed", "ok": False, "note": "network error or 404"})
 
@@ -288,17 +296,53 @@ def remote_verify(data_date, expected_picks_count):
     else:
         out.append({"name": "analyze.html", "url": url, "http_status": status, "check": "HTTP failed", "ok": False, "note": "network error or 404"})
 
-    # 3. pick 2330 (tsmc) page — verify ticker report exists
-    if expected_picks_count:
-        url = f"{GITHUB_PAGES_BASE}/analyze/2330.html"
+    # 3. first pick ticker page - D054-fixup: use ACTUAL pick, not 2330 hardcode
+    if expected_first_ticker:
+        url = f"{GITHUB_PAGES_BASE}/analyze/{expected_first_ticker}.html"
         status, body, _ = fetch_with_meta(url)
         if status == 200:
-            has_data = "2026" in body  # any 2026 year
-            out.append({"name": "analyze/2330.html", "url": url, "http_status": status, "check": f"ticker report reachable, has_2026={has_data}", "ok": has_data, "note": ""})
+            # D054-fixup: check ticker number appears + has '2026-09' date context (or data_date month)
+            ticker_in_body = f">{expected_first_ticker}<" in body or f"data-ticker=\"{expected_first_ticker}\"" in body or expected_first_ticker in body
+            ok = ticker_in_body
+            check = f"first_pick={expected_first_ticker}, ticker_in_body={ticker_in_body}"
+            out.append({"name": f"analyze/{expected_first_ticker}.html", "url": url, "http_status": status, "check": check, "ok": ok, "note": ""})
         else:
-            out.append({"name": "analyze/2330.html", "url": url, "http_status": status, "check": "HTTP failed", "ok": False, "note": "network error or 404"})
+            out.append({"name": f"analyze/{expected_first_ticker}.html", "url": url, "http_status": status, "check": "HTTP failed", "ok": False, "note": "network error or 404"})
+
+    # 4. publish_manifest.json - D054-fixup: MUST exist on GitHub Pages and match local
+    manifest_url = f"{GITHUB_PAGES_BASE}/data/publish_manifest_{data_date_str}.json"
+    status, body, _ = fetch_with_meta(manifest_url)
+    if status == 200:
+        try:
+            remote_manifest = json.loads(body)
+            local_manifest_path = PUBLIC_DATA / f"publish_manifest_{data_date_str}.json"
+            local_manifest = json.loads(local_manifest_path.read_text(encoding="utf-8"))
+            # Compare critical fields
+            mismatches = []
+            for f in ("data_date", "run_id", "picks_count"):
+                if remote_manifest.get(f) != local_manifest.get(f):
+                    mismatches.append(f"{f}: remote={remote_manifest.get(f)} local={local_manifest.get(f)}")
+            rb = remote_manifest.get("bucket_counts", {})
+            lb = local_manifest.get("bucket_counts", {})
+            if rb != lb:
+                mismatches.append(f"bucket_counts: remote={rb} local={lb}")
+            ok = len(mismatches) == 0
+            check = f"manifest_critical_fields_match (data_date, run_id, picks_count, bucket_counts)" if ok else "; ".join(mismatches)
+            out.append({"name": "publish_manifest.json", "url": manifest_url, "http_status": status, "check": check, "ok": ok, "note": ""})
+        except (json.JSONDecodeError, KeyError, FileNotFoundError) as e:
+            out.append({"name": "publish_manifest.json", "url": manifest_url, "http_status": status, "check": f"parse error: {e}", "ok": False, "note": "manifest malformed or missing locally"})
+    else:
+        out.append({"name": "publish_manifest.json", "url": manifest_url, "http_status": status, "check": "HTTP failed - manifest NOT on GitHub Pages (canonical requirement)", "ok": False, "note": "23:50 publish must have created manifest; D054-fixup contract violated"})
 
     return out
+
+
+def canonical_failures(remote_results):
+    """D054-fixup: canonical = GitHub Pages manifest + watchlist exact 24 + first pick.
+    Anything else (analyze.html, etc.) is best-effort.
+    """
+    canonical_names = {"watchlist.html", "publish_manifest.json"}
+    return [r for r in remote_results if (not r.get("ok")) and r.get("name") in canonical_names]
 
 
 def write_summary(postflight_summary):
@@ -319,8 +363,10 @@ def write_summary(postflight_summary):
     # 3. artifacts
     artifacts = collect_artifacts(data_date)
 
-    # 4. remote verify
-    remote = remote_verify(data_date, picks_count)
+    # 4. remote verify (D054-fixup: include first_ticker, canonical failure tracking)
+    first_ticker = picks[0]["ticker"] if picks else None
+    remote = remote_verify(data_date, picks_count, first_ticker)
+    canonical_fails = canonical_failures(remote)
 
     # 5. git head
     git_head = get_git_head()
@@ -341,11 +387,21 @@ def write_summary(postflight_summary):
     except Exception as e:
         print(f"[daily_summary] WARN: could not write public/data copy: {e}")
 
-    # 9. one-line summary
+    # 9. one-line summary (D054-fixup: include canonical fail count)
     overall = postflight_summary.get("overall_pass", False)
     null_count = integrity.get("null_count", 0)
     q_open = integrity.get("quarantine_open", 0)
-    print(f"[daily_summary] {data_date_str} {'PASS' if overall else 'FAIL'} | run_id={run_id} picks={picks_count} null={null_count} q={q_open} | md={md_path.name}")
+    n_canonical_fails = len(canonical_fails)
+    canonical_str = f" canonical_fails={n_canonical_fails}" if n_canonical_fails else ""
+    print(f"[daily_summary] {data_date_str} {'PASS' if overall else 'FAIL'} | run_id={run_id} picks={picks_count} null={null_count} q={q_open}{canonical_str} | md={md_path.name}")
+
+    # D054-fixup: raise on canonical failure so postflight exits 1
+    if canonical_fails:
+        names = [f['name'] for f in canonical_fails]
+        raise RuntimeError(
+            f"canonical remote verify FAILED for {data_date_str}: {names}. "
+            f"GitHub Pages manifest/watchlist must match local exactly."
+        )
     return md_path
 
 
