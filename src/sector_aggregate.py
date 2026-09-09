@@ -74,7 +74,8 @@ def load_ticker_metadata():
             "sector": sector,
             "industry": industry,
             "mkt_cap": float(mkt_cap) if mkt_cap else 0.0,
-            "pe": float(pe) if pe and pe > PE_MIN else None,
+            # D053: guard against string PE (yfinance can return str on some tickers)
+            "pe": float(pe) if isinstance(pe, (int, float)) and pe > PE_MIN else None,
         }
     print(f"[meta] {len(meta)} tickers loaded, {skipped} skipped", file=sys.stderr)
     return meta

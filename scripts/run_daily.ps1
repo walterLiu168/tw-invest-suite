@@ -305,11 +305,18 @@ foreach ($s in $stages) {
 }
 
 # Publish to groovelab + GitHub Pages
+# D053: PM 9.2 P0 - copy watchlist.html to public/ for 23:50 tw-invest-suite publish
 Log-Msg ""
 Log-Msg "[publish] Copying watchlist + pushing to GitHub Pages..."
 try {
     if (Test-Path "C:\Groove-Lab\watchlist.html") {
         Copy-Item "C:\Groove-Lab\watchlist.html" "C:\Groove-Lab\analyze\watchlist.html" -Force
+        # D053: also copy to public/ so 23:50 tw-invest-suite-publish picks up the new date
+        $publicWatchlist = "C:\Users\icemo\Projects\tw-invest-suite\public\watchlist.html"
+        $publicDir = Split-Path $publicWatchlist -Parent
+        if (-not (Test-Path $publicDir)) { New-Item -ItemType Directory -Path $publicDir -Force | Out-Null }
+        Copy-Item "C:\Groove-Lab\watchlist.html" $publicWatchlist -Force
+        Log-Msg "  D053: copied to public/watchlist.html (for 23:50 publish)"
     }
     Run-Stage -Number 99 -Name "publish" -Cmd "publish_analyze_ghpages.py" -TimeoutSec 600
 } catch {
