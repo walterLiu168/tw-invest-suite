@@ -370,6 +370,17 @@ def main():
     log_file = LOG_DIR / f"postflight_{date.today().isoformat()}.json"
     log_file.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
     print(json.dumps(summary, indent=2, default=str))
+
+    # D054: write daily_summary_YYYY-MM-DD.md (manifest + remote verify)
+    try:
+        from daily_summary import write_summary
+        md_path = write_summary(summary)
+        if md_path:
+            print(f"[postflight] daily_summary written: {md_path}")
+    except Exception as e:
+        # Don't fail postflight on summary write errors
+        print(f"[postflight] WARN: daily_summary write failed: {e}")
+
     return 0 if overall_pass else 1
 
 
