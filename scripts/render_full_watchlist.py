@@ -412,11 +412,12 @@ def _svg_line_chart(series: dict, width: int = 480, height: int = 200,
     plot_w = width - pad_l - pad_r
     plot_h = height - pad_t - pad_b
 
-    # collect all values for y scale
+    # collect all values for y scale (排除 None 與 <=0 的假性缺值)
     all_vals = []
     for vals in series.values():
         for _, v in vals:
-            if v is not None: all_vals.append(v)
+            if v is not None and isinstance(v, (int, float)) and v > 0:
+                all_vals.append(v)
     if not all_vals: return '<div class="muted">_無資料_</div>'
 
     ymin = min(all_vals)
@@ -461,20 +462,21 @@ def _svg_line_chart(series: dict, width: int = 480, height: int = 200,
                 d_short = str(d)
             parts.append(f'<text x="{x_pos(i):.1f}" y="{height-12}" text-anchor="middle" fill="#8aa0c0" font-size="8">{d_short}</text>')
 
-    # plot each series
+    # plot each series (None 與 <=0 一律跳過，避免假性暴跌到 0)
     for s_i, (name, vals) in enumerate(series.items()):
         color = colors.get(name, palette[s_i % len(palette)])
         pts = []
         for i, (x_i, v) in enumerate(vals):
             if v is None: continue
+            if isinstance(v, (int, float)) and v <= 0: continue
             pts.append(f"{x_pos(i):.1f},{y_pos(v):.1f}")
         if not pts: continue
         # path
         path_d = "M " + " L ".join(pts)
         parts.append(f'<path d="{path_d}" fill="none" stroke="{color}" stroke-width="1.4" stroke-linejoin="round"/>')
-        # dots (last point only)
+        # dots (last valid point only)
         if vals:
-            last = [v for v in vals if v[1] is not None]
+            last = [v for v in vals if v[1] is not None and (not isinstance(v[1], (int, float)) or v[1] > 0)]
             if last:
                 i, v = last[-1]
                 parts.append(f'<circle cx="{x_pos(i):.1f}" cy="{y_pos(v):.1f}" r="2.5" fill="{color}">'
@@ -885,13 +887,23 @@ def render_technical_section(ticker: str) -> str:
         return '<div class="muted">_K 線資料不足_</div>'
     rows = rows[-60:]
     dates = [r.get("Date") for r in rows]
-    closes = [float(r.get("Close") or 0) for r in rows]
+    # 把 None / 0 / 負值 視為缺值 (DB 偶有 NULL), 不會畫成掉到 0 的假性暴跌
+    closes = []
+    for r in rows:
+        v = r.get("Close")
+        if v is None or (isinstance(v, (int, float)) and v <= 0):
+            closes.append(None)
+        else:
+            closes.append(float(v))
 
-    # MA5/13/27/54
+    # MA5/13/27/54 — 跳過 None 視窗, 視窗內有效值 < 一半才標 None
     def ma(closes, n):
         out = [None] * len(closes)
         for i in range(n - 1, len(closes)):
-            out[i] = sum(closes[i - n + 1:i + 1]) / n
+            window = closes[i - n + 1:i + 1]
+            valid = [c for c in window if c is not None]
+            if len(valid) >= max(2, n // 2):
+                out[i] = sum(valid) / len(valid)
         return out
 
     ma5 = ma(closes, 5)
@@ -905,7 +917,7 @@ def render_technical_section(ticker: str) -> str:
 
     main_chart = _svg_line_chart(
         {
-            "收盤": list(enumerate(closes)),
+            "收盤": to_xy(closes),
             "MA5": to_xy(ma5),
             "MA13": to_xy(ma13),
             "MA27": to_xy(ma27),
@@ -921,8 +933,11 @@ def render_technical_section(ticker: str) -> str:
         n_total=len(closes),
     )
 
-    # Last values summary
-    cur = closes[-1]
+    # 取最後一個有效收盤價（避免 closes[-1] 是 None）
+    valid_closes = [c for c in closes if c is not None]
+    if not valid_closes:
+        return '<div class="muted">_K 線資料不足_</div>'
+    cur = valid_closes[-1]
     last_ma5 = ma5[-1] or 0
     last_ma13 = ma13[-1] or 0
     last_ma27 = ma27[-1] or 0
@@ -939,7 +954,7 @@ def render_technical_section(ticker: str) -> str:
     summary = f"""
 - 收盤: **{cur:.2f}** | MA5: {last_ma5:.2f} | MA13: {last_ma13:.2f} | MA27: {last_ma27:.2f} | MA54: {last_ma54:.2f}
 - RSI(14): **{last_rsi:.1f}** ({rsi_label}) | 趨勢: **{trend}**
-- 區間高: {max(closes):.2f} | 區間低: {min(closes):.2f} | 波動: {(max(closes)-min(closes))/cur*100:.1f}%
+- 區間高: {max(valid_closes):.2f} | 區間低: {min(valid_closes):.2f} | 波動: {(max(valid_closes)-min(valid_closes))/cur*100:.1f}%
 """
     return main_chart + rsi_chart + summary
 

@@ -296,6 +296,53 @@ $stages += @{ N=5; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$s
 # Stage 6: Full watchlist render
 $stages += @{ N=6; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
 
+# Stage 7: Sector aggregate (D027) — 1,962 檔依 yfinance industry 加總
+# 需 1 次 FinMind call 抓 5 日法人（每天單獨 call，共 5 次）+ 本地 cache
+$secScript = "C:\Users\icemo\Projects\tw-invest-suite\src\sector_aggregate.py"
+$stages += @{ N=7; Name='sectors'; Cmd="$secScript"; To=5*60 }
+
+# Stage 8: Daily OG image (D027) — parse watchlist.html 產 1200x630 PNG
+$ogScript = "C:\Users\icemo\Projects\tw-invest-suite\src\generate_og.py"
+$watchlistHtml = "C:\Groove-Lab\watchlist.html"
+$ogOut = "C:\Users\icemo\Projects\tw-invest-suite\public\data\og.png"
+if (Test-Path $watchlistHtml) {
+    $stages += @{ N=8; Name='og_image'; Cmd="$ogScript `"$watchlistHtml`" `"$ogOut`""; To=2*60 }
+} else {
+    Log-Msg "  [!] watchlist.html not found, skipping OG image generation"
+}
+
+# Stage 9: 籌碼排行 (D027 P1) — 抓 10 日法人 + 全市場收盤價
+$chipScript = "C:\Users\icemo\Projects\tw-invest-suite\src\chip_rank.py"
+$stages += @{ N=9; Name='chips'; Cmd="$chipScript"; To=5*60 }
+
+# Stage 10: 籌碼進階 (D027 P2) — 抓 20 日 OHLCV + 法人，產 VWAP/力道/雷達
+$chipAdvScript = "C:\Users\icemo\Projects\tw-invest-suite\src\chip_advanced.py"
+$stages += @{ N=10; Name='chips_advanced'; Cmd="$chipAdvScript"; To=10*60 }
+
+# Stage 11: 渲染籌碼進階 HTML (D027 P2)
+$chipsAdvHtml = "C:\Users\icemo\Projects\tw-invest-suite\src\render_chips_advanced.py"
+$stages += @{ N=11; Name='render_chips_advanced'; Cmd="$chipsAdvHtml"; To=60 }
+
+# Stage 12: 籌碼歷史備份 (D027 P3.1) — 抓近 30 日全市場
+$chipHist = "C:\Users\icemo\Projects\tw-invest-suite\src\chip_history.py"
+$stages += @{ N=12; Name='chips_history'; Cmd="$chipHist"; To=5*60 }
+
+# Stage 13: ticker meta 重建 (P3.1) — chips-history.html / monitor.html 需要
+$buildMeta = "C:\Users\icemo\Projects\tw-invest-suite\src\build_ticker_meta.py"
+$stages += @{ N=13; Name='build_ticker_meta'; Cmd="$buildMeta"; To=30 }
+
+# Stage 14: 籌碼異動 Telegram 推播 (D027 P3.3) — 需 TELEGRAM_BOT_TOKEN/CHAT_ID
+$chipPush = "C:\Users\icemo\Projects\tw-invest-suite\src\chip_push.py"
+$stages += @{ N=14; Name='chip_push'; Cmd="$chipPush"; To=30 }
+
+# Stage 15: TWSE 官方分類 + 概念股清單 (D029)
+$twIndustry = "C:\Users\icemo\Projects\tw-invest-suite\src\fetch_tw_industry.py"
+$conceptStocks = "C:\Users\icemo\Projects\tw-invest-suite\src\concept_stocks.py"
+$renderConcepts = "C:\Users\icemo\Projects\tw-invest-suite\src\render_concepts.py"
+$stages += @{ N=15; Name='tw_industry'; Cmd="$twIndustry"; To=30 }
+$stages += @{ N=16; Name='concept_stocks'; Cmd="$conceptStocks"; To=10 }
+$stages += @{ N=17; Name='render_concepts'; Cmd="$renderConcepts"; To=30 }
+
 # Run stages
 foreach ($s in $stages) {
     $ok = Run-Stage -Number $s.N -Name $s.Name -Cmd $s.Cmd -TimeoutSec $s.To
