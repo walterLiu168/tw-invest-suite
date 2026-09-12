@@ -147,52 +147,84 @@ function Get-CacheFreshness {
 
 
 function Run-Stage {
-    # Run a python stage with timeout
+    # D056 P0-1: rewritten to eliminate pipe-buffer deadlock
+    #   - Use Start-Process with -RedirectStandardOutput/-RedirectStandardError
+    #     pointing to FILES (not pipes). Files have no 4KB pipe buffer limit.
+    #   - Poll HasExited (instead of WaitForExit) so we don't block on
+    #     async stream readers.
+    #   - Kill PROCESS TREE on timeout (margin_scan may spawn workers via LLM calls).
+    #   - Each stage's stdout/stderr saved to _debug/stage_logs/{date}_stage{N}_{name}.{log,err}
+    # D056 P0-2: -Optional switch marks a stage as non-blocking; failure logs
+    #   "DEGRADED" and returns $true so the loop continues.
     param(
         [int]$Number,
         [string]$Name,
         [string]$Cmd,
-        [int]$TimeoutSec = ($TimeoutMin * 60)
+        [int]$TimeoutSec = ($TimeoutMin * 60),
+        [switch]$Optional
     )
+    $optTag = if ($Optional) { ' [OPTIONAL/DEGRADED]' } else { '' }
     Log-Msg ""
-    Log-Msg "[Stage $Number/5] $Name (timeout ${TimeoutMin}m)..."
+    Log-Msg "[Stage $Number] $Name (timeout ${TimeoutMin}m)$optTag..."
     Write-Status -Stage $Name -State 'running' -Pct 0
 
-    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-    $pinfo.FileName = "python"
-    $pinfo.Arguments = $Cmd
-    $pinfo.WorkingDirectory = "C:\Users\icemo\.claude\skills\tw-invest-suite\scripts"
-    $pinfo.UseShellExecute = $false
-    $pinfo.RedirectStandardOutput = $true
-    $pinfo.RedirectStandardError = $true
-    $pinfo.CreateNoWindow = $true
+    # File-based redirect — no 4KB pipe buffer limit, no deadlock possible.
+    $stageLogDir = "_debug\stage_logs"
+    if (-not (Test-Path $stageLogDir)) { New-Item -ItemType Directory -Path $stageLogDir -Force | Out-Null }
+    $stageLogBase = Join-Path $stageLogDir ("{0}_stage{1}_{2}" -f $today, $Number, $Name)
+    $stageLogPath = "$stageLogBase.log"
+    $stageErrPath = "$stageLogBase.err"
+    if (Test-Path $stageLogPath) { Remove-Item $stageLogPath -Force }
+    if (Test-Path $stageErrPath) { Remove-Item $stageErrPath -Force }
 
-    $p = New-Object System.Diagnostics.Process
-    $p.StartInfo = $pinfo
-    $started = $p.Start()
-    $exited = $p.WaitForExit($TimeoutSec * 1000)
+    # Start-Process with -RedirectStandardOutput/-RedirectStandardError to FILES.
+    $p = Start-Process -FilePath "python" -ArgumentList $Cmd -NoNewWindow -PassThru `
+        -RedirectStandardOutput $stageLogPath -RedirectStandardError $stageErrPath `
+        -WorkingDirectory "C:\Users\icemo\.claude\skills\tw-invest-suite\scripts"
 
-    if (-not $exited) {
-        Log-Msg "[Stage $Number] TIMEOUT after ${TimeoutMin}m — killing"
-        try { $p.Kill() } catch {}
-        Write-Status -Stage $Name -State 'failed' -Pct 0
-        return $false
+    # Poll HasExited instead of WaitForExit (avoids any hang on stream readers).
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    while (-not $p.HasExited -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
     }
 
-    $stdout = $p.StandardOutput.ReadToEnd()
-    $stderr = $p.StandardError.ReadToEnd()
-    $stdout.Split("`n") | Where-Object { $_ -match '\S' } | ForEach-Object { Log-Msg "  $_" }
-    if ($stderr) {
-        $stderr.Split("`n") | Where-Object { $_ -match '\S' } | ForEach-Object { Log-Msg "  [err] $_" }
+    if (-not $p.HasExited) {
+        Log-Msg "[Stage $Number] TIMEOUT after ${TimeoutMin}m — killing process tree"
+        # P0-1: Kill($true) kills the entire process tree (children + grandchildren).
+        try { $p.Kill($true) } catch {}
+        Start-Sleep -Milliseconds 500
+        # Belt-and-suspenders: also kill any orphan children by ParentProcessId.
+        try {
+            Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)" -ErrorAction SilentlyContinue |
+                Stop-Process -Force -ErrorAction SilentlyContinue
+        } catch {}
+        Start-Sleep -Milliseconds 500
+    }
+
+    # Stream captured stdout/stderr to the daily log.
+    if ((Test-Path $stageLogPath) -and (Get-Item $stageLogPath).Length -gt 0) {
+        Get-Content $stageLogPath | ForEach-Object { if ($_ -match '\S') { Log-Msg "  $_" } }
+    }
+    if ((Test-Path $stageErrPath) -and (Get-Item $stageErrPath).Length -gt 0) {
+        Get-Content $stageErrPath | ForEach-Object { if ($_ -match '\S') { Log-Msg "  [err] $_" } }
     }
 
     if ($p.ExitCode -eq 0) {
         Log-Msg "[Stage $Number] OK (exit 0)"
         Write-Status -Stage $Name -State 'done' -Pct 100
+        $p.Dispose()
         return $true
     } else {
+        # P0-2: optional stages are DEGRADED, not FAILED — don't block downstream.
+        if ($Optional) {
+            Log-Msg "[Stage $Number] DEGRADED (exit $($p.ExitCode)) — optional, continuing"
+            Write-Status -Stage $Name -State 'degraded' -Pct 0
+            $p.Dispose()
+            return $true
+        }
         Log-Msg "[Stage $Number] FAILED (exit $($p.ExitCode))"
         Write-Status -Stage $Name -State 'failed' -Pct 0
+        $p.Dispose()
         return $false
     }
 }
@@ -288,10 +320,11 @@ $stages += @{ N=3; Name='patterns'; Cmd='pattern_classifier.py'; To=30*60 }
 $stages += @{ N=4; Name='patterns_html'; Cmd='build_patterns_html.py'; To=10*60 }
 
 # Stage 5: Margin rebound scan (7-dim scoring, all maint<130% candidates)
+# D056 P0-2: Optional/DEGRADED — if scan hangs or fails, watchlist (Stage 6) MUST still run.
 $today = Get-Date -Format 'yyyy-MM-dd'
 $scanOut = Join-Path $PSScriptRoot "outputs\margin_rebound\$today.json"
 $scanScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\scan.py"
-$stages += @{ N=5; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=15*60 }
+$stages += @{ N=5; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=30*60; Optional=$true }
 
 # Stage 6: Full watchlist render
 $stages += @{ N=6; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
@@ -344,11 +377,34 @@ $stages += @{ N=16; Name='concept_stocks'; Cmd="$conceptStocks"; To=10 }
 $stages += @{ N=17; Name='render_concepts'; Cmd="$renderConcepts"; To=30 }
 
 # Run stages
+$stageResults = @()
 foreach ($s in $stages) {
-    $ok = Run-Stage -Number $s.N -Name $s.Name -Cmd $s.Cmd -TimeoutSec $s.To
+    $opt = [switch]$s.Optional
+    $ok = Run-Stage -Number $s.N -Name $s.Name -Cmd $s.Cmd -TimeoutSec $s.To -Optional:$opt
+    $stageResults += @{ N=$s.N; Name=$s.Name; Ok=$ok; Optional=[bool]$s.Optional }
     if (-not $ok) {
         Log-Msg "[!] Stage $($s.Name) failed — continuing to next stage"
     }
+}
+
+# D056 P0-3: write completion marker for publish_ghpages_daily.ps1 to consume.
+# Marker tells publish the actual data_date (NOT Get-Date which would be wrong at 00:30 next day).
+# If any REQUIRED stage failed, do NOT write marker — publish will exit 1 and refuse to push stale data.
+$requiredFailed = @($stageResults | Where-Object { -not $_.Optional -and -not $_.Ok })
+$optionalDegraded = @($stageResults | Where-Object { $_.Optional -and -not $_.Ok })
+if ($requiredFailed.Count -eq 0) {
+    Log-Msg ""
+    Log-Msg "[marker] Writing completion marker (data_date=$today)..."
+    $markerArgs = "--date $today --status ok --degraded $optionalDegraded.Count"
+    try {
+        python _debug\write_completion_marker.py $markerArgs.Split(' ') 2>&1 | ForEach-Object { Log-Msg "  $_" }
+    } catch {
+        Log-Msg "[marker] WARN: completion marker write failed: $_"
+    }
+} else {
+    Log-Msg ""
+    Log-Msg "[marker] SKIP completion marker — $($requiredFailed.Count) required stage(s) failed: $($requiredFailed.Name -join ', ')"
+    Log-Msg "        publish_ghpages_daily.ps1 will exit 1 (no marker = no push)"
 }
 
 # Publish to groovelab + GitHub Pages

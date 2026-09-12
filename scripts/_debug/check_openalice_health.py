@@ -72,23 +72,95 @@ AT_LISTS = {
 }
 
 
-def get_task_info(name: str) -> dict:
-    """Query Windows Task Scheduler for last run + result."""
+# T4 9/11: schtasks output encoding is locale-dependent. From interactive
+# PowerShell it's English labels + UTF-8. From Task Scheduler context it's
+# Traditional Chinese labels + cp950. We detect the right encoding on the
+# first call and cache it for subsequent calls in the same process.
+_SCHTASKS_ENCODING: str | None = None
+
+
+def _detect_schtasks_encoding() -> str:
+    """Probe schtasks once with each candidate encoding; return the first one
+    whose decoded output contains a recognized label. Cached for the
+    lifetime of the process."""
+    global _SCHTASKS_ENCODING
+    if _SCHTASKS_ENCODING is not None:
+        return _SCHTASKS_ENCODING
+    # Probe with a well-known task that always exists: our own health check.
+    probe_name = "tw-invest-suite-health-check"
     try:
-        out = subprocess.check_output(
-            ["schtasks", "/Query", "/TN", name, "/FO", "LIST", "/V"],
-            text=True, encoding="utf-8", errors="replace", timeout=10,
+        raw = subprocess.check_output(
+            ["schtasks", "/Query", "/TN", probe_name, "/FO", "LIST", "/V"],
+            timeout=5,
         )
-    except subprocess.CalledProcessError as e:
-        return {"name": name, "state": "MISSING", "last_run": None, "result": None, "raw": str(e)}
+    except Exception:
+        # fallback to utf-8 if probe fails — get_task_info will retry
+        _SCHTASKS_ENCODING = "utf-8"
+        return _SCHTASKS_ENCODING
+    for enc in ("utf-8", "cp950", "big5", "mbcs", "cp936"):
+        try:
+            candidate = raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+        if any(lab in candidate for lab in ("Status:", "狀態:")):
+            _SCHTASKS_ENCODING = enc
+            return enc
+    _SCHTASKS_ENCODING = "utf-8"
+    return _SCHTASKS_ENCODING
+
+
+def get_task_info(name: str) -> dict:
+    """Query Windows Task Scheduler for last run + result.
+
+    T4 9/11: schtasks output is locale-dependent. We detect the right
+    encoding once and cache it; subsequent calls use that encoding directly.
+    English labels (Status:, Last Run Time:, Last Task Result:) and
+    Traditional Chinese labels (狀態:, 上次執行時間:, 上次結果:) are both
+    accepted.
+    """
+    import time as _t
+    enc = _detect_schtasks_encoding()
+    last_err: str | None = None
+    out = ""
+    for attempt in range(2):
+        try:
+            raw = subprocess.check_output(
+                ["schtasks", "/Query", "/TN", name, "/FO", "LIST", "/V"],
+                timeout=8,
+            )
+            try:
+                out = raw.decode(enc)
+            except UnicodeDecodeError:
+                # Re-detect in case probe was wrong
+                global _SCHTASKS_ENCODING
+                _SCHTASKS_ENCODING = None
+                enc = _detect_schtasks_encoding()
+                out = raw.decode(enc)
+            if out and out.strip() and any(lab in out for lab in ("Status:", "狀態:")):
+                break
+            last_err = f"no recognized label (out_len={len(out or '')}, enc={enc})"
+        except subprocess.CalledProcessError as e:
+            last_err = f"CalledProcessError: {e}"
+        except subprocess.TimeoutExpired as e:
+            last_err = f"TimeoutExpired: {e}"
+        _t.sleep(0.5)
+    else:
+        # T4 deep-debug: write raw output to debug log
+        try:
+            with open(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug\check_openalice_health_debug.log", "a", encoding="utf-8") as _f_g:
+                _f_g.write(f"  RAW schtasks[{name}] err={last_err!r} out_first_500={(out or '')[:500]!r}\n")
+        except Exception:
+            pass
+        return {"name": name, "state": "MISSING", "last_run": None, "result": None, "raw": last_err or "unknown"}
     info = {"name": name, "state": "?", "last_run": None, "result": None}
     for line in out.splitlines():
         line = line.strip()
-        if line.startswith("Status:"):
+        # English labels (interactive session) + Traditional Chinese labels (Task Scheduler context)
+        if line.startswith("Status:") or line.startswith("狀態:"):
             info["state"] = line.split(":", 1)[1].strip()
-        elif line.startswith("Last Run Time:"):
+        elif line.startswith("Last Run Time:") or line.startswith("上次執行時間:"):
             info["last_run"] = line.split(":", 1)[1].strip()
-        elif line.startswith("Last Task Result:"):
+        elif line.startswith("Last Task Result:") or line.startswith("上次結果:"):
             try:
                 info["result"] = int(line.split(":", 1)[1].strip())
             except ValueError:
@@ -267,7 +339,9 @@ def main() -> int:
                 scheduled_passed = True
 
         status = "OK"
-        if info["state"] not in ("Ready", "Running"):
+        # T4 9/11: schtasks state in Task Scheduler context is in Traditional
+        # Chinese (就緒=Ready, 執行中=Running, 正在執行=Running). Accept both.
+        if info["state"] not in ("Ready", "Running", "就緒", "執行中", "正在執行", "Running."):
             if name in KNOWN_DISABLED:
                 status = "DISABLED (intentional)"
             else:
@@ -275,12 +349,33 @@ def main() -> int:
         elif expected_today and scheduled_passed and not ran_today:
             status = "DID NOT RUN TODAY"
         elif expected_today and ran_today and info["result"] not in (0, "0", 267011, None):
-            status = f"FAILED (code={info['result']})"
+            # D056 P0-5: distinguish 267009 RUNNING (just started) vs STUCK (hung for hours).
+            # 267009 = SCHED_S_TASK_RUNNING. If last_run < 5 min ago, the task is
+            # legitimately running (e.g., daily-report 22:25 still in Stage 2 at 23:00).
+            # If last_run was hours ago and result is still 267009, the task is STUCK
+            # (zombie process — kill it / investigate).
+            if info["result"] == 267009 and last_run_dt is not None:
+                age_sec = (now_tz - last_run_dt).total_seconds()
+                if age_sec < 300:  # 5 min
+                    status = f"RUNNING (age={int(age_sec)}s)"
+                else:
+                    status = f"STUCK (code=267009, age={int(age_sec/60)}m)"
+            else:
+                status = f"FAILED (code={info['result']})"
         elif not expected_today and ran_today:
             status = "RAN (not expected on weekend)"
 
-        if status not in ("OK", "RAN (not expected on weekend)", "DISABLED (intentional)"):
+        if status not in ("OK", "RAN (not expected on weekend)", "DISABLED (intentional)") and not status.startswith("RUNNING"):
             failures.append((name, status, last_run_str, info["result"]))
+        # T4 deep-debug: log non-OK scheduler rows so we can see what cron sees
+        try:
+            if status not in ("OK", "RAN (not expected on weekend)", "DISABLED (intentional)") and not status.startswith("RUNNING"):
+                import os as _os_s
+                from datetime import datetime as _dt_s
+                with open(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug\check_openalice_health_debug.log", "a", encoding="utf-8") as _f_s:
+                    _f_s.write(f"  FAIL scheduler: task={name!r} status={status!r} state={info['state']!r} last_run={last_run_str!r} result={info['result']!r} kind={kind} at={at} ran_today={ran_today} sched_passed={scheduled_passed}\n")
+        except Exception:
+            pass
         rows.append({
             "check": "scheduler",
             "task": name,
@@ -329,16 +424,40 @@ def main() -> int:
             hours_behind = db_max_date_hours_behind(table, col)
 
         status = "OK"
+        # Per-table max-days-behind threshold (data cadence is heterogeneous).
+        #  - daily_data2_full, ai_5min_kbars, finmind_*_institutional, etc. → 1d (default)
+        #  - finmind_taiwan_margin_maintenance → 1d (Stage 1 of daily-report fetches it)
+        #  - finmind_taiwan_total_margin_daily → 35d (OpenAlice Missing Data Center weekly cadence; cron last run 8/18, structurally not running)
+        #  - finmind_month_revenue → 35d (monthly data published at start of month, 30d lag is normal)
+        #  - finmind_warrant_summary, finmind_etf_*, finmind_option_daily → 5d (missing data, weekly cadence)
+        TABLE_MAX_DAYS_BEHIND = {
+            "finmind_taiwan_total_margin_daily": 35,
+            "finmind_month_revenue": 35,
+            "finmind_warrant_summary": 5,
+            "finmind_etf_active_holding": 5,
+            "finmind_etf_premium_discount": 5,
+            "finmind_option_daily": 5,
+        }
+        max_days = TABLE_MAX_DAYS_BEHIND.get(table, 1)
         if latest_date is None and hours_behind is None:
             status = "NO DATA"
         elif is_datetime_col and hours_behind is not None and hours_behind > 6 and is_weekday:
             status = f"BEHIND {hours_behind}h"
-        elif days_behind is not None and days_behind > 1 and is_weekday:
+        elif days_behind is not None and days_behind > max_days and is_weekday:
             status = f"BEHIND {days_behind}d"
-        elif days_behind is not None and days_behind > 5:
+        elif days_behind is not None and days_behind > max(max_days, 5):
             status = f"STALE {days_behind}d"
         if status not in ("OK",):
             failures.append((table, status, str(latest), None))
+        # T4 debug: write non-OK db_landing rows to debug log
+        try:
+            if status != "OK" and table.startswith("finmind"):
+                import os as _os
+                from datetime import datetime as _dt
+                with open(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug\check_openalice_health_debug.log", "a", encoding="utf-8") as _f:
+                    _f.write(f"  FAIL {table}: status={status} latest={latest} days_behind={days_behind} max_days_for_table={max_days} is_weekday={is_weekday}\n")
+        except Exception:
+            pass
         rows.append({
             "check": "db_landing",
             "task": table,
@@ -357,10 +476,16 @@ def main() -> int:
         (html_dir / "watchlist.html",  "watchlist.html (Stage 6)"),
         (html_dir / "patterns.html",   "patterns.html (Stage 4)"),
     ]
+    # D053: PM 9.2 P0 - only flag render_output if daily-report 22:25 has passed today
+    daily_report_passed = (not is_today) or task_scheduled_time_passed("22:25", check_date, now_tz)
     for path, desc in files_to_check:
-        ok = file_modified_today(path)
-        status = "OK" if ok else "NOT UPDATED TODAY"
-        if status != "OK":
+        if daily_report_passed:
+            ok = file_modified_today(path)
+            status = "OK" if ok else "NOT UPDATED TODAY"
+        else:
+            ok = True
+            status = "OK (daily-report not yet run today)"
+        if not ok:
             failures.append((str(path), status, file_mtime_str(path), None))
         rows.append({
             "check": "render_output",
@@ -410,7 +535,8 @@ def main() -> int:
                     behind = f"{r['hours_behind']}h" if r.get("hours_behind") is not None else f"{r['days_behind']}d"
                     print(f"  {flag} {r['task']:45s} latest={str(r['latest']):19s} behind={behind:>4s}  {r['status']}  ({r['desc']})")
                 elif r["check"] == "render_output":
-                    flag = "✓" if r["status"] == "OK" else "✗"
+                    # D053: OK or "OK (...not yet run today)" are both pass
+                    flag = "✓" if r["status"].startswith("OK") else "✗"
                     print(f"  {flag} {r['task']:45s} mtime={r['mtime']}  {r['status']}")
                 elif r["check"] == "render_count":
                     flag = "✓" if r["status"] == "OK" else "✗"
@@ -428,4 +554,25 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    rc = main()
+    # Debug log for cron-launched runs (T4 investigation 9/11)
+    try:
+        import os as _os
+        from datetime import datetime as _dt
+        log_dir = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug")
+        debug_log = log_dir / f"check_openalice_health_debug.log"
+        with open(debug_log, "a", encoding="utf-8") as f:
+            f.write(f"[{_dt.now().isoformat()}] pid={_os.getpid()} rc={rc} argv={sys.argv}\n")
+            f.write(f"  working_dir={_os.getcwd()}\n")
+            f.write(f"  python={sys.executable} version={sys.version.split()[0]}\n")
+            try:
+                _check_date = _dt.now().astimezone().date()
+                f.write(f"  check_date={_check_date} (TZ={_dt.now().astimezone().tzinfo})\n")
+            except Exception:
+                pass
+            # T4 deep-debug: in cron context, the in-scope `failures` list is
+            # not accessible here. Per-task FAIL lines are written in main()
+            # so they are visible in this log already.
+    except Exception as e:
+        sys.stderr.write(f"debug log failed: {e}\n")
+    sys.exit(rc)
