@@ -71,7 +71,7 @@ def git_head_committed():
     try:
         # Use --untracked-files=no to ignore untracked files (D054 allows them)
         r1 = subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=no"],
+            ["git", "status", "--porcelain", "--untracked-files=all", "--", "scripts", "src"],
             cwd=str(REPO), capture_output=True, text=True, timeout=5,
         )
         if r1.returncode != 0:
@@ -188,6 +188,20 @@ def build_manifest(data_date):
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
         "published_at": None,  # filled in by publish_ghpages
         "verified_at": None,    # filled in by postflight
+        "github_pages_base": GITHUB_PAGES_BASE,
+    }
+
+
+def build_certified_manifest(marker=None):
+    import pipeline_state as ps
+    marker = ps.verify_marker(marker)
+    return {
+        "manifest_version": "D056-2", "nightly_id": marker["nightly_id"],
+        "data_date": marker["data_date"], "run_id": marker["run_id"],
+        "picks_count": marker["picks_count"], "bucket_counts": marker["bucket_counts"],
+        "tickers": marker["picks"], "source_commit": git_head_full(),
+        "source_hashes": marker["source_hashes"], "source_commit_committed": git_head_committed(),
+        "artifacts": marker["artifacts"], "generated_at": dt.datetime.now().isoformat(),
         "github_pages_base": GITHUB_PAGES_BASE,
     }
 

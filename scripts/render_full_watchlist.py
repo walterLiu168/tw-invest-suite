@@ -1495,7 +1495,7 @@ def render_pick_card(c: ms.Candidate, d: Dict, idx: int) -> str:
     """
 
     return f"""
-    <div class="pick" id="pick-{ticker}">
+    <div class="pick" id="pick-{ticker}-{c.horizon}" data-ticker="{ticker}" data-horizon="{c.horizon}" data-bucket="{_esc(c.bucket)}">
       {headline}
       <div class="pick-body">
         {tags}
@@ -1732,45 +1732,52 @@ def render_bucket(bucket_label: str, picks: List[ms.Candidate], data_map: Dict[s
 # ---- main ----
 
 def main():
+    import os
+    import pipeline_state as ps
+    snapshot = ps.db_snapshot()
     # Use the actual data date (last trading day in DB) instead of today's date.
     # DB may not have today's data if rendered before market close or on holidays.
-    try:
-        data_date = db.latest_date("daily_data2_full")
-    except Exception:
-        data_date = date.today().strftime("%Y-%m-%d")
-    if not data_date:
-        data_date = date.today().strftime("%Y-%m-%d")
+    data_date = os.environ.get("TW_DATA_DATE") or snapshot["data_date"]
+    if data_date != snapshot["data_date"]:
+        raise RuntimeError("watchlist source changed during nightly")
     today = data_date
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     print(f"[1/4] Loading active picks from DB + screen…")
     perf = wl.get_performance_report()
-    rows = perf["picks"]
+    rows = [r for r in perf["picks"] if str(r["run_date"]) == today]
     if not rows:
-        print("No active picks. Run market_screen.py first.")
-        return
+        raise RuntimeError("No active picks for data date")
     print(f"  {len(rows)} active picks")
 
-    # Re-run the market screen to get fresh Candidate objects (zen_summary, etc.)
-    print(f"[2/4] Re-running market screen for fresh Candidates with zen + tags…")
-    result = ms.screen_market()
-    # Build ticker -> Candidate map (horizon-aware)
-    cand_map: Dict[Tuple[str, str], ms.Candidate] = {}
-    for bucket_label, by_horizon in result.items():
-        for horizon in ("long", "short"):
-            for c in by_horizon.get(horizon, []):
-                cand_map[(c.ticker, horizon)] = c
-                c.horizon = horizon  # ensure set
-                c.bucket = bucket_label
-    # Bucket candidates by their (already-set) bucket attr
-    bucket_picks: Dict[str, List[ms.Candidate]] = {"<100": [], "100-300": [], "300-1000": [], ">1000": []}
-    for r in rows:
-        ticker = r["ticker"]
-        horizon = r["horizon"]
-        bucket = r["bucket"]
-        c = cand_map.get((ticker, horizon))
-        if c and bucket in bucket_picks:
-            bucket_picks[bucket].append(c)
+    # Render the committed picks, never silently replace/drop them by re-screening.
+    snaps = {r["Ticker"]: r for r in db.market_snapshot(today)}
+    industries = db.all_industries()
+    shares = db.all_shares_outstanding()
+    chips = db.all_latest_chipscore(today)
+    features = db.all_latest_features(today)
+    bucket_picks = {b: [] for b in ("<100", "100-300", "300-1000", ">1000")}
+    for pick in snapshot["picks"]:
+        ticker = pick["ticker"]
+        if ticker not in snaps:
+            raise RuntimeError(f"pick {ticker} has no OHLCV for {today}")
+        c = ms.build_candidate(snaps[ticker], industries, shares)
+        c.horizon, c.bucket = pick["horizon"], pick["bucket"]
+        ms.enrich_from_chip_map(c, chips)
+        ms.enrich_from_features_map(c, features)
+        bucket_picks[c.bucket].append(c)
+    committed_candidates = [c for group in bucket_picks.values() for c in group]
+    ms.enrich_long_term_returns(committed_candidates, today)
+    ms.enrich_news_for_picks(committed_candidates)
+    for c in committed_candidates:
+        try:
+            result = ms.zen.analyze(c.ticker, days=120)
+            c.zen_position, c.zen_bias = result.position, result.bias
+            if result.center:
+                c.zen_center = f"{result.center.low:.2f}–{result.center.high:.2f}"
+            c.zen_summary = ms.zen.format_read(result)
+        except Exception as e:
+            c.zen_summary = f"zen 分析失敗: {e}"
     # Sort each bucket: long first, then short
     for k in bucket_picks:
         bucket_picks[k].sort(key=lambda x: (0 if x.horizon == "long" else 1, x.ticker))
@@ -1913,6 +1920,14 @@ function copyText(btn) {{
     groove = Path(r"C:\Groove-Lab\watchlist.html")
     groove.write_text(html_doc, encoding="utf-8")
     print(f"  → {groove} ({len(html_doc):,} bytes)")
+
+    public = ps.PUBLIC
+    (public / "watchlist.html").write_text(html_doc, encoding="utf-8")
+    ps.atomic_json(public / "data" / "watchlist-full.json", {
+        "nightly_id": os.environ.get("TW_NIGHTLY_ID", "manual"),
+        "data_date": today, "run_id": snapshot["run_id"], "picks": snapshot["picks"],
+        "html_sha256": ps.sha256(public / "watchlist.html"),
+    })
 
     # Stats
     total_errs = sum(len(d.get("fetch_errors", [])) for d in data_map.values())

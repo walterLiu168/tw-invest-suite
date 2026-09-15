@@ -139,12 +139,8 @@ def has_metadata_marker(data_date):
 
 
 def is_trading_day(d):
-    """Mon-Fri trading day. KNOWN LIMITATION: not a full TWSE holiday calendar.
-    Holidays like 雙十, 春節, etc. are NOT excluded. Holiday detection would
-    require a holiday list (TWSE publishes annually).
-    For a personal project with weekly close on weekends, this is acceptable.
-    """
-    return d.weekday() < 5
+    from market_calendar import is_session
+    return is_session(d)
 
 
 def get_verified_data_date():

@@ -6,6 +6,8 @@ batch_finmind_only, and batch_finmind_news.
 Renders 1,943 HTML files from cached data.
 """
 import sys
+import os
+import html
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -15,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import pymysql
 import cross_source_runner as csr
 import render_ticker_full as rtf
+import pipeline_state as ps
 
 
 HTML_DIR = Path(r"C:\Groove-Lab\analyze")
@@ -25,7 +28,7 @@ def get_all_tickers():
                             database='tw_elec', connect_timeout=10)
     cur = conn.cursor()
     cur.execute("SELECT ticker FROM industry_type "
-                "WHERE ticker REGEXP '^[0-9]{4}$|^[0-9]{4}[A-Z]$'")
+                "WHERE ticker REGEXP '^[0-9]{4}$|^[0-9]{4}[A-Z]$' ORDER BY ticker")
     rows = [r[0] for r in cur.fetchall()]
     conn.close()
     return rows
@@ -52,6 +55,10 @@ def main():
     args = parser.parse_args()
 
     tickers = get_all_tickers()
+    data_date = os.environ.get("TW_DATA_DATE") or ps.db_snapshot()["data_date"]
+    nightly_id = os.environ.get("TW_NIGHTLY_ID", "manual")
+    if len(tickers) < 1900:
+        raise RuntimeError(f"render universe too small: {len(tickers)}")
     watchlist = get_watchlist()
     print(f"[{datetime.now():%H:%M:%S}] Render-only: {len(tickers)} tickers "
           f"({len(watchlist)} watchlist with 4h news) "
@@ -60,12 +67,20 @@ def main():
     # Stage A: assemble data from cache (fast, no API if cache hit)
     t0 = time.time()
     all_data = {}
+    data_issues = []
     for i, t in enumerate(tickers, 1):
         tier = "watchlist" if t in watchlist else "all"
         try:
             all_data[t] = csr.assemble(t, news_tier=tier,
                                          use_yfinance=not args.no_yfinance,
-                                         fetch_news=not args.no_news)
+                                         fetch_news=not args.no_news,
+                                         cache_only=args.no_news and args.no_yfinance)
+            if all_data[t].get("_db_err"):
+                raise ValueError(all_data[t]["_db_err"])
+            if all_data[t].get("latest_date") != data_date or not all_data[t].get("latest_close"):
+                if t in watchlist:
+                    raise ValueError("selected pick has missing/stale OHLCV")
+                data_issues.append({"ticker": t, "latest_date": all_data[t].get("latest_date"), "latest_close": all_data[t].get("latest_close")})
         except Exception as e:
             all_data[t] = {"ticker": t, "_err": str(e)}
         if i % 200 == 0 or i == len(tickers):
@@ -75,10 +90,19 @@ def main():
     # Stage C: render HTML in parallel
     t0 = time.time()
     ok, fail = 0, 0
+    failures, artifacts = [], []
+    issue_tickers = {i["ticker"] for i in data_issues}
 
     def _render_one(t):
         try:
+            if all_data[t].get("_err"):
+                raise ValueError(all_data[t]["_err"])
             rtf.render_ticker_tabbed(t, all_data[t], output_dir=str(HTML_DIR))
+            if t in issue_tickers:
+                path = HTML_DIR / f"{t}.html"
+                notice = f'<aside role="status" style="padding:12px;background:#fff3cd;color:#533f03">資料不完整：本次資料日 {data_date}，此股票最後報價日 {html.escape(str(all_data[t].get("latest_date") or "無"))}。可能停牌、下市或來源缺漏，請勿視為當日可交易報價。</aside>'
+                body = path.read_text(encoding="utf-8")
+                path.write_text(body.replace("<body>", "<body>" + notice, 1), encoding="utf-8")
             return t, True
         except Exception as e:
             return t, str(e)
@@ -89,8 +113,10 @@ def main():
             t, result = fut.result()
             if result is True:
                 ok += 1
+                artifacts.append(ps.artifact(HTML_DIR / f"{t}.html", f"analyze/{t}.html"))
             else:
                 fail += 1
+                failures.append({"ticker": t, "error": result})
             if (ok + fail) % 200 == 0:
                 print(f"  render [{ok+fail}/{len(all_data)}] {time.time()-t0:.0f}s "
                       f"ok={ok} fail={fail}", flush=True)
@@ -100,6 +126,14 @@ def main():
     print(f"[{datetime.now():%H:%M:%S}] Building index.html...")
     from daily_full_tickers import _build_index_html
     _build_index_html(tickers, str(HTML_DIR))
+
+    ps.atomic_json(HTML_DIR / "render_receipt.json", {
+        "nightly_id": nightly_id, "data_date": data_date, "expected_count": len(tickers),
+        "failures": failures, "artifacts": sorted(artifacts, key=lambda a: a["gh_path"]),
+        "data_issues": data_issues, "fresh_count": len(tickers) - len(data_issues) - len(failures),
+    })
+    if failures:
+        raise RuntimeError(f"render failed for {len(failures)} tickers: {failures[:5]}")
 
     print(f"[{datetime.now():%H:%M:%S}] Done. {ok} HTML files in {HTML_DIR}")
 

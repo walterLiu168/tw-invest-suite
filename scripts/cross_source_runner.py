@@ -85,7 +85,7 @@ def _db_basic(ticker: str) -> Dict:
 
 
 def assemble(ticker: str, news_tier: str = "all", use_yfinance: bool = True,
-             fetch_news: bool = True) -> Dict:
+             fetch_news: bool = True, cache_only: bool = False) -> Dict:
     """Build the unified ticker report from all sources.
 
     news_tier: "watchlist" (4h cache) or "all" (12h cache)
@@ -140,19 +140,25 @@ def assemble(ticker: str, news_tier: str = "all", use_yfinance: bool = True,
             }
 
     # ---- 3. FinMind PER (parallel — for cross-verify) ----
-    fm_pe = fmb.fetch_pe(ticker)
+    def financial_data(key, fetcher):
+        if not cache_only:
+            return fetcher(ticker)
+        cached = cm.get_fresh(ticker, key)
+        return cached.get("data") if cached else None
+
+    fm_pe = financial_data("finmind_pe", fmb.fetch_pe)
     if fm_pe and not any("_error" in r for r in (fm_pe if isinstance(fm_pe, list) else [fm_pe])):
         out["finmind_pe_latest"] = fm_pe
         out["_meta"]["sources"].append("finmind_pe")
 
     # ---- 4. FinMind Dividend (30d cache) ----
-    divs = fmb.fetch_dividend(ticker)
+    divs = financial_data("finmind_div", fmb.fetch_dividend)
     if divs:
         out["dividends"] = divs[-6:]  # last 6 entries
         out["_meta"]["sources"].append("finmind_div")
 
     # ---- 5. FinMind Financials (30d cache) ----
-    fins = fmb.fetch_financials(ticker)
+    fins = financial_data("finmind_fin", fmb.fetch_financials)
     if fins:
         out["fundamentals"] = {
             "rows": fins[-100:],  # 100 rows = ~6 quarters × 15 fields
@@ -161,7 +167,7 @@ def assemble(ticker: str, news_tier: str = "all", use_yfinance: bool = True,
         out["_meta"]["sources"].append("finmind_fin")
 
     # ---- 6. FinMind Monthly Revenue (7d cache) ----
-    rev = fmb.fetch_month_revenue(ticker)
+    rev = financial_data("finmind_month", fmb.fetch_month_revenue)
     if rev:
         out["monthly_revenue"] = rev[-24:]  # last 24 months
         out["_meta"]["sources"].append("finmind_month")

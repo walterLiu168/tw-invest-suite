@@ -579,6 +579,7 @@ def main():
 
     # Build output JSON
     output = {
+        "nightly_id": __import__("os").environ.get("TW_NIGHTLY_ID", "manual"),
         "as_of_date": end_date,
         "as_of_time": datetime.now().isoformat(timespec="seconds"),
         "total_tickers": len(snaps),

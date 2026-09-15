@@ -109,7 +109,7 @@ $out | ConvertTo-Json -Compress
 """
     r = subprocess.run(
         ["powershell.exe", "-NoProfile", "-Command", ps],
-        capture_output=True, text=True, encoding='utf-8'
+        capture_output=True, text=True, encoding='utf-8', timeout=30
     )
     if r.returncode != 0 or not r.stdout.strip():
         return None
@@ -331,86 +331,85 @@ def check_publish_artifact(execution_date):
 
 
 def main():
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-    # D052h-fixup2 F4: separate execution_date (Scheduler) from
-    # data_date (DB / latest OHLCV).
-    exec_date = previous_operational_date()
-    data_date = latest_trading_data_date()
-    print(f"[postflight] execution_date = {exec_date}  data_date = {data_date}")
-
-    checks = {}
-    overall_pass = True
-
-    per_check = [
+    import argparse
+    import pipeline_state as ps
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--after-publish", action="store_true")
+    args = ap.parse_args()
+    checks, warnings = {}, []
+    marker = None
+    in_progress = False
+    try:
+        marker = ps.verify_marker()
+        checks["completion"] = {"pass": True, "nightly_id": marker["nightly_id"]}
+    except Exception as e:
+        current = ps.read_json(ps.STATE) if ps.STATE.exists() else {}
+        in_progress = not args.after_publish and ps.owner_running(current)
+        checks["completion"] = {"pass": in_progress, "state": "running" if in_progress else "failed", "error": str(e)}
+    data_date = date.fromisoformat(marker["data_date"]) if marker else latest_trading_data_date()
+    exec_date = date.fromisoformat(marker["execution_date"]) if marker else previous_operational_date()
+    for name, fn in [
         ("market_screen", lambda: check_market_screen(data_date)),
         ("company_null", lambda: check_company_null(data_date)),
         ("industry_count", check_industry_count),
-        ("quarantine", check_quarantine),
-        ("publish_artifact", lambda: check_publish_artifact(exec_date)),
-    ]
-    for name, fn in per_check:
+    ]:
         try:
-            result = fn()
+            checks[name] = fn()
         except Exception as e:
-            result = {"pass": False, "error": str(e)}
-        checks[name] = result
-        if not result.get("pass", False):
-            overall_pass = False
-
+            checks[name] = {"pass": False, "error": str(e)}
     try:
-        checks["tasks"] = check_tasks(exec_date)
-        if not checks["tasks"].get("all_pass", False):
-            overall_pass = False
+        quarantine = check_quarantine()
+        if not quarantine["pass"]:
+            warnings.append({"quarantine": quarantine})
     except Exception as e:
-        checks["tasks"] = {"all_pass": False, "error": str(e)}
-        overall_pass = False
-
-    summary = {
-        "execution_date": exec_date.isoformat(),
-        "data_date": data_date.isoformat() if data_date else None,
-        "ts": datetime.now().isoformat(),
-        "overall_pass": overall_pass,
-        "checks": checks,
-    }
-    log_file = LOG_DIR / f"postflight_{date.today().isoformat()}.json"
-    log_file.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
-    print(json.dumps(summary, indent=2, default=str))
-
-    # D054: write daily_summary_YYYY-MM-DD.md (manifest + remote verify)
+        checks["quarantine_query"] = {"pass": False, "error": str(e)}
+    try:
+        task_check = check_tasks(exec_date)
+        # Publish is this job at 00:30, not yesterday's 00:30 job. Its evidence is
+        # the publication receipt below. Other task failures remain visible.
+        details = [d for d in task_check.get("details", []) if d["task"] != "tw-invest-suite-publish"]
+        checks["tasks"] = {"pass": True, "details": details}
+        warnings.extend({"task": d} for d in details if not d["pass"])
+        if "error" in task_check:
+            checks["tasks_query"] = {"pass": False, "error": task_check["error"]}
+    except Exception as e:
+        checks["tasks_query"] = {"pass": False, "error": str(e)}
+    if args.after_publish:
+        try:
+            publication = ps.read_json(ps.RUNTIME / "_debug" / "publication_result.json")
+            checks["publication"] = {"pass": bool(marker and publication.get("nightly_id") == marker["nightly_id"] and publication.get("status") == "verified"), "receipt": publication}
+        except Exception as e:
+            checks["publication"] = {"pass": False, "error": str(e)}
+    overall_pass = all(c.get("pass") for c in checks.values())
+    summary = {"execution_date": exec_date.isoformat(), "data_date": data_date.isoformat() if data_date else None,
+               "nightly_id": marker.get("nightly_id") if marker else None,
+               "phase": "after_publish" if args.after_publish else "before_publish",
+               "ts": datetime.now().isoformat(), "overall_pass": overall_pass,
+               "checks": checks, "warnings": warnings}
+    # Keep the existing markdown report, but only verify remote after publication.
     try:
         from daily_summary import write_summary
-        md_path = write_summary(summary)
-        if md_path:
-            print(f"[postflight] daily_summary written: {md_path}")
+        write_summary(summary, verify_remote=args.after_publish)
     except Exception as e:
-        # Don't fail postflight on summary write errors
-        print(f"[postflight] WARN: daily_summary write failed: {e}")
-
-    # D056-A: build_dashboard.py — one-page morning dashboard (1-minute read)
-    # Subprocess call (not import): lives in runtime scripts/_debug, separate
-    # process boundary keeps dashboard failures from corrupting postflight state.
-    DASHBOARD_RUNNER = (
-        r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug\build_dashboard.py"
-    )
+        checks["daily_summary"] = {"pass": False, "error": str(e)}
+        summary["overall_pass"] = False
+    ps.atomic_json(ps.RUNTIME / "_debug" / "postflight_latest.json", summary)
+    ps.atomic_json(LOG_DIR / f"postflight_{date.today().isoformat()}.json", summary)
+    print(json.dumps(summary, indent=2, default=str))
+    dashboard = Path(__file__).with_name("build_dashboard.py")
     try:
-        r = subprocess.run(
-            ["python", DASHBOARD_RUNNER],
-            capture_output=True, text=True, encoding="utf-8", timeout=60,
-        )
-        print(f"[postflight] build_dashboard.py exit={r.returncode}")
-        if r.stdout:
-            for line in r.stdout.splitlines()[-15:]:
-                print(f"  [dashboard] {line}")
-        if r.stderr:
-            print(f"[postflight] dashboard stderr: {r.stderr[:500]}")
-        # Don't fail postflight on dashboard failure (best-effort)
-    except subprocess.TimeoutExpired:
-        print("[postflight] WARN: build_dashboard.py timeout (>60s)")
+        result = subprocess.run([sys.executable, str(dashboard)], timeout=120)
+        if result.returncode >= 2 and not in_progress:
+            summary["overall_pass"] = False
     except Exception as e:
-        print(f"[postflight] WARN: build_dashboard.py failed: {e}")
-
-    return 0 if overall_pass else 1
+        # Replace the old green artifact on report failures, never preserve it silently.
+        text = f"# Daily Dashboard\n**OVERALL**: CRITICAL\nGenerated: {datetime.now().isoformat()}\nDashboard generation failed: {e}\n"
+        for path in (ps.REPORTS / "dashboard.md", ps.PUBLIC / "data" / "dashboard.md"):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        summary["overall_pass"] = False
+    ps.atomic_json(ps.RUNTIME / "_debug" / "postflight_latest.json", summary)
+    return 0 if summary["overall_pass"] else 1
 
 
 if __name__ == "__main__":

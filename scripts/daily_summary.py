@@ -150,6 +150,7 @@ def render_summary_md(postflight_summary, picks_data, integrity, artifacts, remo
     lines.append(f"**Status**: {status}  ")
     lines.append(f"**Execution date**: {exec_date}  ")
     lines.append(f"**Data date**: {data_date}  ")
+    lines.append(f"**Phase**: {postflight_summary.get('phase', 'unknown')}  ")
     lines.append(f"**Generated at**: {ts}  ")
     if git_head:
         # D054-fixup: full source commit SHA (was truncated to 12)
@@ -197,8 +198,10 @@ def render_summary_md(postflight_summary, picks_data, integrity, artifacts, remo
     # Other checks
     lines.append("## Other checks")
     lines.append("")
-    for name in ("market_screen", "company_null", "industry_count", "quarantine", "publish_artifact"):
+    for name in ("completion", "market_screen", "company_null", "industry_count", "publication"):
         c = postflight_summary.get("checks", {}).get(name, {})
+        if not c:
+            continue
         result_str = "✓" if c.get("pass") else "✗"
         details = []
         for k, v in c.items():
@@ -282,12 +285,11 @@ def remote_verify(data_date, expected_picks_count, expected_first_ticker):
         date_match = data_date_str in body
         # D056: watchlist.html now uses <div class="pick" id="pick-XXXX"> instead of
         # <tr><td><b>XXXX</b>. Match either form for backward/forward compat.
-        # D056: watchlist render may filter to top N (e.g., top 20 by score); don't
-        # hardcode 24. Just verify date + at least one pick div.
+        # D056-2: a selector change must not weaken the 24-pick contract.
         n_picks_old = len(re.findall(r"<tr>\s*<td[^>]*><b>\d{4}</b>", body))
-        n_picks_new = len(re.findall(r'<div\s+class="pick"\s+id="pick-(\d{4})"', body))
+        n_picks_new = len(re.findall(r'<div\s+class="pick"\s+id="pick-([0-9]{4}[A-Z]?)(?:-(?:long|short))?"', body))
         n_picks = max(n_picks_old, n_picks_new)
-        ok = date_match and (n_picks >= 1)
+        ok = date_match and (n_picks == expected_picks_count == 24)
         check = f"date_in_body={date_match}, rows={n_picks}"
         out.append({"name": "watchlist.html", "url": url, "http_status": status, "check": check, "ok": ok, "note": ""})
     else:
@@ -324,7 +326,7 @@ def remote_verify(data_date, expected_picks_count, expected_first_ticker):
             local_manifest = json.loads(local_manifest_path.read_text(encoding="utf-8"))
             # Compare critical fields
             mismatches = []
-            for f in ("data_date", "run_id", "picks_count"):
+            for f in ("data_date", "run_id", "picks_count", "nightly_id", "source_hashes", "artifacts"):
                 if remote_manifest.get(f) != local_manifest.get(f):
                     mismatches.append(f"{f}: remote={remote_manifest.get(f)} local={local_manifest.get(f)}")
             rb = remote_manifest.get("bucket_counts", {})
@@ -350,7 +352,7 @@ def canonical_failures(remote_results):
     return [r for r in remote_results if (not r.get("ok")) and r.get("name") in canonical_names]
 
 
-def write_summary(postflight_summary):
+def write_summary(postflight_summary, verify_remote=True):
     """Main entry: writes daily_summary_YYYY-MM-DD.md and returns path."""
     data_date_str = postflight_summary.get("data_date")
     if not data_date_str:
@@ -367,11 +369,18 @@ def write_summary(postflight_summary):
 
     # 3. artifacts
     artifacts = collect_artifacts(data_date)
+    import pipeline_state as ps
+    if ps.MARKER.exists():
+        certified = ps.read_json(ps.MARKER)
+        if certified.get("nightly_id") == postflight_summary.get("nightly_id"):
+            artifacts = [{"path": a["gh_path"], "size": a["size"], "sha256": a["sha256"]} for a in certified["artifacts"]]
 
     # 4. remote verify (D054-fixup: include first_ticker, canonical failure tracking)
     first_ticker = picks[0]["ticker"] if picks else None
-    remote = remote_verify(data_date, picks_count, first_ticker)
+    remote = remote_verify(data_date, picks_count, first_ticker) if verify_remote else []
     canonical_fails = canonical_failures(remote)
+    if canonical_fails:
+        postflight_summary["overall_pass"] = False
 
     # 5. git head
     git_head = get_git_head()
