@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-postflight_daily.py — D052h-fixup2
+postflight_daily.py — D052h-fixup2 + D056-A
 Run at 00:05 daily. Verifies all 8 tw-invest-suite-* tasks ran on the
 previous calendar day and data integrity holds.
 
@@ -24,6 +24,12 @@ Pending (NOT addressed in fixup2):
   - J: 7768 per-day quarantine accumulation
   - T2/T3: live test infrastructure (mocked tests in tests/ post-fixup2)
   - T4: live stale-OHLCV test (deterministic unit test in tests/)
+
+D056-A changes (Option A simplification):
+  - At tail of main(), invoke build_dashboard.py via subprocess (best-effort,
+    separate process). One-page morning dashboard for Walter's 1-minute read.
+  - Don't fail postflight on dashboard failure (canonical invariant lives in
+    the existing checks; dashboard is reporting only).
 
 Exits 0 on all OK, 1 on any failure. Writes JSON status to log file.
 """
@@ -380,6 +386,29 @@ def main():
     except Exception as e:
         # Don't fail postflight on summary write errors
         print(f"[postflight] WARN: daily_summary write failed: {e}")
+
+    # D056-A: build_dashboard.py — one-page morning dashboard (1-minute read)
+    # Subprocess call (not import): lives in runtime scripts/_debug, separate
+    # process boundary keeps dashboard failures from corrupting postflight state.
+    DASHBOARD_RUNNER = (
+        r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug\build_dashboard.py"
+    )
+    try:
+        r = subprocess.run(
+            ["python", DASHBOARD_RUNNER],
+            capture_output=True, text=True, encoding="utf-8", timeout=60,
+        )
+        print(f"[postflight] build_dashboard.py exit={r.returncode}")
+        if r.stdout:
+            for line in r.stdout.splitlines()[-15:]:
+                print(f"  [dashboard] {line}")
+        if r.stderr:
+            print(f"[postflight] dashboard stderr: {r.stderr[:500]}")
+        # Don't fail postflight on dashboard failure (best-effort)
+    except subprocess.TimeoutExpired:
+        print("[postflight] WARN: build_dashboard.py timeout (>60s)")
+    except Exception as e:
+        print(f"[postflight] WARN: build_dashboard.py failed: {e}")
 
     return 0 if overall_pass else 1
 

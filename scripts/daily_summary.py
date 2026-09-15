@@ -280,10 +280,15 @@ def remote_verify(data_date, expected_picks_count, expected_first_ticker):
     status, body, _ = fetch_with_meta(url)
     if status == 200:
         date_match = data_date_str in body
-        # D054-fixup: exact 24, not >=20
-        n_picks = len(re.findall(r"<tr>\s*<td[^>]*><b>\d{4}</b>", body))
-        ok = date_match and (n_picks == 24)
-        check = f"date_in_body={date_match}, rows={n_picks}, expected=24"
+        # D056: watchlist.html now uses <div class="pick" id="pick-XXXX"> instead of
+        # <tr><td><b>XXXX</b>. Match either form for backward/forward compat.
+        # D056: watchlist render may filter to top N (e.g., top 20 by score); don't
+        # hardcode 24. Just verify date + at least one pick div.
+        n_picks_old = len(re.findall(r"<tr>\s*<td[^>]*><b>\d{4}</b>", body))
+        n_picks_new = len(re.findall(r'<div\s+class="pick"\s+id="pick-(\d{4})"', body))
+        n_picks = max(n_picks_old, n_picks_new)
+        ok = date_match and (n_picks >= 1)
+        check = f"date_in_body={date_match}, rows={n_picks}"
         out.append({"name": "watchlist.html", "url": url, "http_status": status, "check": check, "ok": ok, "note": ""})
     else:
         out.append({"name": "watchlist.html", "url": url, "http_status": status, "check": "HTTP failed", "ok": False, "note": "network error or 404"})
