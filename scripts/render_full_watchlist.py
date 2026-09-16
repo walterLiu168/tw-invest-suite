@@ -1456,13 +1456,22 @@ def render_deep_dive_prompt(c: ms.Candidate) -> str:
         return f'<div class="muted">_deep-dive prompt 生成失敗：{e}_</div>'
 
 
+def fetch_error_sources(errors):
+    # Public artifacts expose source labels, never request URLs or credentials.
+    labels = []
+    for error in errors:
+        label = str(error).split(":", 1)[0]
+        labels.append(label if _re.fullmatch(r"[a-z_ ]{1,40}", label) else "fetch")
+    return sorted(set(labels))
+
+
 def render_pick_card(c: ms.Candidate, d: Dict, idx: int) -> str:
     ticker = c.ticker
     ticker_url = f"https://walterLiu168.github.io/stock-report/market-screen-2026-08-12.html#{ticker}"
     headline = render_pick_header(c)
     fetch_errors = d.get("fetch_errors", [])
     if fetch_errors:
-        headline += '<div role="status" style="padding:8px;color:var(--amber)">部分補充資料取得失敗：' + _esc("；".join(fetch_errors)) + '</div>'
+        headline += '<div role="status" style="padding:8px;color:var(--amber)">部分補充資料取得失敗：' + _esc("；".join(fetch_error_sources(fetch_errors))) + '</div>'
     tags = render_tags_bar(c)
     # Section tabs (chart-enhanced)
     sections = {
@@ -1930,7 +1939,7 @@ function copyText(btn) {{
         "nightly_id": os.environ.get("TW_NIGHTLY_ID", "manual"),
         "data_date": today, "run_id": snapshot["run_id"], "picks": snapshot["picks"],
         "html_sha256": ps.sha256(public / "watchlist.html"),
-        "fetch_errors": {t: d["fetch_errors"] for t, d in data_map.items() if d.get("fetch_errors")},
+        "fetch_errors": {t: fetch_error_sources(d["fetch_errors"]) for t, d in data_map.items() if d.get("fetch_errors")},
     })
 
     # Stats
