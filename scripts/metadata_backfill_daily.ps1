@@ -41,7 +41,8 @@ $RepoScript = "C:\Users\icemo\Projects\tw-invest-suite\scripts\metadata_backfill
 $LogDir = "C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug"
 $MarkerDir = "C:\Users\icemo\Projects\tw-invest-suite\scripts\_debug"
 $LogFile = Join-Path $LogDir ("metadata_backfill_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".log")
-$Python = "python"
+$Python = "C:\Python314\python.exe"
+$env:PYTHONUTF8 = '1'
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 New-Item -ItemType Directory -Force -Path $MarkerDir | Out-Null

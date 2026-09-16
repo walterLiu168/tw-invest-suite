@@ -27,7 +27,7 @@ Log-Msg "  Runner: $RunnerScript"
 Log-Msg "  Log: $LogFile"
 
 try {
-    & python $RunnerScript 2>&1 | ForEach-Object { Log-Msg $_ }
+    & C:\Python314\python.exe -X utf8 $RunnerScript 2>&1 | ForEach-Object { Log-Msg $_ }
     if ($LASTEXITCODE -ne 0) { throw "exit $LASTEXITCODE" }
     Log-Msg "=== sync_legacy_tables_runner.ps1 OK ==="
 } catch {

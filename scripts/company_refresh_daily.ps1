@@ -28,7 +28,7 @@ if (-not (Test-Path $Script)) {
 Write-Output "=== company_refresh_daily $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ==="
 Write-Output "  Script: $Script"
 try {
-    & python $Script --days=7 2>&1 | Tee-Object -FilePath $LogFile
+    & C:\Python314\python.exe -X utf8 $Script --days=7 2>&1 | Tee-Object -FilePath $LogFile
     if ($LASTEXITCODE -ne 0) { throw "exit $LASTEXITCODE" }
     Write-Output "=== company_refresh_daily OK ==="
 } catch {

@@ -35,7 +35,7 @@ Log-Msg "  Runner script: $RunnerScript"
 Log-Msg "  Log file: $LogFile"
 
 try {
-    & python $RunnerScript 2>&1 | ForEach-Object { Log-Msg $_ }
+    & C:\Python314\python.exe -X utf8 $RunnerScript 2>&1 | ForEach-Object { Log-Msg $_ }
     if ($LASTEXITCODE -ne 0) { throw "market_screen_runner.py exit $LASTEXITCODE" }
     Log-Msg "=== market_screen_daily.ps1 OK ==="
 } catch {

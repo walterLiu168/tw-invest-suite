@@ -45,6 +45,15 @@ After application, actual S4U Weekly execution at 20:17:17 completed with LastTa
 - Browser now opens https://groovelab.dev/watchlist.html and correctly displays the previous 2026-09-15 watchlist. Fresh release validation remains pending.
 - Prepared ordinary groove_service_watch.ps1 and register_groove_service.ps1 for boot and process recovery. Native PowerShell parser and actual healthy -Once probe passed. Startup task installation and owned-process recovery acceptance remain pending.
 
+## Subsequent acceptance
+
+- Updated-context S4U Weekly, RSS and health-check all completed at 20:17:17 with LastTaskResult=0.
+- GrooveLab Site Recovery installed via normal UAC, registrar 3008 exit 0; startup trigger with one-minute delay, S4U Limited, no execution cap. Live supervisor 19344 began 20:19:19. Exact creation identities of the manually started origin/connector were verified before their controlled stop. The supervisor recreated origin 26956 and connector 2828 at 20:20:10; both health probes passed at 20:20:40. This proves actual process recovery, not only task registration.
+- TWSE official May 6 notice confirms 7768 頌勝科技, listing May 7, 半導體業: https://www.twse.com.tw/staticFiles/news/news/tsecnews/8a8216d69dbea9fd019dfc9546a8010d.pdf. The reviewed resolve_7768_official.py preview found 13 matching open events and 42 blank company rows. Transactional application inserted the canonical metadata, resolved all 13 without deleting records, and filled the 42 blank rows. Before/applied audit JSON is under scripts/_debug/7768-official-resolution. A repeated preview found 0 open / 0 missing company rows.
+- The normal company-refresh Scheduler execution completed with result 0 and repaired 1948 additional latest-date company rows. The latest daily count remains 1949.
+- Canonical source registry lists margin maintenance and stock margin in the daily lane. The seven old domain table aliases have no registry entries; their stale snapshots remain unregistered advisory data and are not proof of canonical freshness.
+- Broader inventory found remaining enabled upstream/dependency tasks required an interactive logon and lacked wake settings. Prepared register_pipeline_dependencies.ps1 to preserve enabled/disabled state and triggers while applying S4U/wake to enabled existing analytical/data tasks. Disabled old aliases remain disabled. Python entrypoints receive UTF-8; company/metadata/screen/postflight/sync wrappers now use Python314 explicitly. The yfinance task receives an ordinary versioned cache-refresh entrypoint that fails on error or incomplete results. Native parsing and Python compilation passed. Registrar application and actual updated-context executions remain pending.
+
 ## Explicitly stopped validation
 
 Run 1a159eaa1bf44ca78a28a7804b0d3aa8 was intentionally terminated to fix confirmed report-content defects. Owner 32296, wrapper 31560 and child 8356 are gone. It did not certify completion. Production HTML was partially overwritten and must be fully regenerated before publication.

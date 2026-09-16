@@ -23,7 +23,7 @@ function Log-Msg {
 
 Log-Msg "=== postflight_daily.ps1 start ==="
 try {
-    & python $Runner 2>&1 | ForEach-Object { Log-Msg $_ }
+    & C:\Python314\python.exe -X utf8 $Runner 2>&1 | ForEach-Object { Log-Msg $_ }
     if ($LASTEXITCODE -ne 0) { throw "postflight_daily.py exit $LASTEXITCODE" }
     Log-Msg "=== postflight_daily.ps1 OK ==="
 } catch {
