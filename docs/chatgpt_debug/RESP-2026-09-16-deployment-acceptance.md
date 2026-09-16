@@ -87,3 +87,11 @@ The actual default S4U attempt 89f4a2f3e9db451386d14859af59e83a began at 20:59:1
 Process identity now falls back to bounded CIM only on access denied, preserving creation identity and rejecting PID reuse. Unknown CIM failures propagate rather than being labeled dead. The original handle and CIM timestamps may differ by one microsecond from conversion; comparisons allow two microseconds. Four focused identity tests passed, including actual native/CIM identity comparison; the full suite before orphan cleanup changes passed 135 tests.
 
 The stage wrapper now monitors its exact parent creation identity and terminates its child tree if Scheduler stops that parent. A real child/grandchild owner-termination acceptance test passed; all five focused identity/orphan tests passed in 16.6 seconds before the next source freeze and full S4U run.
+
+## Current acceptance after source commit ddfc9fb
+
+- Final full primary suite passed 136 tests in 53.5 seconds. All 45 managed hashes match; primary source ddfc9fb is pushed.
+- Actual S4U default full UUID 8b3c60f2d38b45919de84f1e5aeff0e9 began 21:04:45, owner 32944 / creation 21:04:44.449974. Maintenance exit 0; parent advanced into render. Assemble 1974/1974 in 174 seconds; render 400/1974, zero failures at this observation. Managed source remains frozen. This is still running, not certified.
+- Interactive nightly-health now reports this S4U owner healthy within its stage budget. All 23 enabled analytical/data tasks meet S4U/wake/catch-up; configuration snapshot is under scripts/_debug/scheduler_final_configuration.json.
+- Normal 21:10 Weekly trigger completed with result 0. The 21:00 RSS trigger failed with an uncaptured cause; later read-only fetch succeeded. The 21:11:11 retry completed with result 0. New non-secret outcome receipt records 81 queries, fetched 1101, raw inserted 16, derived inserted 4, duplicates 193, skipped 0, missing projected links 3, errors 0. Receipt code is pushed as AI-Telegram b3df3a9; full source URLs remain in raw storage.
+- Concise takeover instructions and remaining publication gates are in HANDOFF-2026-09-16-D056-remaining.md. The final dual-site action UAC choice remains pending.
