@@ -8,6 +8,7 @@ Output: a Markdown section ready to paste into Perplexity Computer.
 """
 import os
 import sys
+import math
 from typing import List
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,9 +24,9 @@ publicly documented investment framework. Apply this to:
 
 **Target Company**: {ticker} {name} ({industry})
 **Current Price**: NT${price:.2f}
-**Market Cap**: NT${market_cap:.0f}M
-**52-Week Return**: {ret_60d:+.1%} (60d), {ret_240d:+.1%} (240d)
-**Volume (today)**: {volume:,.0f} shares
+**Market Cap**: {market_cap}
+**Price Return (calendar days)**: {ret_60d} (60d), {ret_240d} (240d)
+**Volume (data date)**: {volume} 張
 **Latest News (last 5 days)**:
 {news_block}
 
@@ -95,9 +96,9 @@ margin-of-safety and value-trap discipline to:
 
 **Target Company**: {ticker} {name} ({industry})
 **Current Price**: NT${price:.2f}
-**Market Cap**: NT${market_cap:.0f}M
-**52-Week Return**: {ret_60d:+.1%} (60d), {ret_240d:+.1%} (240d)
-**Volume (today)**: {volume:,.0f} shares
+**Market Cap**: {market_cap}
+**Price Return (calendar days)**: {ret_60d} (60d), {ret_240d} (240d)
+**Volume (data date)**: {volume} 張
 **Latest News (last 5 days)**:
 {news_block}
 
@@ -165,12 +166,12 @@ Produce a **margin-of-safety report** with these sections:
 def build_news_block(c: ms.Candidate) -> str:
     """Build the news bullet block for a pick."""
     if not c.news_headlines:
-        return "  (no recent news in stock_news table)"
+        return "  (未提供近期新聞)"
     lines = []
     for h in c.news_headlines[:5]:
         if h:
             lines.append(f"  - {h}")
-    return "\n".join(lines) if lines else "  (none)"
+    return "\n".join(lines) if lines else "  (未提供近期新聞)"
 
 
 def pick_template(c: ms.Candidate) -> str:
@@ -189,17 +190,25 @@ def pick_template(c: ms.Candidate) -> str:
 def render_prompt(c: ms.Candidate) -> str:
     """Render the filled-in prompt for one pick."""
     template = pick_template(c)
-    market_cap_str = f"{c.market_cap/1e6:.0f}" if c.market_cap else "0"
+    def formatted(value, pattern, scale=1):
+        if value is None:
+            return "未提供"
+        try:
+            value = float(value)
+            return format(value / scale, pattern) if math.isfinite(value) else "未提供"
+        except (TypeError, ValueError):
+            return "未提供"
+
+    market_cap_str = formatted(c.market_cap, ",.0f", 1e6)
     return template.format(
         ticker=c.ticker,
         name=c.name,
         industry=c.industry or "—",
         price=c.close,
-        market_cap=float(market_cap_str),
-        # Pass fractions; template uses :+.1% which auto-multiplies by 100
-        ret_60d=(c.excess_return_60d or 0.0),
-        ret_240d=(c.excess_return_240d or 0.0),
-        volume=c.volume,
+        market_cap="未提供" if market_cap_str == "未提供" else f"NT${market_cap_str}M",
+        ret_60d=formatted(c.excess_return_60d, "+.1%"),
+        ret_240d=formatted(c.excess_return_240d, "+.1%"),
+        volume=formatted(c.volume, ",.1f", 1000),
         news_block=build_news_block(c),
     )
 

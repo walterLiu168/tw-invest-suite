@@ -150,10 +150,10 @@ def enrich_long_term_returns(candidates: List[Candidate], target_date: str) -> N
     returns = db.long_term_returns_batch(tickers, target_date)
     for c in candidates:
         ret = returns.get(c.ticker, {})
-        c.excess_return_60d = ret.get("ret_60d", 0.0) or 0.0
-        c.excess_return_120d = ret.get("ret_120d", 0.0) or 0.0
-        c.excess_return_240d = ret.get("ret_240d", 0.0) or 0.0
-        c.excess_return_500d = ret.get("ret_500d", 0.0) or 0.0
+        c.excess_return_60d = ret.get("ret_60d")
+        c.excess_return_120d = ret.get("ret_120d")
+        c.excess_return_240d = ret.get("ret_240d")
+        c.excess_return_500d = ret.get("ret_500d")
 
 
 def enrich_news_for_picks(picks: List[Candidate]) -> None:

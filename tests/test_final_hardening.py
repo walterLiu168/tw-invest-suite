@@ -22,6 +22,18 @@ spec.loader.exec_module(nh)
 
 
 class CertificationTests(unittest.TestCase):
+    def test_actual_powershell_51_hashtable_budget_accepts_default_and_rejects_overflow(self):
+        source = (ROOT / "scripts/run_daily.ps1").read_text(encoding="utf-8-sig")
+        budget = source[source.index("$stageBudgetSec ="):source.index("# Run stages")]
+        for minutes, expected in (([10, 90, 30, 10, 30, 30], 0), ([120, 120], 7)):
+            with self.subTest(minutes=minutes), tempfile.TemporaryDirectory() as folder:
+                script = Path(folder) / "budget.ps1"
+                stages = ",".join("@{To=" + str(value * 60) + "}" for value in minutes)
+                script.write_text("$ErrorActionPreference='Stop'\ntrap {exit 7}\n"
+                                  + "$stages=@(" + stages + ")\n" + budget + "\nexit 0", encoding="utf-8-sig")
+                result = subprocess.run(["powershell.exe", "-NoProfile", "-File", str(script)], capture_output=True, timeout=15)
+                self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_actual_cert_process_captures_stderr_and_reads_sidecar_for_zero_and_failure(self):
         source = (ROOT / "scripts/run_daily.ps1").read_text(encoding="utf-8-sig")
         block = source[source.index("$certExitPath ="):source.index("if ($completionExit -ne 0)")]

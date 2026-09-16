@@ -30,6 +30,7 @@ import cache_manager as cm
 import finmind_batch as fmb
 import yfinance_batch as yfb
 import pymysql
+import db_client as db
 
 
 VERIFY_LOG = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug"
@@ -93,8 +94,9 @@ def _db_basic(ticker: str) -> Dict:
         if row:
             out["company_name"] = row["company"]
             out["industry"] = row["industry"]
+        cutoff = db.query_date()
         cur.execute("SELECT Date, Close FROM daily_data2_full WHERE Ticker=%s "
-                    "ORDER BY Date DESC LIMIT 1", (ticker,))
+                    "AND (%s IS NULL OR Date <= %s) ORDER BY Date DESC LIMIT 1", (ticker, cutoff, cutoff))
         row2 = cur.fetchone()
         if row2:
             out["latest_date"] = row2["Date"].isoformat() if hasattr(row2["Date"], "isoformat") else str(row2["Date"])

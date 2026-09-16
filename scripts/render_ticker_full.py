@@ -25,7 +25,8 @@ Args:
 import sys
 import os
 import html as _html_lib
-from datetime import datetime
+from datetime import datetime, timedelta
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -39,6 +40,33 @@ from render_ticker_html import (CSS, _esc, render_md_table, beautify,
 
 
 # ---- Per-section markdown builders ----
+
+def _dated_report(renderer):
+    @wraps(renderer)
+    def render(ticker, data, *args, **kwargs):
+        with db.report_date(os.environ.get("TW_DATA_DATE") or data.get("latest_date")):
+            return renderer(ticker, data, *args, **kwargs)
+    return render
+
+
+def _prompt_context(data, latest):
+    """Use dated warehouse returns and supplied valuation; retain missing values."""
+    target = str(latest.get("Date") or data.get("latest_date") or "")[:10]
+    returns = db.long_term_returns_batch([data["ticker"]], target).get(data["ticker"], {}) if target else {}
+    news = data.get("news") or db.recent_news(data["ticker"], limit=5)
+    headlines = []
+    if target:
+        start = (datetime.fromisoformat(target) - timedelta(days=5)).strftime("%Y-%m-%d")
+        for item in news:
+            published = str(item.get("date") or item.get("published_at") or "")[:10]
+            if start <= published <= target and item.get("title"):
+                headlines.append(item["title"])
+    return {
+        "market_cap": (data.get("valuation") or {}).get("market_cap"),
+        "excess_return_60d": returns.get("ret_60d"),
+        "excess_return_240d": returns.get("ret_240d"),
+        "news_headlines": headlines,
+    }
 
 def _fmt_pct(v):
     if v is None: return "—"
@@ -1465,6 +1493,7 @@ def section_observations(data: Dict, db_latest: Dict) -> str:
 
 # ---- Main render ----
 
+@_dated_report
 def render_ticker_full(ticker: str, data: Dict, output_dir: str = r"C:\Groove-Lab\analyze") -> str:
     """Render full HTML for one ticker. data = output of cross_source_runner.assemble()."""
     ticker = ticker.strip()
@@ -1557,7 +1586,7 @@ def render_ticker_full(ticker: str, data: Dict, output_dir: str = r"C:\Groove-La
             sma27=float(db_latest.get("sma_27") or 0) if db_latest else 0,
             sma54=float(db_latest.get("sma_54") or 0) if db_latest else 0,
             rsi14=rsi14, atr14=float(db_latest.get("atr_14") or 0) if db_latest else 0,
-            is_gap=0, excess_return_240d=0,
+            is_gap=0, **_prompt_context(data, db_latest),
         )
         dd_prompt = ddp.render_prompt(cand)
     except Exception as e:
@@ -1582,7 +1611,7 @@ def render_ticker_full(ticker: str, data: Dict, output_dir: str = r"C:\Groove-La
 </head>
 <body>
 <div class="topbar">
-  <div class="brand">📊 個股分析 <small>{_esc(ticker)} · {_esc(name)} · {now_str[:10]}</small></div>
+  <div class="brand">📊 個股分析 <small>{_esc(ticker)} · {_esc(name)} · 資料日 {_esc(str(db_latest.get('Date') or data.get('latest_date') or '未提供')[:10])}</small></div>
   <form class="search-form" action="https://groovelab.dev/analyze.html" method="get">
     <input name="ticker" placeholder="股號" maxlength="6" required>
     <button type="submit">分析 →</button>
@@ -1806,6 +1835,7 @@ def _build_chart_data(history: List[Dict]) -> str:
     }, ensure_ascii=False)
 
 
+@_dated_report
 def render_ticker_tabbed(ticker: str, data: Dict, output_dir: str = r"C:\Groove-Lab\analyze") -> str:
     """Tabbed UI version — clickable skill tabs + charts in 技術 tab."""
     ticker = ticker.strip()
@@ -1970,7 +2000,7 @@ def render_ticker_tabbed(ticker: str, data: Dict, output_dir: str = r"C:\Groove-
             sma27=float(db_latest.get("sma_27") or 0) if db_latest else 0,
             sma54=float(db_latest.get("sma_54") or 0) if db_latest else 0,
             rsi14=rsi14_v, atr14=float(db_latest.get("atr_14") or 0) if db_latest else 0,
-            is_gap=0, excess_return_240d=0,
+            is_gap=0, **_prompt_context(data, db_latest),
         )
         dd_prompt = ddp.render_prompt(cand)
     except Exception as e:
@@ -1988,7 +2018,7 @@ def render_ticker_tabbed(ticker: str, data: Dict, output_dir: str = r"C:\Groove-
 </head>
 <body>
 <div class="topbar">
-  <div class="brand">📊 個股分析 <small>{_esc(ticker)} · {_esc(name)} · {now_str[:10]}</small></div>
+  <div class="brand">📊 個股分析 <small>{_esc(ticker)} · {_esc(name)} · 資料日 {_esc(str(db_latest.get('Date') or data.get('latest_date') or '未提供')[:10])}</small></div>
   <form class="search-form" action="https://groovelab.dev/analyze.html" method="get">
     <input name="ticker" placeholder="股號" maxlength="6" required>
     <button type="submit">分析 →</button>

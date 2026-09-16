@@ -34,6 +34,7 @@ SOURCE_FILES = (
     "market_report.py", "market_report_html.py",
     "bounded_deep_dive.py",
     "nightly_health.py", "nightly_health_daily.ps1",
+    "check_openalice_health.py", "db_client.py", "deep_dive_prompts.py", "market_screen.py",
 )
 
 

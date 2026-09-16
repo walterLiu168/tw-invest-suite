@@ -75,6 +75,10 @@ def remote_verify(root, manifest):
     wanted = {"watchlist.html", "patterns.html", "data/patterns.json", "data/watchlist-full.json"}
     wanted.update(f"analyze/{p['ticker']}.html" for p in manifest["tickers"])
     wanted.add(f"data/publish_manifest_{manifest['data_date']}.json")
+    return remote_verify_paths(root, manifest, wanted)
+
+
+def remote_verify_paths(root, manifest, wanted):
     def check(relative):
         request = urllib.request.Request(pm.GITHUB_PAGES_BASE + "/" + relative + "?run=" + manifest["nightly_id"], headers={"Cache-Control": "no-cache"})
         with urllib.request.urlopen(request, timeout=20) as response:
@@ -87,11 +91,18 @@ def remote_verify(root, manifest):
         return list(pool.map(check, sorted(wanted)))
 
 
+def commit_if_changed(root, message):
+    """An identical certified release remains publishable on a Scheduler retry."""
+    if run(["git", "diff", "--cached", "--name-only"], root):
+        run(["git", "commit", "-m", message], root)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--publish", action="store_true", help="Push the prepared release; default only prepares locally")
     ap.add_argument("--prepare-only", action="store_true")
     args = ap.parse_args()
+    result = {}
     try:
         marker = ps.verify_marker()
         root, manifest = prepare_site(marker)
@@ -108,7 +119,7 @@ def main():
         run(["git", "config", "user.email", "walterLiu168@users.noreply.github.com"], root)
         run(["git", "config", "user.name", "walterLiu168"], root)
         run(["git", "add", "-A"], root)
-        run(["git", "commit", "-m", f"Daily release {manifest['data_date']} run {manifest['nightly_id']}"], root)
+        commit_if_changed(root, f"Daily release {manifest['data_date']} run {manifest['nightly_id']}")
         verify_staged(root, manifest)
         ps.verify_marker(marker)  # no changed sources/artifacts while preparing
         run(["git", "push", "origin", "HEAD:gh-pages"], root)
@@ -121,37 +132,39 @@ def main():
                 if attempt == 9:
                     raise
                 time.sleep(30)
-        result.update(status="verified", verified_at=datetime.now().isoformat())
+        result.update(status="verified", analytical_verified=True, report_status="pending", verified_at=datetime.now().isoformat())
         ps.atomic_json(RESULT, result)
         # Same publishing job finishes the report after actual remote verification.
         post = subprocess.run([sys.executable, str(ps.REPO / "scripts" / "postflight_daily.py"), "--after-publish"], timeout=240)
         import build_dashboard
         build_dashboard.main()
-        for rel in ("data/dashboard.md", f"data/daily_summary_{manifest['data_date']}.md"):
+        report_paths = ("data/dashboard.md", f"data/daily_summary_{manifest['data_date']}.md")
+        for rel in report_paths:
             src = ps.PUBLIC / rel
-            if src.is_file():
-                shutil.copy2(src, root / rel)
+            if not src.is_file():
+                raise ValueError(f"missing final report: {rel}")
+            shutil.copy2(src, root / rel)
         run(["git", "add", "data"], root)
-        if run(["git", "diff", "--cached", "--name-only"], root):
-            run(["git", "commit", "-m", f"Verified daily status {manifest['data_date']}"], root)
-            run(["git", "push", "origin", "HEAD:gh-pages"], root)
-            # Verify the morning report itself after its final publication too.
-            for attempt in range(10):
-                try:
-                    req = urllib.request.Request(pm.GITHUB_PAGES_BASE + "/data/dashboard.md?run=" + manifest["nightly_id"], headers={"Cache-Control": "no-cache"})
-                    with urllib.request.urlopen(req, timeout=20) as response:
-                        dashboard_hash = hashlib.sha256(response.read()).hexdigest()
-                    if dashboard_hash != ps.sha256(root / "data" / "dashboard.md"):
-                        raise ValueError("remote dashboard SHA mismatch")
-                    break
-                except Exception:
-                    if attempt == 9:
-                        raise
-                    time.sleep(30)
+        commit_if_changed(root, f"Verified daily status {manifest['data_date']}")
+        run(["git", "push", "origin", "HEAD:gh-pages"], root)
+        result["status_commit"] = run(["git", "rev-parse", "HEAD"], root)
+        for attempt in range(10):
+            try:
+                result["verified_report_paths"] = remote_verify_paths(root, manifest, report_paths)
+                break
+            except Exception:
+                if attempt == 9:
+                    raise
+                time.sleep(30)
+        result.update(postflight_exit=post.returncode, report_status="verified",
+                      reports_verified_at=datetime.now().isoformat(),
+                      status="verified" if post.returncode == 0 else "failed")
+        ps.atomic_json(RESULT, result)
         print(f"PUBLISHED_AND_VERIFIED data_date={manifest['data_date']} postflight_exit={post.returncode}")
         return post.returncode
     except Exception as e:
-        ps.atomic_json(RESULT, {"status": "failed", "error": str(e), "at": datetime.now().isoformat()})
+        result.update(status="failed", error=str(e), at=datetime.now().isoformat())
+        ps.atomic_json(RESULT, result)
         print(f"FATAL: {e}", file=sys.stderr)
         return 1
 

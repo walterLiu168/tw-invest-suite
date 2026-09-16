@@ -33,7 +33,9 @@ $cacheDir = "C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_cache"
 $outputDir = "C:\Groove-Lab\analyze"
 New-Item -ItemType Directory -Force -Path (Split-Path $logFile) | Out-Null
 trap {
-    Write-Host "FATAL: $_"
+    $failureReason = [string]$_
+    Write-Host "FATAL: $failureReason"
+    try { Add-Content -LiteralPath $logFile -Value "[$(Get-Date -Format 'HH:mm:ss')] FATAL: $failureReason" -Encoding UTF8 } catch {}
     if ($env:TW_NIGHTLY_ID) { & C:\Python314\python.exe pipeline_state.py fail }
     exit 1
 }
@@ -347,10 +349,7 @@ $scanScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\scan.p
 $stages += @{ N=5; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=30*60; Optional=$true }
 
 # Stage 6: Full watchlist render
-# D056-2 hardening: bumped to 30min from 10min. Stage 6 does parallel deep-dive
-# fetches for 24 picks (ThreadPoolExecutor=4 workers); if any single fetch
-# hangs, the whole stage can take much longer. 30min is well above the typical
-# 60s observation but tolerates transient network blips.
+# Supplemental fetches have per-worker and overall deadlines; all picks remain.
 $stages += @{ N=6; Name='watchlist'; Cmd='render_full_watchlist.py'; To=30*60 }
 
 # Stage 7-17 REMOVED in D056-A (砍掉 D027/D029 advanced stages)
@@ -386,7 +385,8 @@ $stages += @{ N=17; Name='render_concepts'; Cmd="$renderConcepts"; To=30 }
 }
 
 # Leave five minutes for preflight/certification under the four-hour task cap.
-$stageBudgetSec = ($stages | Measure-Object -Property To -Sum).Sum
+$stageBudgetSec = 0
+foreach ($stage in $stages) { $stageBudgetSec += [int]$stage['To'] }
 if ($stageBudgetSec -gt 235*60) { throw "Stage budgets exceed Scheduler cap: $stageBudgetSec seconds" }
 
 # Run stages

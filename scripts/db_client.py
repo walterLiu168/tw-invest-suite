@@ -14,6 +14,7 @@ only when DB is stale or the dataset is missing.
 """
 import os
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Dict, List, Optional, Tuple
 
 import pymysql
@@ -51,6 +52,26 @@ def get_cursor():
 
 
 # ---------- date helpers ----------
+
+_REPORT_DATE = ContextVar("tw_report_date", default=None)
+
+
+def query_date():
+    return _REPORT_DATE.get() or os.environ.get("TW_DATA_DATE") or None
+
+
+@contextmanager
+def report_date(target_date):
+    """Bound all report history queries without leaking dates between threads."""
+    from datetime import date
+    target_date = str(target_date)[:10] if target_date else None
+    if target_date:
+        date.fromisoformat(target_date)
+    token = _REPORT_DATE.set(target_date)
+    try:
+        yield
+    finally:
+        _REPORT_DATE.reset(token)
 
 def latest_date(table: str = "daily_data2_full") -> str:
     """Return the most recent date in the given table (str YYYY-MM-DD)."""
@@ -97,7 +118,7 @@ def market_snapshot(target_date: Optional[str] = None) -> List[Dict]:
         return cur.fetchall()
 
 
-def ticker_history(ticker: str, days: int = 240) -> List[Dict]:
+def ticker_history(ticker: str, days: int = 240, as_of: Optional[str] = None) -> List[Dict]:
     """Last `days` trading days of OHLCV for one ticker (asc by date)."""
     sql = """
         SELECT Date, Open, High, Low, Close, Volume,
@@ -105,12 +126,13 @@ def ticker_history(ticker: str, days: int = 240) -> List[Dict]:
                MarginBalance, ShortBalance,
                sma_13, sma_27, sma_54, rsi_14, atr_14
         FROM daily_data2_full
-        WHERE Ticker = %s
+        WHERE Ticker = %s AND (%s IS NULL OR Date <= %s)
         ORDER BY Date DESC
         LIMIT %s
     """
     with get_cursor() as cur:
-        cur.execute(sql, (ticker, days))
+        cutoff = as_of or query_date()
+        cur.execute(sql, (ticker, cutoff, cutoff, days))
         rows = cur.fetchall()
     return list(reversed(rows))  # ascending by date
 
@@ -240,11 +262,13 @@ def recent_news(ticker: str, limit: int = 5) -> List[Dict]:
         SELECT id, title, source, published_at, sentiment_score, summary
         FROM stock_news
         WHERE related_tickers LIKE %s
+          AND (%s IS NULL OR published_at < DATE_ADD(%s, INTERVAL 1 DAY))
         ORDER BY published_at DESC
         LIMIT %s
     """
     with get_cursor() as cur:
-        cur.execute(sql, (f'%"{ticker}"%', limit))
+        cutoff = query_date()
+        cur.execute(sql, (f'%"{ticker}"%', cutoff, cutoff, limit))
         return cur.fetchall()
 
 
