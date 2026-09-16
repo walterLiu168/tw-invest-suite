@@ -13,9 +13,9 @@ Finish the authorized feature/code hardening, source pushes, Scheduler deploymen
 - Python314 primary / Python310 AI; native PowerShell 5.1 acceptance.
 - 136 primary tests and seven RSS tests passed. All 45 managed repo/runtime hashes match. Runtime backups are in primary `scripts/_debug/runtime_source_backup_*`.
 
-## Live default S4U acceptance — freeze managed source
+## Next default S4U acceptance — recheck live state
 
-Nightly `8b3c60f2d38b45919de84f1e5aeff0e9`, started 21:04:45, owner PID 32944 / creation `2026-09-16T21:04:44.449974`, full default flags. Data date 2026-09-16, screen run 17, 24 committed picks, frozen render universe 1974. Interactive monitoring now correctly recognizes the S4U owner through a bounded CIM fallback when OpenProcess is denied. Recheck live state before acting; PIDs and stages can change.
+Nightly `8b3c60f2d38b45919de84f1e5aeff0e9` was stopped at 21:17–21:18 before certification to fix the price panel's confirmed shares/lots unit error. Actual S4U wrapper detected owner exit and terminated the renderer/four workers with exit -2; independent CIM found no owned process remaining, without UAC. The attempt is failed/un-certified. The next default full run is pending final tests/source push. Data date remains 2026-09-16, screen run 17, 24 picks, render universe 1974. Recheck runtime pipeline state for the next UUID and freeze all managed source while that owner is live.
 
 Useful observation: Python314 `scripts/_debug/observe_acceptance.py`. It reads runtime pipeline state, UUID-matched heartbeats, source equality and the parent log. Do not restart just because observation timed out. Required maintenance/render/patterns/patterns_html/watchlist must pass; margin scan and supplemental deep dives remain optional/degraded. Full completion must write this UUID's valid `last_completed.json`, exact artifact hashes and 24-pick identity.
 
@@ -30,6 +30,7 @@ Earlier attempts are failed/un-certified: `83217e7ab18343adbe50968f625e251d` ren
 - Maintenance receipt explicitly records Sep16 requested / Sep15 source, 10232 rows, API errors=0. One official session lag is allowed and warned; older/future receipts fail certification.
 - The 21:00 RSS trigger failed; the 21:11:11 retry completed with result 0. Durable receipt at AI `.codex-work-state/rss_ingestion_latest.json`: 81 queries, fetched=1101, raw_inserted=16, derived_inserted=4, duplicates=193, projection_skipped=0, projection_missing_urls=3, errors=0. Full raw URLs remain preserved; nullable links are explicit. The first failure's exact cause was not captured, and a later read-only fetch succeeded.
 - Final Scheduler configuration snapshot: primary `scripts/_debug/scheduler_final_configuration.json`, enabled_count=23, configuration_issues=0. Health was rerun after RSS recovery; observe its terminal result rather than reusing the earlier failed result.
+- Health recheck at 21:13:13 returned 0. Fresh 1452 UI passed all 18 tabs and zero JavaScript errors. Its price panel then exposed raw shares mislabeled lots; fixed output shows shares plus precise lots, unavailable missing values and real zero volume. The static tab is renamed 收盤行情 in both modes. Eight report-identity tests passed; final full suite is running.
 
 ## Remaining gates
 

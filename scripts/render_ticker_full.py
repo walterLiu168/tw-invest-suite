@@ -130,23 +130,36 @@ def section_company(data: Dict) -> str:
 
 
 def section_price(data: Dict, db_latest: Dict) -> str:
-    """即時價格."""
+    """Dated closing snapshot; warehouse volume is shares."""
     if not db_latest:
         return "_無價格資料_"
-    close = float(db_latest.get("Close") or 0)
+    from math import isfinite
+    def number(value):
+        try:
+            parsed = float(value)
+            return parsed if isfinite(parsed) else None
+        except (TypeError, ValueError):
+            return None
+    def price(value):
+        parsed = number(value)
+        return f'{parsed:.2f}' if parsed is not None and parsed > 0 else '—'
+    close = number(db_latest.get("Close"))
     rows = db.ticker_history(data["ticker"], days=2)
     prev = rows[-2] if len(rows) >= 2 else {}
-    prev_close = float(prev.get("Close") or 0)
-    change = close - prev_close
-    pct = (change / prev_close * 100) if prev_close else 0
+    prev_close = number(prev.get("Close"))
+    change_text = '—'
+    if close is not None and close > 0 and prev_close is not None and prev_close > 0:
+        change = close - prev_close
+        change_text = f'{change:+.2f} ({change / prev_close * 100:+.2f}%)'
     md = "| 項目 | 數值 |\n|---|---|\n"
-    md += f"| 最新收盤 | {close:.2f} 元 |\n"
-    md += f"| 漲跌 | {change:+.2f} ({pct:+.2f}%) |\n"
-    md += f"| 開盤 | {db_latest.get('Open') or '—'} |\n"
-    md += f"| 最高 | {db_latest.get('High') or '—'} |\n"
-    md += f"| 最低 | {db_latest.get('Low') or '—'} |\n"
-    vol = int(db_latest.get('Volume') or 0)
-    md += f"| 成交量 | {vol:,} 張 ({vol/1000:,.0f}K 張) |\n"
+    md += f"| 最新收盤 | {price(db_latest.get('Close'))} 元 |\n"
+    md += f"| 漲跌 | {change_text} |\n"
+    md += f"| 開盤 | {price(db_latest.get('Open'))} |\n"
+    md += f"| 最高 | {price(db_latest.get('High'))} |\n"
+    md += f"| 最低 | {price(db_latest.get('Low'))} |\n"
+    vol = number(db_latest.get('Volume'))
+    volume_text = f'{vol:,.0f} 股 ({vol / 1000:,.3f} 張)' if vol is not None and vol >= 0 else '—'
+    md += f"| 成交量 | {volume_text} |\n"
     md += f"| 資料日期 | {db_latest.get('Date')} |\n"
     return md
 
@@ -1555,7 +1568,7 @@ def render_ticker_full(ticker: str, data: Dict, output_dir: str = r"C:\Groove-La
     news_title = "📰 新聞" + (" (FinMind)" if data.get("news") else " (DB)")
     sections = {
         "info":     ("🏢 公司基本資料", section_company(data)),
-        "price":    ("💰 即時價格", section_price(data, db_latest)),
+        "price":    ("💰 收盤行情", section_price(data, db_latest)),
         "tech":     ("📊 技術分析", section_technical(data, db_latest)),
         "val":      ("💎 估值 (雙源驗證)", section_valuation(data, history)),
         "fin":      ("📊 季報 (FinMind)", section_fundamentals(data)),
@@ -1895,7 +1908,7 @@ def render_ticker_tabbed(ticker: str, data: Dict, output_dir: str = r"C:\Groove-
     news_title = "📰 新聞" + (" (FinMind)" if data.get("news") else " (DB)")
     section_data = {
         "info":     ("🏢 公司基本資料", section_company(data)),
-        "price":    ("💰 即時價格", section_price(data, db_latest)),
+        "price":    ("💰 收盤行情", section_price(data, db_latest)),
         "tech":     ("📊 技術分析", section_technical(data, db_latest)),
         "val":      ("💎 估值 (雙源驗證)", section_valuation(data, history)),
         "fin":      ("📊 季報 (FinMind)", section_fundamentals(data)),

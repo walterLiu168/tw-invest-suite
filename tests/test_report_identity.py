@@ -22,6 +22,19 @@ def candidate(**values):
 
 
 class ReportIdentityTests(unittest.TestCase):
+    def test_closing_snapshot_uses_shares_and_preserves_unknown_or_zero(self):
+        with patch.object(db,'ticker_history',return_value=[{'Close':11},{'Close':10.85}]):
+            result = renderer.section_price({'ticker':'1452'},{'Close':10.85,'Volume':27876,'Date':'2026-09-16'})
+        self.assertIn('27,876 股 (27.876 張)',result)
+        self.assertNotIn('27,876 張',result)
+        self.assertIn('-0.15 (-1.36%)',result)
+        with patch.object(db,'ticker_history',return_value=[]):
+            missing = renderer.section_price({'ticker':'1452'},{'Close':10.85,'Volume':None})
+            zero = renderer.section_price({'ticker':'1452'},{'Close':10.85,'Volume':0})
+        self.assertIn('| 漲跌 | — |',missing)
+        self.assertIn('| 成交量 | — |',missing)
+        self.assertIn('0 股 (0.000 張)',zero)
+
     def test_missing_values_are_not_zero_and_volume_is_lots(self):
         prompt = ddp.render_prompt(candidate())
         self.assertIn("**Market Cap**: 未提供", prompt)

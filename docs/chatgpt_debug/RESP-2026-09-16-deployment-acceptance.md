@@ -95,3 +95,13 @@ The stage wrapper now monitors its exact parent creation identity and terminates
 - Interactive nightly-health now reports this S4U owner healthy within its stage budget. All 23 enabled analytical/data tasks meet S4U/wake/catch-up; configuration snapshot is under scripts/_debug/scheduler_final_configuration.json.
 - Normal 21:10 Weekly trigger completed with result 0. The 21:00 RSS trigger failed with an uncaptured cause; later read-only fetch succeeded. The 21:11:11 retry completed with result 0. New non-secret outcome receipt records 81 queries, fetched 1101, raw inserted 16, derived inserted 4, duplicates 193, skipped 0, missing projected links 3, errors 0. Receipt code is pushed as AI-Telegram b3df3a9; full source URLs remain in raw storage.
 - Concise takeover instructions and remaining publication gates are in HANDOFF-2026-09-16-D056-remaining.md. The final dual-site action UAC choice remains pending.
+
+## Closing snapshot correction and actual S4U orphan cleanup
+
+The fresh 1452 page passed all 18 tab switches with nonempty active panels and zero JavaScript errors. Inspection of its price panel nevertheless exposed a confirmed unit bug: warehouse Volume=27876 shares was displayed as 27876 lots. The closing snapshot now displays 27876 shares / 27.876 lots, preserves missing volume and unavailable prior-day change, and retains actual zero volume. Both render modes label this static dated tab closing行情 rather than immediate price. Eight report-identity tests passed.
+
+The in-progress attempt 8b3c60f2d38b45919de84f1e5aeff0e9 was intentionally stopped before certification to regenerate corrected content. This time the actual S4U wrapper detected its owner exit, killed renderer and four workers, and wrote terminal stop_reason=owner exited / exit_code=-2. Independent CIM found no owned parent/wrapper/renderer/worker remaining. No cleanup elevation was needed. The attempt is failed/un-certified; the next default full acceptance is pending.
+
+Updated-context health at 21:13:13 completed with result 0 after the successful RSS retry. Groove remains healthy.
+
+Final full suite after the closing correction passed 137 tests in 52.9 seconds. Actual regenerated 1452 DOM confirms 27876 shares / 27.876 lots and the closing行情 label. Its 390px viewport has page width 375px, 18 tabs and no page-level horizontal overflow; the temporary viewport was reset.
