@@ -971,12 +971,12 @@ def render_pick_header(c: ms.Candidate) -> str:
     horizon = c.horizon or "long"
     horizon_label = "長期" if horizon == "long" else "短中期"
     industry = c.industry or "—"
-    cap_yi = c.market_cap / 1e9 if c.market_cap else 0
+    cap_label = f"{c.market_cap / 1e8:,.1f} 億" if c.market_cap is not None else "未提供"
     return f"""
     <div class="pick-head {horizon}">
       <div>
         <div><span class="pick-ticker">{_esc(c.ticker)}</span> <span class="pick-name">{_esc(c.name)}</span> <span class="pick-horizon {horizon}">{horizon_label}</span></div>
-        <div class="muted" style="font-size:0.78rem;margin-top:3px">{_esc(industry)} · 市值 {cap_yi:,.0f} 億 · 成交量 {_fmt_int(c.volume/1000)}K 張</div>
+        <div class="muted" style="font-size:0.78rem;margin-top:3px">{_esc(industry)} · 市值 {cap_label} · 成交量 {c.volume/1000:,.1f} 張</div>
       </div>
       <div class="pick-price {pcls}">{_fmt_price(c.close)} <span class="muted" style="font-size:0.7rem">{_fmt_pct(change_pct/100)}</span></div>
     </div>
@@ -1245,18 +1245,21 @@ def render_zen_chart_section(ticker: str, c: ms.Candidate) -> str:
 
 
 def render_valuation_section(c: ms.Candidate) -> str:
-    """240d/120d/60d/20d excess return horizontal bar chart."""
+    """20d excess return and calendar-day price returns; missing bars stay absent."""
     items = [
-        {"label": "20d", "value": c.excess_return_20d or 0},
-        {"label": "60d", "value": c.excess_return_60d or 0},
-        {"label": "120d", "value": c.excess_return_120d or 0},
-        {"label": "240d", "value": c.excess_return_240d or 0},
+        {"label": "20d 超額", "value": c.excess_return_20d},
+        {"label": "60 曆日", "value": c.excess_return_60d},
+        {"label": "120 曆日", "value": c.excess_return_120d},
+        {"label": "240 曆日", "value": c.excess_return_240d},
     ]
-    chart = _svg_horizontal_bars(items, width=520, height=130,
-                                  title="超額報酬率 (扣大盤)", value_fmt="+.1%")
-    cap_yi = c.market_cap / 1e9 if c.market_cap else 0
+    missing = [item["label"] for item in items if item["value"] is None]
+    chart = _svg_horizontal_bars([item for item in items if item["value"] is not None], width=520, height=130,
+                                  title="報酬率（僅 20d 扣大盤）", value_fmt="+.1%")
+    if missing:
+        chart += '<div class="muted">未提供：' + _esc('、'.join(missing)) + '</div>'
+    cap_label = f"{c.market_cap / 1e8:,.1f} 億" if c.market_cap is not None else "未提供"
     summary = f"""
-- 市值: **{cap_yi:,.0f} 億** | 收盤: {c.close:.2f} | 成交量: {c.volume/1000:,.0f}K 張
+- 市值: **{cap_label}** | 收盤: {c.close:.2f} | 成交量: {c.volume/1000:,.1f} 張
 - **240d** 是長期動能指標，**60d** 是中期趨勢，**20d** 是短期動能
 """
     return chart + summary
@@ -1269,8 +1272,8 @@ def render_margin_chart_section(ticker: str, d: Dict) -> str:
         return render_margin_section(d)
     rows = rows[-30:]
     dates = [r.get("Date") for r in rows]
-    balances = [float(r.get("MarginBalance") or 0) / 1000.0 for r in rows]  # 張
-    shorts = [float(r.get("ShortBalance") or 0) / 1000.0 for r in rows]
+    balances = [float(r.get("MarginBalance") or 0) for r in rows]  # DB already stores lots
+    shorts = [float(r.get("ShortBalance") or 0) for r in rows]
 
     # Daily change
     changes = [None]

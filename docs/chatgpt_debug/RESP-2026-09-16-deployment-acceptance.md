@@ -20,6 +20,21 @@ Walter authorized necessary feature fixes, source pushes, publication and Schedu
 - Real nightly-health task last execution 2026-09-16 19:43:43, LastTaskResult=0. Expanded 22:30–02:00 triggers installed earlier.
 - Existing published ticker UI: all 18 tabs switch, no JavaScript errors. Fresh release UI still requires validation.
 
+## Additional semantic hardening
+
+- Fixed percentage/fraction mismatch: long_drawdown now requires ret_240d < -30%, rather than -0.3%. Current and historical classification reuse the same predicates and calendar-day horizons.
+- Missing moving averages cannot confirm up/down trends. The margin candidate's minimum volume is 100 lots (100000 stored shares).
+- Fixed forward-horizon off-by-one and excluded returns beyond the frozen data date. Real read-only 2330 verification: entry 2026-06-01, twentieth following observation 2026-06-30, return 2.3354564756%; a cutoff one observation earlier excludes the unfinished return.
+- Fixed watchlist market-cap divisor (1e8 per 億), volume labels, margin chart units and ticker margin-change units. Missing returns/backtest statistics are no longer fabricated as zero.
+- Corrected three-day foreign buying to require all three daily flows positive. The nonannualized mean/std ratio is labelled accurately rather than Sharpe.
+- Tabbed ticker history now provides 240 trading observations. Four Windows process workers retain the same output/failure contract and do not make parallel API requests.
+- Isolated worker acceptance: C:\Users\icemo\Projects\tw-worker-acceptance-e_33rkw1, four real cached tickers; serial 10.4s / parallel 4.7s, generated content equal after generation-time normalization.
+- 10 semantic/worker tests pass. Full suite after these additions is being rerun.
+
+## Scheduler configuration limitation
+
+The legitimate RunAs elevation attempt returned 操作被使用者取消. `register_verified_pipeline.ps1` has not run; health action, Weekly timing, UTF-8 actions, S4U, wake and retry changes remain pending. Do not claim they were applied or silently bypass elevation. Existing nightly-health trigger expansion remains installed.
+
 ## Explicitly stopped validation
 
 Run 1a159eaa1bf44ca78a28a7804b0d3aa8 was intentionally terminated to fix confirmed report-content defects. Owner 32296, wrapper 31560 and child 8356 are gone. It did not certify completion. Production HTML was partially overwritten and must be fully regenerated before publication.

@@ -1,5 +1,7 @@
 # Architecture — tw-invest-suite
 
+> Current operational contract: [pipeline-reference.md](pipeline-reference.md). The diagrams below describe the earlier pipeline. As of 2026-09-16 the default has six stages, 18 ticker tabs and four render processes; canonical Pages is https://walterliu168.github.io/tw-invest-suite/. Publication is a separately gated task.
+
 ## 系統總覽
 
 ```

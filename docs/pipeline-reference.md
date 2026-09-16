@@ -8,7 +8,7 @@ Updated: 2026-09-16. Runtime and repository copies of scheduled files must have 
 - Scheduler runtime: `C:\Users\icemo\.claude\skills\tw-invest-suite\scripts`
 - Render output: `C:\Groove-Lab\analyze`
 - Published files: a fresh staging directory, populated from the completion marker's exact artifact paths and SHA-256 values.
-- Daily report, completion, watchdog, publication and postflight helpers are ordinary versioned `scripts/*.py` files. The independent health-check Scheduler action still points to its legacy runtime `_debug/check_openalice_health.py`; do not confuse that diagnostic with daily completion evidence.
+- Daily report, completion, watchdog, publication and postflight helpers are ordinary versioned `scripts/*.py` files. The health-check replacement is also versioned; its action update is prepared in `register_verified_pipeline.ps1` and awaits Windows elevation. Diagnostics do not certify completion.
 
 ## Schedule and dependency
 
@@ -22,7 +22,7 @@ Updated: 2026-09-16. Runtime and repository copies of scheduled files must have 
 | 23:25 | company-refresh | Existing company metadata refresh |
 | 23:30 | sync-legacy | Existing legacy sync |
 | 23:55 | marker-watchdog | Check current completion; report a live process as pending; NEVER create a success marker from picks |
-| 02:30 / 04:00 / 06:00 | nightly-health | Check exact owner creation identity, stage heartbeat deadlines and between-stage gaps; guarded recovery kills the owner tree, never auto-publishes |
+| 22:30–02:00 every 30 min; 02:30 / 04:00 / 06:00 | nightly-health | Check exact owner creation identity, stage heartbeat deadlines and between-stage gaps; guarded recovery kills the owner tree, never auto-publishes |
 | 00:05 | postflight | Local/pre-publication checks and dashboard; remote verification is not claimed yet |
 | 00:30 | publish | Wait up to 130 minutes for daily-report, verify marker, prepare immutable site, publish, verify remote hashes, run postflight, publish final dashboard |
 
@@ -63,7 +63,7 @@ Certification is terminal. `fail_run` cannot change the same certified attempt f
 
 `run_stage.py` writes a heartbeat every 15 seconds and records stage start, deadline and completion. Both the wrapper and child streams go directly to files. The watchdog permits valid stages beyond 90 minutes total, detects a five-minute gap after a completed stage, and never kills a run merely because an old log is quiet. Process creation identity prevents acting on a reused owner PID.
 
-`nightly_health.py` is versioned under scripts; the scheduled wrapper no longer depends on an ignored `_debug` helper. `register_nightly_health_cron.ps1` also prepares a 22:30-02:00 check every 30 minutes, preserving existing task settings when updating. This trigger expansion has not been applied in this hardening pass.
+`nightly_health.py` is versioned under scripts; the scheduled wrapper no longer depends on an ignored `_debug` helper. The 22:30–02:00 trigger expansion was applied on 2026-09-16; the actual 19:43:43 task execution returned zero. Further wake/retry/S4U settings are prepared, but the elevation attempt was cancelled and those settings remain unapplied.
 
 ## Publication
 
@@ -71,9 +71,18 @@ Certification is terminal. `fail_run` cannot change the same certified attempt f
 
 The publisher overlays certified artifacts onto a fresh staging directory, verifies every staged artifact hash, and uses a fast-forward Git push to `gh-pages`. Its local Git configuration and `info/attributes` preserve the certified bytes, including CRLF, regardless of Windows autocrlf defaults. No force push is needed. It verifies the remote manifest, watchlist, patterns, JSON and all selected ticker pages by byte hashes. Only then is the publication receipt marked verified.
 
-The same job runs final postflight and publishes the morning dashboard in a second bounded status commit. Dashboard bytes are checked remotely too. The status report is not part of the immutable analytical-artifact manifest, avoiding a self-referential hash.
+The same job runs final postflight and publishes the morning dashboard and daily summary in a second bounded status commit. Both reports are checked remotely even on an identical-content retry. Receipts retain the analytical and final status commit identities. The status reports are not part of the immutable analytical-artifact manifest, avoiding self-referential hashes.
 
-Source commits stay local until Walter approves `git push origin main`. Do not run an ad-hoc `--publish` as part of a local repair without publication authorization.
+Walter authorized source pushes, publication and necessary Scheduler updates on 2026-09-16. Primary main was pushed through 44a153f. Current deployment evidence and remaining gates are recorded in `docs/chatgpt_debug/RESP-2026-09-16-deployment-acceptance.md`.
+
+## Report data semantics
+
+- Rendering uses four independent processes, preserving per-ticker failures and the same receipt contract. DB/cache assembly remains serial; this does not parallelize FinMind calls.
+- Ticker history uses the frozen upper date and displays the actual OHLCV data date; tabbed backtests receive up to 240 trading rows.
+- Volume and institutional flows are stored in shares and displayed in lots (1000 shares). Margin/short balances are already stored in lots and are not divided again.
+- Screener/pattern 60/120/240/500-day returns use calendar-day cutoffs; pattern 20-day returns use trading observations. The watchlist labels its 20-day excess return separately from raw calendar-day price returns.
+- Historical pattern signals reuse the current predicate and return horizons. Forward 20/60-day returns require the full holding period within the frozen date. Pattern backtest sampling covers up to 240 trading sessions; its current-cohort/200-ticker scope is explicit. Historical valuation and margin-cost backtests remain unavailable where point-in-time inputs are absent.
+- Missing valuation/return/backtest inputs display as unavailable, preserving real zero returns. Sample win rates alone do not prove statistical significance.
 
 ## Reports and evidence
 

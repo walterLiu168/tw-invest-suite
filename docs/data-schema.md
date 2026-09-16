@@ -18,7 +18,7 @@ host=localhost user=root password=1234 database=tw_elec
 | High | DECIMAL(10,2) | 最高 |
 | Low | DECIMAL(10,2) | 最低 |
 | Close | DECIMAL(10,2) | 收盤 |
-| Volume | BIGINT | 成交量（**張**） |
+| Volume | BIGINT | canonical FinMind 成交股數（**股**；畫面除 1000 顯示張） |
 | ForeignNet | BIGINT | 外資買賣超（**股**，除 1000 = 張） |
 | InvestmentNet | BIGINT | 投信買賣超（股） |
 | DealerNet | BIGINT | 自營買賣超（股） |

@@ -1,5 +1,7 @@
 # Schedule — 每日 22:25 自動排程
 
+> 現行排程與驗收請見 [pipeline-reference.md](pipeline-reference.md) 及 [deployment acceptance](chatgpt_debug/RESP-2026-09-16-deployment-acceptance.md)。下方為舊安裝範例，不應直接重新註冊；現行 daily-report／publish 分開執行。既有排程的設定更新使用 `scripts/register_verified_pipeline.ps1`，目前尚待 Windows elevation。
+
 ## Windows Task Scheduler 設定
 
 任務名稱：`tw-invest-suite-daily`

@@ -20,6 +20,7 @@ import os
 import sys
 import time
 from datetime import datetime, timedelta
+from bisect import bisect_right
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -73,7 +74,7 @@ PATTERNS = {
     "long_drawdown": {
         "name_zh": "💀 長空腰斬",
         "color": "green",
-        "desc": "240 日腰斬，長期弱勢",
+        "desc": "240 曆日股價報酬低於 −30%，長期弱勢",
     },
     "margin_distress_rebound": {
         "name_zh": "🎯 融資反彈候選",
@@ -125,15 +126,15 @@ def _classify_one(snap: Dict, rets: Dict, yf: Dict, avg_cost: float = 0) -> List
         patterns.append("hot_breakout")
 
     # 短多: 20 日動能偏多 + 技術面多頭
-    if r20 > 0 and close > sma13 and rsi >= 45:
+    if r20 > 0 and sma13 > 0 and close > sma13 and rsi >= 45:
         patterns.append("short_uptrend")
 
     # 中多: 60 日均線多頭 + 動能
-    if r60 > 0 and close > sma27:
+    if r60 > 0 and sma27 > 0 and close > sma27:
         patterns.append("mid_uptrend")
 
     # 長多: 240 日大漲 + 站上均線
-    if r240 > 0 and close > sma54:
+    if r240 > 0 and sma54 > 0 and close > sma54:
         patterns.append("long_uptrend")
 
     # 價值低估: 低 P/E + 低 P/B (yfinance 資料)
@@ -141,20 +142,20 @@ def _classify_one(snap: Dict, rets: Dict, yf: Dict, avg_cost: float = 0) -> List
         patterns.append("value_undervalued")
 
     # 短空: 20 日動能偏空 + 技術面空頭
-    if r20 < 0 and close < sma13 and rsi <= 55:
+    if r20 < 0 and sma13 > 0 and close < sma13 and rsi <= 55:
         patterns.append("short_downtrend")
 
     # 中空: 60 日均線空頭
-    if r60 < 0 and close < sma27:
+    if r60 < 0 and sma27 > 0 and close < sma27:
         patterns.append("mid_downtrend")
 
     # 長空腰斬: 240 日腰斬
-    if r240 < -0.30 and close < sma54:
+    if r240 < -30 and sma54 > 0 and close < sma54:
         patterns.append("long_drawdown")
 
     # 融資反彈候選: 240d 平均維持率 < 133% + 融資餘額 >= 5000 張
     # 排除：close < 5（全額交割股）、volume 太低（沒量）、drop > 80%（可能下市）
-    if avg_cost > 0 and margin >= 5000 and close >= 5 and volume >= 100:
+    if avg_cost > 0 and margin >= 5000 and close >= 5 and volume >= 100_000:
         maint_avg = close / avg_cost * 100
         if maint_avg < 133:
             # 排除跌幅太深的（可能下市或 corporate event）
@@ -168,16 +169,16 @@ def _classify_one(snap: Dict, rets: Dict, yf: Dict, avg_cost: float = 0) -> List
 
 def get_all_snapshots() -> Dict[str, Dict]:
     """Get latest snapshot for all tickers (date 2026-08-13)."""
-    latest = db.latest_date("daily_data2_full")
+    latest = db.query_date() or db.latest_date("daily_data2_full")
     rows = db.market_snapshot(latest)
     return {r["Ticker"]: r for r in rows if r.get("Ticker")}
 
 
 def get_all_long_term_returns(tickers: List[str]) -> Dict[str, Dict]:
     """Get ret_60d/120d/240d/500d + ret_20d for all tickers."""
-    out = db.long_term_returns_batch(tickers, db.latest_date("daily_data2_full"))
+    latest = db.query_date() or db.latest_date("daily_data2_full")
+    out = db.long_term_returns_batch(tickers, latest)
     # Add ret_20d via direct SQL
-    latest = db.latest_date("daily_data2_full")
     with db.get_conn() as conn:
         cur = conn.cursor(pymysql.cursors.DictCursor)
         placeholders = ",".join(["%s"] * len(tickers))
@@ -238,7 +239,7 @@ def get_avg_costs_120d(tickers: List[str]) -> Dict[str, float]:
     """
     if not tickers:
         return {}
-    latest = db.latest_date("daily_data2_full")
+    latest = db.query_date() or db.latest_date("daily_data2_full")
     with db.get_conn() as conn:
         cur = conn.cursor(pymysql.cursors.DictCursor)
         placeholders = ",".join(["%s"] * len(tickers))
@@ -247,8 +248,9 @@ def get_avg_costs_120d(tickers: List[str]) -> Dict[str, float]:
             FROM daily_data2_full
             WHERE Ticker IN ({placeholders})
               AND Date >= %s - INTERVAL 120 DAY
+              AND Date <= %s
             GROUP BY Ticker
-        """, tuple(tickers) + (latest,))
+        """, tuple(tickers) + (latest, latest))
         out = {}
         for r in cur.fetchall():
             try:
@@ -308,10 +310,11 @@ def get_20d_returns(ticker: str, dates: List[str]) -> Dict[str, float]:
             SELECT t1.Date AS d1, t1.Close AS c1,
                    (SELECT Close FROM daily_data2_full t2
                     WHERE t2.Ticker = t1.Ticker AND t2.Date > t1.Date
-                    ORDER BY t2.Date ASC LIMIT 1 OFFSET 20) AS c20
+                      AND (%s IS NULL OR t2.Date <= %s)
+                    ORDER BY t2.Date ASC LIMIT 1 OFFSET 19) AS c20
             FROM daily_data2_full t1
             WHERE t1.Ticker = %s AND t1.Date IN ({placeholders})
-        """, [ticker] + dates)
+        """, [db.query_date(), db.query_date(), ticker] + dates)
         out = {}
         for r in cur.fetchall():
             if r["c1"] and r["c20"]:
@@ -334,10 +337,11 @@ def get_60d_returns(ticker: str, dates: List[str]) -> Dict[str, float]:
             SELECT t1.Date AS d1, t1.Close AS c1,
                    (SELECT Close FROM daily_data2_full t2
                     WHERE t2.Ticker = t1.Ticker AND t2.Date > t1.Date
-                    ORDER BY t2.Date ASC LIMIT 1 OFFSET 60) AS c60
+                      AND (%s IS NULL OR t2.Date <= %s)
+                    ORDER BY t2.Date ASC LIMIT 1 OFFSET 59) AS c60
             FROM daily_data2_full t1
             WHERE t1.Ticker = %s AND t1.Date IN ({placeholders})
-        """, [ticker] + dates)
+        """, [db.query_date(), db.query_date(), ticker] + dates)
         out = {}
         for r in cur.fetchall():
             if r["c1"] and r["c60"]:
@@ -358,6 +362,8 @@ def backtest_pattern(pkey: str, classifications: Dict[str, List[str]],
     sample_every: sample every Nth trading day to keep query small.
     """
     tickers = [t for t, ps in classifications.items() if pkey in ps]
+    if pkey in {"value_undervalued", "margin_distress_rebound"}:
+        return {"count": 0, "unavailable_reason": "缺少歷史時點的估值／融資成本資料，未計算此型態回測"}
     if not tickers:
         return {"count": 0}
 
@@ -385,8 +391,8 @@ def backtest_pattern(pkey: str, classifications: Dict[str, List[str]],
         # Re-evaluate pattern at each sample date (using historical data)
         try:
             ticker_dates_data = get_pattern_at_dates(t, pkey, sample_dates)
-        except Exception:
-            continue
+        except Exception as error:
+            raise RuntimeError(f"historical pattern query failed: {t}") from error
         if not ticker_dates_data:
             continue
         matched_dates = [d for d, matched in ticker_dates_data.items() if matched]
@@ -417,6 +423,7 @@ def backtest_pattern(pkey: str, classifications: Dict[str, List[str]],
         "tickers_used": min(len(tickers), 200),
         "tickers_total": len(tickers),
         "sample_dates": len(sample_dates),
+        "scope": "目前符合型態股票的歷史樣本，最多 200 檔；並非全市場策略績效",
     }
 
 
@@ -428,74 +435,35 @@ def get_pattern_at_dates(ticker: str, pkey: str, dates: List[str]) -> Dict[str, 
         return {}
     # Get historical data for this ticker up to max date
     max_date = max(dates)
-    rows = db.ticker_history(ticker, days=300)  # last 300 days
+    rows = db.ticker_history(ticker, days=600, as_of=max_date)
     if not rows:
         return {}
-    # Build lookup: date -> (close, sma13, sma27, sma54, rsi, vol, fnet, ret_60d)
-    by_date = {}
-    for i, r in enumerate(rows):
-        d = str(r.get("Date"))[:10]
-        if d > max_date:
-            break
-        by_date[d] = r
-    # Build sorted dates
-    sorted_dates = sorted(by_date.keys())
-    # Compute ret_20d / ret_60d / ret_240d on the fly
-    out: Dict[str, bool] = {}
+    rows = [r for r in rows if str(r.get("Date"))[:10] <= max_date]
+    by_date = {str(r.get("Date"))[:10]: i for i, r in enumerate(rows)}
+    sorted_dates = [str(r.get("Date"))[:10] for r in rows]
+    out = {}
     for target in dates:
         if target not in by_date:
             continue
-        # Find index
-        if target not in sorted_dates:
-            continue
-        idx = sorted_dates.index(target)
-        if idx < 60:  # need at least 60d history
-            continue
-        cur = by_date[target]
+        idx = by_date[target]
+        cur = rows[idx]
         close = float(cur.get("Close") or 0)
-        sma13 = float(cur.get("sma_13") or 0)
-        sma27 = float(cur.get("sma_27") or 0)
-        sma54 = float(cur.get("sma_54") or 0)
-        rsi = float(cur.get("rsi_14") or 0)
-        fnet = int(cur.get("ForeignNet") or 0)
-        if not close:
+        if close <= 0:
             continue
-        # Compute returns
-        d20 = sorted_dates[max(0, idx-20)]
-        d60 = sorted_dates[max(0, idx-60)]
-        d240 = sorted_dates[max(0, idx-240)]
-        c20 = float(by_date[d20].get("Close") or 0)
-        c60 = float(by_date[d60].get("Close") or 0)
-        c240 = float(by_date[d240].get("Close") or 0)
-        r20 = (close / c20 - 1) * 100 if c20 else 0
-        r60 = (close / c60 - 1) * 100 if c60 else 0
-        r240 = (close / c240 - 1) * 100 if c240 else 0
-
-        # Check pattern (loose conditions matching classify_one)
-        matched = False
-        if pkey == "hot_breakout":
-            if r20 > 5 and rsi >= 55 and fnet > 0:
-                matched = True
-        elif pkey == "short_uptrend":
-            if r20 > 0 and close > sma13 and rsi >= 45:
-                matched = True
-        elif pkey == "mid_uptrend":
-            if r60 > 0 and close > sma27:
-                matched = True
-        elif pkey == "long_uptrend":
-            if r240 > 0 and close > sma54:
-                matched = True
-        elif pkey == "short_downtrend":
-            if r20 < 0 and close < sma13 and rsi <= 55:
-                matched = True
-        elif pkey == "mid_downtrend":
-            if r60 < 0 and close < sma27:
-                matched = True
-        elif pkey == "long_drawdown":
-            if r240 < -0.30 and close < sma54:
-                matched = True
-        # value_undervalued needs yfinance data (not in DB)
-        out[target] = matched
+        returns = {}
+        if idx >= 20:
+            prior = float(rows[idx - 20].get("Close") or 0)
+            if prior > 0:
+                returns["ret_20d"] = close / prior - 1
+        # Match current classification: 60/240 are calendar-day returns.
+        for days in (60, 240):
+            cutoff = (datetime.fromisoformat(target) - timedelta(days=days)).strftime("%Y-%m-%d")
+            prior_idx = bisect_right(sorted_dates, cutoff, 0, idx) - 1
+            if prior_idx >= 0:
+                prior = float(rows[prior_idx].get("Close") or 0)
+                if prior > 0:
+                    returns[f"ret_{days}d"] = close / prior - 1
+        out[target] = pkey in _classify_one(cur, returns, {})
     return out
 
 
@@ -534,9 +502,14 @@ def main():
         print(f"    {pkey}: {st['count']} stocks — {st['name_zh']}")
 
     # Backtest
-    print(f"\n  Backtest (last 240 days, sample every 5 days)...")
-    end_date = db.latest_date("daily_data2_full")
-    start_date = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=240)).strftime("%Y-%m-%d")
+    print(f"\n  Backtest (last 240 trading days, sample every 5 days)...")
+    end_date = db.query_date() or db.latest_date("daily_data2_full")
+    with db.get_cursor() as cur:
+        cur.execute("SELECT DISTINCT Date FROM daily_data2_full WHERE Date <= %s ORDER BY Date DESC LIMIT 240", (end_date,))
+        sessions = cur.fetchall()
+    if not sessions:
+        raise ValueError("no historical sessions for pattern backtest")
+    start_date = str(sessions[-1]["Date"])
     backtest = {}
     for pkey in PATTERNS.keys():
         if pkey == "value_undervalued":
@@ -583,6 +556,9 @@ def main():
         "as_of_date": end_date,
         "as_of_time": datetime.now().isoformat(timespec="seconds"),
         "total_tickers": len(snaps),
+        "backtest_start_date": start_date,
+        "backtest_session_count": len(sessions),
+        "volume_unit": "shares",
         "patterns": {pkey: {
             "key": pkey,
             "name_zh": PATTERNS[pkey]["name_zh"],

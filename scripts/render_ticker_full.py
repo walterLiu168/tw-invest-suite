@@ -664,8 +664,8 @@ def section_margin(ticker: str, db_latest: Dict) -> str:
     rows = rows[-30:] if rows else []
     mb_trend = [int(r.get("MarginBalance") or 0) for r in rows]
     ms_trend = [int(r.get("ShortBalance") or 0) for r in rows]
-    mb_change = (mb_trend[-1] - mb_trend[0]) / 1000 if len(mb_trend) >= 2 else 0
-    ms_change = (ms_trend[-1] - ms_trend[0]) / 1000 if len(ms_trend) >= 2 else 0
+    mb_change = (mb_trend[-1] - mb_trend[0]) if len(mb_trend) >= 2 else 0
+    ms_change = (ms_trend[-1] - ms_trend[0]) if len(ms_trend) >= 2 else 0
     md = "| 項目 | 數值 | 30 日變化 |\n|---|---|---|\n"
     md += f"| 融資餘額 | **{mb:,} 張** | {mb_change:+,.0f} 張 |\n"
     md += f"| 融券餘額 | **{ms:,} 張** | {ms_change:+,.0f} 張 |\n"
@@ -1021,9 +1021,12 @@ def section_backtest(data: Dict, db_latest: Dict, history: List[Dict]) -> str:
         rows = []
         for r in history:
             try:
+                close = float(r.get("Close") or 0)
+                if close <= 0:
+                    continue
                 rows.append({
                     "date": r.get("Date"),
-                    "close": float(r.get("Close") or 0),
+                    "close": close,
                     "foreign": int(r.get("ForeignNet") or 0),
                     "rsi": float(r.get("rsi_14") or 50),
                     "sma27": float(r.get("sma_27") or 0),
@@ -1072,7 +1075,7 @@ def section_backtest(data: Dict, db_latest: Dict, history: List[Dict]) -> str:
         # Strategy 3: Foreign net 3-day positive
         def s_fgn(i, rs):
             if i < 3: return False
-            return sum(rs[j]["foreign"] for j in range(i-2, i+1)) > 0
+            return all(rs[j]["foreign"] > 0 for j in range(i-2, i+1))
 
         strategies = [
             ("MA 趨勢 (close > MA27)", s_ma),
@@ -1082,7 +1085,7 @@ def section_backtest(data: Dict, db_latest: Dict, history: List[Dict]) -> str:
 
         md = f"### Backtest 多策略回測 (過去 {len(rows)} 日)\n\n"
         md += f"_回測期間_: {rows[0]['date']} ~ {rows[-1]['date']}\n\n"
-        md += "| 策略 | 交易次數 | 勝率 | 平均報酬 | 最大獲利 | 最大虧損 | Sharpe |\n"
+        md += "| 策略 | 交易次數 | 勝率 | 平均報酬 | 最高報酬 | 最低報酬 | 均值／標準差 |\n"
         md += "|---|---|---|---|---|---|---|\n"
         all_valid = False
         for name, fn in strategies:
@@ -1840,7 +1843,7 @@ def render_ticker_tabbed(ticker: str, data: Dict, output_dir: str = r"C:\Groove-
     """Tabbed UI version — clickable skill tabs + charts in 技術 tab."""
     ticker = ticker.strip()
     db_latest = _fetch_db_technicals(ticker)
-    history = _fetch_history(ticker, days=120)
+    history = _fetch_history(ticker, days=240)
 
     yf = data.get("yfinance", {}) or {}
     name = data.get("company_name") or yf.get("longName") or ticker

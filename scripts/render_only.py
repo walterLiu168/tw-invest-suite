@@ -9,7 +9,7 @@ import sys
 import os
 import html
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -21,6 +21,27 @@ import pipeline_state as ps
 
 
 HTML_DIR = Path(r"C:\Groove-Lab\analyze")
+
+
+def _render_one(t, data, output_dir, data_date, data_issue=False, numeric_warning=None):
+    try:
+        if data.get("_err"):
+            raise ValueError(data["_err"])
+        rtf.render_ticker_tabbed(t, data, output_dir=str(Path(output_dir)))
+        notices = []
+        if data_issue:
+            notices.append(f'資料不完整：本次資料日 {data_date}，此股票最後報價日 {html.escape(str(data.get("latest_date") or "無"))}。可能停牌、下市或來源缺漏，請勿視為當日可交易報價。')
+        if numeric_warning:
+            notices.append('估值／基本面來源含無效數值，已標為缺漏：' + html.escape(', '.join(numeric_warning)))
+        if notices:
+            path = Path(output_dir) / f"{t}.html"
+            notice = '<aside role="status" style="padding:12px;background:#fff3cd;color:#533f03">' + '<br>'.join(notices) + '</aside>'
+            body = path.read_text(encoding="utf-8")
+            path.write_text(body.replace("<body>", "<body>" + notice, 1), encoding="utf-8")
+        return t, True
+    except Exception as e:
+        return t, str(e)
+
 
 
 def get_all_tickers():
@@ -95,27 +116,9 @@ def main():
     numeric_issues = {t: d.get("_meta", {}).get("numeric_warnings") for t, d in all_data.items()
                       if d.get("_meta", {}).get("numeric_warnings")}
 
-    def _render_one(t):
-        try:
-            if all_data[t].get("_err"):
-                raise ValueError(all_data[t]["_err"])
-            rtf.render_ticker_tabbed(t, all_data[t], output_dir=str(HTML_DIR))
-            notices = []
-            if t in issue_tickers:
-                notices.append(f'資料不完整：本次資料日 {data_date}，此股票最後報價日 {html.escape(str(all_data[t].get("latest_date") or "無"))}。可能停牌、下市或來源缺漏，請勿視為當日可交易報價。')
-            if t in numeric_issues:
-                notices.append('估值／基本面來源含無效數值，已標為缺漏：' + html.escape(', '.join(numeric_issues[t])))
-            if notices:
-                path = HTML_DIR / f"{t}.html"
-                notice = '<aside role="status" style="padding:12px;background:#fff3cd;color:#533f03">' + '<br>'.join(notices) + '</aside>'
-                body = path.read_text(encoding="utf-8")
-                path.write_text(body.replace("<body>", "<body>" + notice, 1), encoding="utf-8")
-            return t, True
-        except Exception as e:
-            return t, str(e)
-
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        futs = {ex.submit(_render_one, t): t for t in all_data}
+    with ProcessPoolExecutor(max_workers=4) as ex:
+        futs = {ex.submit(_render_one, t, data, str(HTML_DIR), data_date,
+                          t in issue_tickers, numeric_issues.get(t)): t for t, data in all_data.items()}
         for fut in as_completed(futs):
             t, result = fut.result()
             if result is True:

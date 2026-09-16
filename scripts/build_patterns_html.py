@@ -69,20 +69,28 @@ def _esc(s) -> str:
 
 def _verdict_for_pattern(pkey: str, win_rate: float) -> tuple:
     """Return (verdict_text, css_class) based on win rate."""
+    if win_rate is None:
+        return ("歷史樣本不足，未計算勝率", "neutral")
     if win_rate >= 60:
-        return (f"✅ 歷史勝率 {win_rate}%，這個型態在台股有統計優勢", "win")
+        return (f"歷史樣本勝率 {win_rate}%；尚未檢驗統計顯著性", "win")
     elif win_rate >= 50:
-        return (f"🟡 歷史勝率 {win_rate}%，這個型態略微正向，沒有顯著優勢", "neutral")
+        return (f"歷史樣本勝率 {win_rate}%；尚未檢驗統計顯著性", "neutral")
     else:
-        return (f"⚠️ 歷史勝率 {win_rate}%，這個型態在台股表現較弱", "lose")
+        return (f"歷史樣本勝率 {win_rate}%；尚未檢驗統計顯著性", "lose")
 
 
 def _build_pattern_section(pkey: str, pinfo: dict, top_stocks: list, backtest: dict) -> str:
     bt = backtest.get(pkey, {})
     bt20 = bt.get("count_20d", {})
     bt60 = bt.get("count_60d", {})
-    win_rate = bt20.get("win_rate", 0)
-    avg20 = bt20.get("avg", 0)
+    win_rate = bt20.get("win_rate") if bt20.get("count", 0) else None
+    avg20 = bt20.get("avg") if bt20.get("count", 0) else None
+    win_label = f"{win_rate}%" if win_rate is not None else "—"
+    avg_label = f"{avg20:+.2f}%" if avg20 is not None else "—"
+    scope = bt.get("unavailable_reason") or bt.get("scope") or "無足夠歷史樣本"
+    def statistic(stats, key, pattern="+.2f"):
+        value = stats.get(key) if stats.get("count", 0) else None
+        return format(value, pattern) + "%" if value is not None else "—"
     verdict_text, verdict_cls = _verdict_for_pattern(pkey, win_rate)
 
     # Stock rows
@@ -112,7 +120,7 @@ def _build_pattern_section(pkey: str, pinfo: dict, top_stocks: list, backtest: d
           <td class="num {cls60}">{ret_60d:+.1f}%</td>
           <td class="num {cls240}">{ret_240d:+.1f}%</td>
           <td class="num">{s.get('rsi', 0):.0f}</td>
-          <td class="num">{s.get('volume', 0):,}</td>
+          <td class="num">{s.get('volume', 0)/1000:,.1f}</td>
           <td class="num {cls_fnet}">{fnet_s}</td>
           <td class="num">{roe_s}</td>
           <td class="num">{pe_s}</td>
@@ -124,22 +132,22 @@ def _build_pattern_section(pkey: str, pinfo: dict, top_stocks: list, backtest: d
     <div class="backtest-grid">
       <div class="bt-card">
         <div class="label">20 日 forward 勝率</div>
-        <div class="val {('win-high' if win_rate >= 55 else 'win-low' if win_rate < 45 else '')}">{win_rate}%</div>
+        <div class="val {('win-high' if win_rate is not None and win_rate >= 55 else 'win-low' if win_rate is not None and win_rate < 45 else '')}">{win_label}</div>
         <div class="sub">{bt20.get('count', 0)} trades (240 日回測)</div>
       </div>
       <div class="bt-card">
         <div class="label">20 日平均報酬</div>
-        <div class="val {('win-high' if avg20 > 0 else 'win-low')}">{avg20:+.2f}%</div>
-        <div class="sub">中位數 {bt20.get('median', 0):+.2f}%</div>
+        <div class="val {('win-high' if avg20 is not None and avg20 > 0 else 'win-low' if avg20 is not None else '')}">{avg_label}</div>
+        <div class="sub">中位數 {statistic(bt20, 'median')}</div>
       </div>
       <div class="bt-card">
         <div class="label">20 日最佳/最差</div>
-        <div class="val win-high">{bt20.get('max', 0):+.1f}%</div>
-        <div class="sub win-low">最差 {bt20.get('min', 0):+.1f}%</div>
+        <div class="val win-high">{statistic(bt20, 'max', '+.1f')}</div>
+        <div class="sub win-low">最差 {statistic(bt20, 'min', '+.1f')}</div>
       </div>
       <div class="bt-card">
         <div class="label">60 日 forward 勝率</div>
-        <div class="val">{bt60.get('win_rate', 0)}%</div>
+        <div class="val">{statistic(bt60, 'win_rate', '.1f')}</div>
         <div class="sub">{bt60.get('count', 0)} trades</div>
       </div>
     </div>"""
@@ -165,6 +173,7 @@ def _build_pattern_section(pkey: str, pinfo: dict, top_stocks: list, backtest: d
       </div>
       {bt_cards}
       <div class="verdict {verdict_cls}">{verdict_text}</div>
+      <div class="muted">{_esc(scope)}</div>
       {table}
     </div>"""
 
