@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 # Clear any cached import of publish_manifest from a different working dir
 for mod in list(sys.modules.keys()):
-    if "publish_manifest" in mod:
+    if mod == "publish_manifest":
         del sys.modules[mod]
 
 import publish_manifest as pm  # noqa: E402

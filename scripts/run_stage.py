@@ -1,28 +1,9 @@
 #!/usr/bin/env python3
-"""D056 P1+ fix: Reliable stage executor for PowerShell.
+"""File-based stage logs, a reliable exit sidecar and periodic deadline evidence.
 
-PowerShell's Start-Process ExitCode returns null when stdout/stderr are
-redirected to files (or even via pipes). This wrapper uses Python's
-subprocess.run which captures exit code reliably, then exits with that
-code. PowerShell reads the wrapper's exit code as if it were the inner
-script's exit code.
-
-Usage (from PowerShell):
-    $p = Start-Process python -ArgumentList "run_stage.py", "--label", "stage5",
-                                                       "--out", "stdout.log",
-                                                       "--err", "stderr.log",
-                                                       "--timeout", "1800",
-                                                       "script_path.py", "arg1", "arg2"
-                              -RedirectStandardOutput "wrapper_stdout.log" `
-                              -RedirectStandardError "wrapper_stderr.log" `
-                              -NoNewWindow -PassThru
-    Wait-Process $p -Timeout 1800 -ErrorAction SilentlyContinue
-    if (-not $p.HasExited) { $p.Kill($true) }
-    $p.Refresh()
-    $exitCode = $p.ExitCode  # NOW RELIABLE
-
-The wrapper writes labels to its stderr (with [STDOUT]/[STDERR] tags)
-so the user can see which output is which.
+The PowerShell caller must redirect this wrapper's own stdout/stderr to files
+too. Read --exit-code-file after the wrapper exits; do not use Process.ExitCode
+or Process.Kill(bool) under PowerShell 5.1. Timeout kills the entire child tree.
 """
 import argparse
 import os
@@ -30,6 +11,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from pipeline_state import atomic_json
 
 
 def main():
@@ -50,6 +32,14 @@ def main():
 
     cmd = [sys.executable, args.script] + args.args
     workdir = args.workdir or os.getcwd()
+    heartbeat_path = Path(args.exit_code_file).with_suffix(".heartbeat.json")
+    started = time.time()
+    heartbeat = {"label": args.label, "wrapper_pid": os.getpid(), "started_epoch": started,
+                 "timeout_sec": args.timeout, "state": "running"}
+
+    def beat(state):
+        heartbeat.update(state=state, updated_epoch=time.time())
+        atomic_json(heartbeat_path, heartbeat)
 
     print(f"[wrapper:{args.label}] start timeout={args.timeout}s workdir={workdir}", file=sys.stderr)
     print(f"[wrapper:{args.label}] cmd={cmd}", file=sys.stderr)
@@ -63,8 +53,21 @@ def main():
                 cwd=workdir,
                 env=os.environ.copy(),
             )
+            heartbeat["child_pid"] = proc.pid
+            beat("running")
             try:
-                rc = proc.wait(timeout=args.timeout)
+                deadline = time.monotonic() + args.timeout
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(cmd, args.timeout)
+                    try:
+                        rc = proc.wait(timeout=min(15, remaining))
+                        break
+                    except subprocess.TimeoutExpired:
+                        if time.monotonic() >= deadline:
+                            raise
+                        beat("running")
             except subprocess.TimeoutExpired:
                 print(f"[wrapper:{args.label}] TIMEOUT after {args.timeout}s — killing process tree", file=sys.stderr)
                 _kill_tree(proc)
@@ -85,6 +88,8 @@ def main():
 
     # Write sidecar file BEFORE exiting. PowerShell reads this file to get the actual exit code.
     try:
+        heartbeat["exit_code"] = rc
+        beat("finished")
         Path(args.exit_code_file).write_text(str(rc), encoding="utf-8")
     except Exception as e:
         print(f"[wrapper:{args.label}] WARN: cannot write exit_code_file: {e}", file=sys.stderr)

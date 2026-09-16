@@ -15,7 +15,7 @@ TASKS = ["daily-report", "market-screen", "yfinance", "health-check", "company-r
 
 
 def fetch_cron_lastruns():
-    command = "$names = " + ",".join("'tw-invest-suite-" + n + "'" for n in TASKS) + "; @($names | ForEach-Object { $t=Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue; $i=Get-ScheduledTaskInfo -TaskName $_ -ErrorAction SilentlyContinue; [pscustomobject]@{task=$_; state=[string]$t.State; last_run=if($i){$i.LastRunTime.ToString('o')}else{$null}; rc=if($i){[long]$i.LastTaskResult}else{$null}}) | ConvertTo-Json -Compress"
+    command = "$names = " + ",".join("'tw-invest-suite-" + n + "'" for n in TASKS) + "; @($names | ForEach-Object { $t=Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue; $i=Get-ScheduledTaskInfo -TaskName $_ -ErrorAction SilentlyContinue; [pscustomobject]@{task=$_; state=[string]$t.State; last_run=if($i){$i.LastRunTime.ToString('o')}else{$null}; rc=if($i){[long]$i.LastTaskResult}else{$null}} }) | ConvertTo-Json -Compress"
     r = subprocess.run(["powershell.exe", "-NoProfile", "-Command", command], capture_output=True, text=True, encoding="utf-8", timeout=30)
     if r.returncode:
         raise RuntimeError("Scheduler query failed")

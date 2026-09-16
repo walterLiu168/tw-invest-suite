@@ -35,7 +35,7 @@ import os
 import sys
 import json
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from bounded_deep_dive import fetch_tickers
 from datetime import datetime, date
 from pathlib import Path
 import pymysql
@@ -47,6 +47,9 @@ import deep_dive_prompts as ddp  # noqa: E402
 import watchlist as wl  # noqa: E402
 import db_client as db  # noqa: E402
 import zen_analyzer as zen  # noqa: E402
+
+REPORTS_DIR = Path.home() / ".claude" / "skills" / "tw-invest-suite" / "reports"
+GROOVE_WATCHLIST = Path(r"C:\Groove-Lab\watchlist.html")
 
 
 SKILL_LINKS = [
@@ -1744,6 +1747,8 @@ def render_bucket(bucket_label: str, picks: List[ms.Candidate], data_map: Dict[s
 # ---- main ----
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="backslashreplace")
     import os
     import pipeline_state as ps
     snapshot = ps.db_snapshot()
@@ -1798,29 +1803,10 @@ def main():
     perf_map = {r["ticker"]: r for r in rows}
 
     # ---- Step 3: parallel deep-dive fetch ----
-    print(f"[3/4] Fetching deep-dive data for {sum(len(v) for v in bucket_picks.values())} picks (parallel)…")
+    print(f"[3/4] Fetching supplemental data for {sum(len(v) for v in bucket_picks.values())} picks (bounded)…", flush=True)
     all_picks = [c for v in bucket_picks.values() for c in v]
-    data_map: Dict[str, Dict] = {}
-
-    def fetch_one(c: ms.Candidate):
-        try:
-            d = a.fetch_all(c.ticker)
-            return c.ticker, d, None
-        except Exception as e:
-            return c.ticker, {"fetch_errors": [str(e)]}, str(e)
-
     t0 = time.time()
-    with ThreadPoolExecutor(max_workers=4) as exe:
-        futs = {exe.submit(fetch_one, c): c for c in all_picks}
-        done = 0
-        for fut in as_completed(futs):
-            ticker, d, err = fut.result()
-            data_map[ticker] = d
-            done += 1
-            elapsed = time.time() - t0
-            eta = (elapsed / done) * (len(all_picks) - done)
-            status = "✓" if not err else f"⚠ {err[:40]}"
-            print(f"  [{done}/{len(all_picks)}] {ticker} {status}  ({elapsed:.0f}s elapsed, ~{eta:.0f}s left)")
+    data_map = fetch_tickers(c.ticker for c in all_picks)
 
     # ---- Step 4: render + write ----
     print(f"[4/4] Rendering HTML…")
@@ -1924,12 +1910,13 @@ function copyText(btn) {{
 </html>"""
 
     # Write outputs
-    reports_dir = Path.home() / ".claude" / "skills" / "tw-invest-suite" / "reports"
+    reports_dir = REPORTS_DIR
+    reports_dir.mkdir(parents=True, exist_ok=True)
     out1 = reports_dir / f"watchlist-full-{today}.html"
     out1.write_text(html_doc, encoding="utf-8")
     print(f"  → {out1} ({len(html_doc):,} bytes)")
 
-    groove = Path(r"C:\Groove-Lab\watchlist.html")
+    groove = GROOVE_WATCHLIST
     groove.write_text(html_doc, encoding="utf-8")
     print(f"  → {groove} ({len(html_doc):,} bytes)")
 

@@ -212,7 +212,7 @@ def check_market_screen(operational_date):
         cur = conn.cursor()
         # Find the run for operational_date
         cur.execute(
-            "SELECT id, picks_count FROM market_screen_runs WHERE run_date = %s",
+            "SELECT id, picks_count FROM market_screen_runs WHERE run_date = %s ORDER BY id DESC LIMIT 1",
             (operational_date,)
         )
         row = cur.fetchone()

@@ -22,6 +22,7 @@ Updated: 2026-09-16. Runtime and repository copies of scheduled files must have 
 | 23:25 | company-refresh | Existing company metadata refresh |
 | 23:30 | sync-legacy | Existing legacy sync |
 | 23:55 | marker-watchdog | Check current completion; report a live process as pending; NEVER create a success marker from picks |
+| 02:30 / 04:00 / 06:00 | nightly-health | Check exact owner creation identity, stage heartbeat deadlines and between-stage gaps; guarded recovery kills the owner tree, never auto-publishes |
 | 00:05 | postflight | Local/pre-publication checks and dashboard; remote verification is not claimed yet |
 | 00:30 | publish | Wait up to 130 minutes for daily-report, verify marker, prepare immutable site, publish, verify remote hashes, run postflight, publish final dashboard |
 
@@ -34,13 +35,13 @@ Updated: 2026-09-16. Runtime and repository copies of scheduled files must have 
 | patterns | 30 min | Yes |
 | patterns_html | 10 min | Yes |
 | margin_scan | 30 min | No; retain nonzero result as degraded |
-| watchlist | 10 min | Yes |
+| watchlist | 30 min | Yes; supplemental fetches are serial, bounded to 45s per ticker and 360s overall |
 
 `-Mode render` skips maintenance and still runs the complete rendering chain.
 `-IncludeAdvancedStages` restores stages 7–17 in both full and render modes. These are opt-in, including the pre-existing push stage.
 `-Mode publish` uses the same certified publisher as the scheduled job.
 
-The default worst-case stage budget is 180 minutes. Scheduler daily-report has a four-hour limit; publication has a separate wait budget.
+The default worst-case stage budget is 200 minutes. Configurations exceeding 235 minutes are rejected, reserving five minutes under the four-hour Scheduler cap. Publication has a separate wait budget.
 
 ## Completion contract
 
@@ -57,6 +58,12 @@ The default worst-case stage budget is 180 minutes. Scheduler daily-report has a
 7. All published core artifacts have recorded SHA-256 values.
 
 It atomically writes `last_completed.json` (version `D056-2`) only after these checks. Failed or interrupted runs cannot reuse a previous marker.
+
+Certification is terminal. `fail_run` cannot change the same certified attempt from ok to failed; an older marker cannot protect a newer failed attempt. A Windows state mutex serializes begin, completion and watchdog recovery. Post-certification reporting errors are warnings and cannot invalidate analytical success.
+
+`run_stage.py` writes a heartbeat every 15 seconds and records stage start, deadline and completion. Both the wrapper and child streams go directly to files. The watchdog permits valid stages beyond 90 minutes total, detects a five-minute gap after a completed stage, and never kills a run merely because an old log is quiet. Process creation identity prevents acting on a reused owner PID.
+
+`nightly_health.py` is versioned under scripts; the scheduled wrapper no longer depends on an ignored `_debug` helper. `register_nightly_health_cron.ps1` also prepares a 22:30-02:00 check every 30 minutes, preserving existing task settings when updating. This trigger expansion has not been applied in this hardening pass.
 
 ## Publication
 
@@ -76,6 +83,7 @@ Source commits stay local until Walter approves `git push origin main`. Do not r
 - `_debug/prepared_release.json`: local staging path and identity.
 - `_debug/publication_result.json`: publication commit and verified remote paths.
 - `_debug/postflight_latest.json`: current local/final checks, phase and warnings.
+- `_debug/stage_logs/*_<nightly_id>_stage*.heartbeat.json`: active stage deadlines and exit evidence; unrelated old attempts are ignored.
 - `public/data/dashboard.md`: current operational status; no green without this nightly's certified completion and remote publication evidence.
 
 `chips`, `sectors` and `concepts` are opt-in/manual pages. Their HTTP availability is not evidence of daily freshness.
@@ -88,6 +96,12 @@ powershell.exe -NoProfile -File scripts\publish_ghpages_daily.ps1 -PrepareOnly
 ```
 
 Tests cover PowerShell 5.1 argument boundaries, whitespace, child errors, timeouts, old/failed/watchdog markers, altered artifacts, exact pick identity with optional margin cards, calendar closures, and false-green status. Publication checks include an actual local HTTP server serving a stale selected page, actual Git staging under Windows autocrlf, prepare-only behavior, and remote verification failure.
+
+Final hardening tests (`tests/test_final_hardening.py`) inject reporting failures after certification, a hung supplemental worker, noisy consecutive native stages, child/grandchild timeouts, owner PID reuse and watchdog recovery. They execute the actual PowerShell Scheduler query. Historical manifest tests no longer delete their own module during import.
+
+## Diagnostic retention
+
+Keep current run/marker/publication receipts and all referenced evidence. Retain stage logs for 30 days locally; archive older logs for 90 days before an operator-approved deletion. Never clean logs as part of detection/recovery or while their owner is active. No automatic cleanup or new cleanup cron is installed; old runs are filtered by nightly_id, so retention is independent of health classification.
 
 ## Known data issues
 

@@ -1,5 +1,7 @@
 """Daily run identity and verified artifacts. No DB writes or publication here."""
 import argparse
+from contextlib import contextmanager
+from functools import wraps
 from collections import Counter
 from datetime import date, datetime, timedelta
 import hashlib
@@ -30,6 +32,8 @@ SOURCE_FILES = (
     "market_screen_runner.py",
     "render_ticker_full.py", "daily_full_tickers.py",
     "market_report.py", "market_report_html.py",
+    "bounded_deep_dive.py",
+    "nightly_health.py", "nightly_health_daily.ps1",
 )
 
 
@@ -42,14 +46,42 @@ def owner_running(run):
     if run.get("status") != "running" or not run.get("owner_pid"):
         return False
     import ctypes
-    kernel = ctypes.windll.kernel32
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.OpenProcess.restype = ctypes.c_void_p
     handle = kernel.OpenProcess(0x1000, False, int(run["owner_pid"]))
     if not handle:
         return False
     try:
         code = ctypes.c_ulong()
-        return bool(kernel.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code))) and code.value == 259
+        if not kernel.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code)) or code.value != 259:
+            return False
+        created = process_creation_time(run["owner_pid"])
+        if run.get("owner_created_at"):
+            return created == run["owner_created_at"]
+        if run.get("started_at"):
+            if not created:
+                return False
+            delta = datetime.fromisoformat(run["started_at"]) - datetime.fromisoformat(created)
+            return timedelta(seconds=-2) <= delta <= timedelta(minutes=2)
+        return True
+    finally:
+        kernel.CloseHandle(ctypes.c_void_p(handle))
+
+
+def process_creation_time(pid):
+    import ctypes
+    from ctypes.wintypes import FILETIME
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel.OpenProcess(0x1000, False, int(pid))
+    if not handle:
+        return None
+    try:
+        times = [FILETIME() for _ in range(4)]
+        if not kernel.GetProcessTimes(ctypes.c_void_p(handle), *(ctypes.byref(t) for t in times)):
+            return None
+        ticks = (times[0].dwHighDateTime << 32) + times[0].dwLowDateTime
+        return datetime.fromtimestamp((ticks - 116444736000000000) / 10000000).isoformat()
     finally:
         kernel.CloseHandle(ctypes.c_void_p(handle))
 
@@ -128,12 +160,44 @@ def db_snapshot():
             "ohlcv_rows": coverage["n"], "ohlcv_tickers": coverage["tickers"]}
 
 
+@contextmanager
+def state_lock():
+    """Serialize begin/complete/fail with watchdog recovery across processes."""
+    import ctypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateMutexW.restype = ctypes.c_void_p
+    handle = kernel.CreateMutexW(None, False, "Local\\TwInvestSuiteDailyState")
+    if not handle:
+        raise OSError("cannot open daily state mutex")
+    acquired = False
+    try:
+        result = kernel.WaitForSingleObject(ctypes.c_void_p(handle), 10000)
+        if result not in (0, 0x80):
+            raise TimeoutError("daily state mutex unavailable")
+        acquired = True
+        yield
+    finally:
+        if acquired:
+            kernel.ReleaseMutex(ctypes.c_void_p(handle))
+        kernel.CloseHandle(ctypes.c_void_p(handle))
+
+
+def state_guarded(function):
+    @wraps(function)
+    def guarded(*args, **kwargs):
+        with state_lock():
+            return function(*args, **kwargs)
+    return guarded
+
+
+@state_guarded
 def begin(mode="full"):
     now = datetime.now()
     execution_day = now.date() if now.hour >= 18 else now.date() - timedelta(days=1)
     run = {"nightly_id": uuid.uuid4().hex, "started_at": now.isoformat(),
            "execution_date": execution_day.isoformat(), "status": "running", "mode": mode,
            "owner_pid": int(os.environ.get("TW_OWNER_PID", "0")), "trading_session": is_session(execution_day)}
+    run["owner_created_at"] = process_creation_time(run["owner_pid"]) if run["owner_pid"] else None
     # Invalidate publish eligibility before preflight, including preflight failures.
     atomic_json(STATE, run)
     try:
@@ -157,6 +221,7 @@ def artifact(path, gh_path):
             "sha256": sha256(path), "size": path.stat().st_size}
 
 
+@state_guarded
 def complete(stages_path):
     run = read_json(STATE)
     try:
@@ -251,6 +316,24 @@ def verify_marker(marker=None, now=None, check_files=True):
     return marker
 
 
+@state_guarded
+def fail_run(nightly_id, reason="orchestrator failed; see daily log"):
+    value = read_json(STATE)
+    if value.get("nightly_id") != nightly_id:
+        raise ValueError("cannot fail another run")
+    # Certification is terminal. Never resurrect a failed attempt from an old
+    # marker, nor invalidate a committed success because reporting later failed.
+    if value.get("status") == "ok":
+        marker = read_json(MARKER)
+        if (marker.get("nightly_id") == nightly_id and marker.get("status") == "ok"
+                and marker.get("marker_version") == "D056-2"):
+            return value
+        raise ValueError("inconsistent completed state; refusing overwrite")
+    value.update(status="failed", error=reason)
+    atomic_json(STATE, value)
+    return value
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("action", choices=["begin", "complete", "verify", "watchdog", "fail"])
@@ -263,11 +346,7 @@ def main():
         elif args.action == "complete":
             value = complete(args.stages)
         elif args.action == "fail":
-            value = read_json(STATE)
-            if value.get("nightly_id") != os.environ.get("TW_NIGHTLY_ID"):
-                raise ValueError("cannot fail another run")
-            value.update(status="failed", error="orchestrator failed; see daily log")
-            atomic_json(STATE, value)
+            value = fail_run(os.environ.get("TW_NIGHTLY_ID"))
         elif args.action == "watchdog" and STATE.exists() and owner_running(read_json(STATE)):
             print("PENDING: nightly process is still running; no completion marker fabricated")
             return 0

@@ -1,5 +1,5 @@
 # nightly_health_daily.ps1 — D056-2 hardening
-# Cron-driven stuck-nightly detector. Runs at 00:30, 02:30, 04:00, 06:00
+# Cron-driven stuck-nightly detector. Existing triggers: 02:30, 04:00, 06:00.
 # (configured by tw-invest-suite-nightly-health Scheduler task).
 #
 # If pipeline_run.json shows a nightly that is too old / orphan / stuck,
@@ -22,7 +22,7 @@ Log-Msg "Mode: --kill (auto-recover stuck nightlies)"
 
 # --kill flag: when stuck, kill PID + force-fail state.
 # Without --kill, the watchdog is advisory only (cron-friendly exit codes).
-& C:\Python314\python.exe _debug\nightly_health.py --kill --json 2>&1 | ForEach-Object { Log-Msg $_ }
+& C:\Python314\python.exe nightly_health.py --kill --json 2>&1 | ForEach-Object { Log-Msg $_ }
 
 $rc = $LASTEXITCODE
 Log-Msg "=== nightly_health_daily.ps1 done (exit $rc) ==="

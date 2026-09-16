@@ -5,7 +5,7 @@
 # Required: maintenance (weekday full mode), render, patterns, patterns_html, watchlist.
 # Optional: margin_scan. Advanced stages require -IncludeAdvancedStages.
 # Outputs are certified by pipeline_state.py; only the scheduled publisher pushes.
-# Default stage budgets total at most 180 minutes (render budget: 90 minutes).
+# Default stage budgets total at most 200 minutes (render budget: 90 minutes).
 # -Mode render runs the rendering chain without maintenance; -Mode publish uses
 # the same completion gate as the scheduled publisher.
 
@@ -17,6 +17,7 @@ param(
     [switch]$SkipYfinance,
     [switch]$SkipFinmind,
     [switch]$IncludeAdvancedStages,
+    [ValidateRange(1,120)]
     [int]$TimeoutMin = 90
 )
 
@@ -154,7 +155,7 @@ function Run-Stage {
     #   file. PowerShell reads the sidecar file to get the real exit code.
     #
     # D056 P0-2: -Optional switch marks a stage as non-blocking; failure logs
-    #   "DEGRADED" and returns $true so the loop continues.
+    #   "DEGRADED" and returns $false so the result remains honest.
     param(
         [int]$Number,
         [string]$Name,
@@ -164,7 +165,7 @@ function Run-Stage {
     )
     $optTag = if ($Optional) { ' [OPTIONAL/DEGRADED]' } else { '' }
     Log-Msg ""
-    Log-Msg "[Stage $Number] $Name (timeout ${TimeoutMin}m)$optTag..."
+    Log-Msg "[Stage $Number] $Name (timeout ${TimeoutSec}s)$optTag..."
     Write-Status -Stage $Name -State 'running' -Pct 0
 
     # Per-stage log files (the stage script's stdout/stderr go here).
@@ -197,7 +198,8 @@ function Run-Stage {
     # wrapper (handles quoted paths with spaces).
     $wrapperArgs += $Cmd
 
-    $p = Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList $wrapperArgs -NoNewWindow -PassThru
+    $p = Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList $wrapperArgs -NoNewWindow -PassThru `
+        -RedirectStandardOutput "$stageLogBase.wrapper.log" -RedirectStandardError "$stageLogBase.wrapper.err"
 
     # Poll HasExited (no async readers, no pipe deadlock).
     $deadline = (Get-Date).AddSeconds($TimeoutSec + 30)  # +30s buffer for wrapper overhead
@@ -207,17 +209,9 @@ function Run-Stage {
 
     if (-not $p.HasExited) {
         Log-Msg "[Stage $Number] TIMEOUT — killing process tree (wrapper + stage)"
-        # Kill the wrapper process; the wrapper should kill the stage child.
-        try { $p.Kill($true) } catch {}
-        Start-Sleep -Milliseconds 500
-        # Belt-and-suspenders: also kill any orphan children by ParentProcessId.
-        try {
-            Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)" -ErrorAction SilentlyContinue |
-                Stop-Process -Force -ErrorAction SilentlyContinue
-        } catch {}
-        Start-Sleep -Milliseconds 500
-        # Wait briefly for OS cleanup.
-        try { $p.WaitForExit() 2>$null | Out-Null } catch {}
+        # PowerShell 5.1 has no Process.Kill(bool). Never use an unbounded wait.
+        & taskkill.exe /F /T /PID $p.Id 1>"$stageLogBase.kill.log" 2>"$stageLogBase.kill.err"
+        if (-not $p.WaitForExit(5000)) { throw "Stage process tree could not be stopped" }
     }
 
     # D056 P1+: read exit code from sidecar file (PowerShell's $p.ExitCode is
@@ -391,6 +385,10 @@ $stages += @{ N=16; Name='concept_stocks'; Cmd="$conceptStocks"; To=10 }
 $stages += @{ N=17; Name='render_concepts'; Cmd="$renderConcepts"; To=30 }
 }
 
+# Leave five minutes for preflight/certification under the four-hour task cap.
+$stageBudgetSec = ($stages | Measure-Object -Property To -Sum).Sum
+if ($stageBudgetSec -gt 235*60) { throw "Stage budgets exceed Scheduler cap: $stageBudgetSec seconds" }
+
 # Run stages
 $stageResults = @()
 foreach ($s in $stages) {
@@ -410,11 +408,23 @@ ConvertTo-Json -InputObject @($stageResults) -Depth 5 | Set-Content -LiteralPath
 # not certified" without which cert check failed).
 $completeLogPath = Join-Path $PSScriptRoot "_debug\complete_$($env:TW_NIGHTLY_ID).log"
 $completeErrPath = Join-Path $PSScriptRoot "_debug\complete_$($env:TW_NIGHTLY_ID).err"
-Remove-Item -LiteralPath $completeLogPath -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $completeErrPath -ErrorAction SilentlyContinue
-& C:\Python314\python.exe pipeline_state.py complete --stages $stagesPath `
-    1>"$completeLogPath" 2>"$completeErrPath"
-$completionExit = $LASTEXITCODE
+$certExitPath = Join-Path $PSScriptRoot "_debug\complete_$($env:TW_NIGHTLY_ID).exit"
+$certArgs = @('C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\run_stage.py',
+    '--label', 'cert', '--out', $completeLogPath, '--err', $completeErrPath,
+    '--exit-code-file', $certExitPath, '--timeout', '180', '--workdir', $PSScriptRoot,
+    'pipeline_state.py', 'complete', '--stages', $stagesPath)
+$certProcess = Start-Process -FilePath 'C:\Python314\python.exe' -ArgumentList $certArgs -NoNewWindow -PassThru `
+    -RedirectStandardOutput "$completeLogPath.wrapper" -RedirectStandardError "$completeErrPath.wrapper"
+if (-not $certProcess.WaitForExit(210000)) {
+    & taskkill.exe /F /T /PID $certProcess.Id 1>"$completeLogPath.kill" 2>"$completeErrPath.kill"
+    throw 'Certification exceeded three-minute deadline'
+}
+$certProcess.Dispose()
+$completionExit = 1
+if (Test-Path -LiteralPath $certExitPath) {
+    $certExitText = (Get-Content -LiteralPath $certExitPath -Raw).Trim()
+    if ($certExitText -match '^-?\d+$') { $completionExit = [int]$certExitText }
+}
 if ($completionExit -ne 0) {
     Write-Status -Stage 'complete' -State 'failed' -Pct 0
     # Surface the actual reason — without this the cert failure is invisible.
@@ -431,23 +441,9 @@ if ($completionExit -ne 0) {
     Log-Msg "  detail: $completeErrPath"
     exit $completionExit
 }
-Log-Msg 'Artifacts certified. Scheduled publish consumes this run after completion.'
-
-# Final stats
-$files = @(Get-ChildItem $outputDir -Filter "*.html" -ErrorAction SilentlyContinue)
-$count = $files.Count
-$totalMB = if ($files.Count -gt 0) { [math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB, 1) } else { 0 }
-$cacheFiles = @(Get-ChildItem $cacheDir -Filter "*.json" -ErrorAction SilentlyContinue)
-$cacheCount = $cacheFiles.Count
-$cacheMB = if ($cacheFiles.Count -gt 0) { [math]::Round(($cacheFiles | Measure-Object Length -Sum).Sum / 1MB, 1) } else { 0 }
-
-$dur = Get-Date - $startTime
-Log-Msg ""
-Log-Msg "============================================================"
-Log-Msg "=== Done. Files: $count ($totalMB MB), Cache: $cacheCount ($cacheMB MB) ==="
-Log-Msg "=== Elapsed: $([int]$dur.TotalMinutes)m$([int]$dur.Seconds)s ==="
-Log-Msg "============================================================"
-
-# Write final status
-Write-Status -Stage 'complete' -State 'done' -Pct 100
+# Certification is the final required operation. Reporting cannot undo it.
+try {
+    Log-Msg 'Artifacts certified. Scheduled publish consumes this run after completion.'
+    Write-Status -Stage 'complete' -State 'done' -Pct 100
+} catch { Write-Host "WARNING: certification succeeded; final reporting failed: $_" }
 exit 0

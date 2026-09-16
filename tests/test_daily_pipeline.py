@@ -18,7 +18,6 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-sys.path.insert(0, str(ROOT / "scripts" / "_debug"))
 import pipeline_state as ps
 import publish_ghpages as publisher
 import build_dashboard as dashboard
@@ -274,6 +273,7 @@ class NightlyHealthTests(unittest.TestCase):
                  "owner_pid": owner_pid, "trading_session": True, "data_date": "2026-09-15",
                  "run_id": 16, "picks_count": 24,
                  "bucket_counts": {b: 6 for b in sorted(ps.BUCKETS)}}
+        state["owner_created_at"] = ps.process_creation_time(owner_pid) if owner_pid else None
         if started_offset_min is not None:
             state["started_at"] = (datetime.now() - timedelta(minutes=started_offset_min)).isoformat()
         tmp.write_text(json.dumps(state), encoding="utf-8")
@@ -309,10 +309,8 @@ class NightlyHealthTests(unittest.TestCase):
             os.utime(log_dir / "20260916_fixture_stage2_render.log", (old_time, old_time))
             with patch.object(nh, "STATE", state_path), patch.object(nh, "LOG_DIR", log_dir):
                 verdict, state, detail = nh.diagnose()
-            self.assertEqual(verdict, "stuck", f"expected stuck, got {verdict!r}: {detail}")
-            # Either "runtime" (age) or "stage log update" reason should be present.
-            self.assertTrue("runtime" in detail or "stage log update" in detail,
-                            f"detail missing expected cause: {detail}")
+            self.assertEqual(verdict, "unknown", detail)
+            self.assertIn("no heartbeat deadline evidence", detail)
 
     def test_diagnose_orphan_when_owner_pid_dead(self):
         # PID 1 on Windows may exist but the running state should still detect via
@@ -329,7 +327,7 @@ class NightlyHealthTests(unittest.TestCase):
             # PID 999999 is not alive → caught by age threshold + log check;
             # the verdict may be "stuck" or "healthy" depending on log mtime.
             # We assert the function does not crash and returns one of the two.
-            self.assertIn(verdict, ("healthy", "stuck"))
+            self.assertEqual(verdict, "stuck", detail)
 
     def test_diagnose_running_but_fresh_is_healthy(self):
         with tempfile.TemporaryDirectory(prefix="nh-fresh-") as folder:
