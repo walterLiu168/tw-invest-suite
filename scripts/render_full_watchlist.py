@@ -1460,6 +1460,9 @@ def render_pick_card(c: ms.Candidate, d: Dict, idx: int) -> str:
     ticker = c.ticker
     ticker_url = f"https://walterLiu168.github.io/stock-report/market-screen-2026-08-12.html#{ticker}"
     headline = render_pick_header(c)
+    fetch_errors = d.get("fetch_errors", [])
+    if fetch_errors:
+        headline += '<div role="status" style="padding:8px;color:var(--amber)">部分補充資料取得失敗：' + _esc("；".join(fetch_errors)) + '</div>'
     tags = render_tags_bar(c)
     # Section tabs (chart-enhanced)
     sections = {
@@ -1927,6 +1930,7 @@ function copyText(btn) {{
         "nightly_id": os.environ.get("TW_NIGHTLY_ID", "manual"),
         "data_date": today, "run_id": snapshot["run_id"], "picks": snapshot["picks"],
         "html_sha256": ps.sha256(public / "watchlist.html"),
+        "fetch_errors": {t: d["fetch_errors"] for t, d in data_map.items() if d.get("fetch_errors")},
     })
 
     # Stats

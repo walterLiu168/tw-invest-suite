@@ -85,7 +85,10 @@ class PickParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        if tag == "div" and "pick" in attrs.get("class", "").split():
+        # Margin candidates also use class=pick, but are not committed screen picks.
+        # Count identified screen cards even if an identity attribute is missing,
+        # so malformed committed cards still fail the multiset validation.
+        if tag == "div" and "pick" in attrs.get("class", "").split() and attrs.get("id", "").startswith("pick-"):
             self.picks.append(tuple(attrs.get(k) for k in ("data-ticker", "data-horizon", "data-bucket")))
 
 
@@ -125,15 +128,16 @@ def db_snapshot():
 
 def begin(mode="full"):
     now = datetime.now()
+    execution_day = now.date() if now.hour >= 18 else now.date() - timedelta(days=1)
     run = {"nightly_id": uuid.uuid4().hex, "started_at": now.isoformat(),
-           "execution_date": now.date().isoformat(), "status": "running", "mode": mode,
-           "owner_pid": int(os.environ.get("TW_OWNER_PID", "0")), "trading_session": is_session(now.date())}
+           "execution_date": execution_day.isoformat(), "status": "running", "mode": mode,
+           "owner_pid": int(os.environ.get("TW_OWNER_PID", "0")), "trading_session": is_session(execution_day)}
     # Invalidate publish eligibility before preflight, including preflight failures.
     atomic_json(STATE, run)
     try:
         run.update(db_snapshot())
-        if run["data_date"] != expected_session(now.date()):
-            raise ValueError(f"upstream stale: expected {expected_session(now.date())}, got {run['data_date']}")
+        if run["data_date"] != expected_session(execution_day):
+            raise ValueError(f"upstream stale: expected {expected_session(execution_day)}, got {run['data_date']}")
         run["source_hashes"] = source_hashes()
         atomic_json(STATE, run)
         return run
@@ -206,7 +210,7 @@ def complete(stages_path):
         run.update(status="ok", marker_version="D056-2", completed_at=datetime.now().isoformat(),
                    stages=stages, degraded_stages=sum(not s["Ok"] for s in stages if s.get("Optional")),
                    render_data_issues=receipt.get("data_issues", []), render_count=receipt["expected_count"],
-                   fresh_render_count=receipt["fresh_count"], artifacts=artifacts)
+                   fresh_render_count=receipt["fresh_count"], watchlist_fetch_errors=watch.get("fetch_errors", {}), artifacts=artifacts)
         atomic_json(MARKER, run)
         atomic_json(STATE, run)
         return run

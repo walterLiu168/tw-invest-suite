@@ -234,10 +234,10 @@ function Run-Stage {
 
     # Stream captured stdout/stderr to the daily log.
     if ((Test-Path $stageLogPath) -and (Get-Item $stageLogPath).Length -gt 0) {
-        Get-Content $stageLogPath | ForEach-Object { if ($_ -match '\S') { Log-Msg "  $_" } }
+        Get-Content $stageLogPath -Encoding UTF8 | ForEach-Object { if ($_ -match '\S') { Log-Msg "  $_" } }
     }
     if ((Test-Path $stageErrPath) -and (Get-Item $stageErrPath).Length -gt 0) {
-        Get-Content $stageErrPath | ForEach-Object { if ($_ -match '\S') { Log-Msg "  [err] $_" } }
+        Get-Content $stageErrPath -Encoding UTF8 | ForEach-Object { if ($_ -match '\S') { Log-Msg "  [err] $_" } }
     }
 
     $p.Dispose()
@@ -288,8 +288,9 @@ if (-not (Test-Health)) {
     exit 1
 }
 
-# Always show DB status (the user wants us to check DB first)
-Get-DbStatus
+# The date-scoped preflight already verified DB coverage and exact picks.
+# Avoid the legacy unbounded debug script (full-table counts and API probes).
+Log-Msg "[db] data_date=$($run.data_date) run_id=$($run.run_id) tickers=$($run.ohlcv_tickers) active_picks=$($run.picks_count)"
 
 # Weekend auto-skip download stages (unless -Force or explicit -Skip flags override)
 $weekend = Is-Weekend

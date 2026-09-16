@@ -117,8 +117,11 @@ class ContentTests(unittest.TestCase):
 
     def test_watchlist_exact_multiset_not_just_count_or_ticker(self):
         picks = [{"ticker": str(1000 + i), "horizon": h, "bucket": b} for i, b in enumerate(sorted(ps.BUCKETS)) for h in ("long", "short") for _ in range(3)]
-        body = "".join(f'<div class="pick" data-ticker="{p["ticker"]}" data-horizon="{p["horizon"]}" data-bucket="{p["bucket"]}"></div>' for p in picks)
+        body = "".join(f'<div class="pick" id="pick-{p["ticker"]}-{p["horizon"]}" data-ticker="{p["ticker"]}" data-horizon="{p["horizon"]}" data-bucket="{p["bucket"]}"></div>' for p in picks)
         ps.validate_watchlist(body, picks)
+        ps.validate_watchlist('<div class="pick">margin candidate</div>' * 60 + body, picks)
+        with self.assertRaises(ValueError):
+            ps.validate_watchlist(body.replace('data-horizon="long"', ''), picks)
         for bad in (body[:body.index("</div>") + 6], body.replace('data-ticker="1000"', 'data-ticker="9999"')):
             with self.assertRaises(ValueError):
                 ps.validate_watchlist(bad, picks)

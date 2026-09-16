@@ -38,6 +38,8 @@ def render_dashboard():
         marker = ps.verify_marker()
         if marker.get("render_data_issues"):
             issues.append(("WARNING", f"{len(marker['render_data_issues'])} 個股資料不完整，頁面已標示；fresh={marker['fresh_render_count']} ／ rendered={marker['render_count']}"))
+        if marker.get("watchlist_fetch_errors"):
+            issues.append(("WARNING", f"{len(marker['watchlist_fetch_errors'])} 個 watchlist ticker 補充資料不完整；各卡片列出失敗來源"))
     except Exception as e:
         current = ps.read_json(ps.STATE) if ps.STATE.exists() else {}
         in_progress = ps.owner_running(current)
