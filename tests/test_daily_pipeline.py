@@ -135,6 +135,55 @@ class ContentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ps.expected_session(date(2027, 1, 4))
 
+    def test_calendar_all_2026_holidays_closed(self):
+        # Every TWSE-scheduled 2026 closure must be closed even mid-week.
+        from market_calendar import CLOSED, is_session
+        self.assertEqual(len(CLOSED[2026]), 24, "expected 24 TWSE holidays in 2026")
+        for iso in sorted(CLOSED[2026]):
+            d = date.fromisoformat(iso)
+            self.assertFalse(is_session(d), f"{iso} should be closed")
+
+    def test_calendar_weekend_always_closed(self):
+        # 2026-09-12 (Sat) and 2026-09-13 (Sun) are weekend closures.
+        from market_calendar import is_session
+        self.assertFalse(is_session(date(2026, 9, 12)))
+        self.assertFalse(is_session(date(2026, 9, 13)))
+        # But a Monday after a non-holiday weekend is open.
+        self.assertTrue(is_session(date(2026, 9, 14)))
+
+    def test_calendar_unknown_year_raises_is_session(self):
+        from market_calendar import is_session
+        with self.assertRaisesRegex(ValueError, "2027"):
+            is_session(date(2027, 1, 4))
+        with self.assertRaisesRegex(ValueError, "2025"):
+            is_session(date(2025, 12, 31))
+
+    def test_calendar_unscheduled_closures_override_weekday(self):
+        # A typhoon day on a Wednesday must be closed.
+        from market_calendar import is_session, UNSCHEDULED
+        UNSCHEDULED[2026].add("2026-10-14")  # Wednesday
+        try:
+            self.assertFalse(is_session(date(2026, 10, 14)))
+            # expected_session walks back to 2026-10-13 (Tuesday — open).
+            self.assertEqual(ps.expected_session(date(2026, 10, 14)), "2026-10-13")
+        finally:
+            UNSCHEDULED[2026].discard("2026-10-14")
+
+    def test_calendar_verify_metadata_age_and_staleness(self):
+        from datetime import timedelta
+        from market_calendar import verify_calendar, LAST_VERIFIED, SOURCE_URL, STALENESS_WARN_DAYS
+        meta = verify_calendar(today=date(2026, 9, 15))
+        self.assertEqual(meta["last_verified"], LAST_VERIFIED)
+        self.assertEqual(meta["source_url"], SOURCE_URL)
+        self.assertEqual(meta["age_days"], 0)
+        self.assertFalse(meta["stale"])
+        self.assertIn(2026, meta["known_years"])
+        self.assertEqual(meta["scheduled_count"], 24)
+        # 61 days out → stale=True
+        meta_stale = verify_calendar(today=date(2026, 9, 15) + timedelta(days=STALENESS_WARN_DAYS + 1))
+        self.assertTrue(meta_stale["stale"])
+        self.assertEqual(meta_stale["age_days"], STALENESS_WARN_DAYS + 1)
+
     def test_watchlist_exact_multiset_not_just_count_or_ticker(self):
         picks = [{"ticker": str(1000 + i), "horizon": h, "bucket": b} for i, b in enumerate(sorted(ps.BUCKETS)) for h in ("long", "short") for _ in range(3)]
         body = "".join(f'<div class="pick" id="pick-{p["ticker"]}-{p["horizon"]}" data-ticker="{p["ticker"]}" data-horizon="{p["horizon"]}" data-bucket="{p["bucket"]}"></div>' for p in picks)
