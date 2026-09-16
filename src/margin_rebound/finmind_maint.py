@@ -106,9 +106,10 @@ def fetch_latest(days_back: int = 7) -> list:
         latest_date = latest
 
     # Fetch the latest day's data (FinMind returns all stocks for this date)
-    end = latest_date
+    end = date.fromisoformat(os.environ['TW_DATA_DATE']) if os.environ.get('TW_DATA_DATE') else latest_date
     start = end - timedelta(days=days_back)
     all_rows = []
+    failed_requests = 0
     for offset in range(days_back + 1):
         target = start + timedelta(days=offset)
         params = {
@@ -121,6 +122,8 @@ def fetch_latest(days_back: int = 7) -> list:
             r = requests.get(API_URL, params=params, timeout=60)
             r.raise_for_status()
             data = r.json()
+            if data.get('status') != 200:
+                raise RuntimeError('Margin provider returned a failure status')
             if data.get("data"):
                 all_rows.extend(data["data"])
                 print(f"  + {target}: {len(data['data'])} rows", flush=True)
@@ -128,10 +131,14 @@ def fetch_latest(days_back: int = 7) -> list:
                 # Empty (weekend/holiday) — skip silently
                 pass
         except Exception as e:
-            print(f"  WARN: {target} failed: {e}", flush=True)
-            continue
+            failed_requests += 1
+            print(f"  WARN: {target} failed: {type(e).__name__}", flush=True)
         # Rate limit: 1.05s/call (safe, 57/min < 120 anti-abuse)
         time.sleep(1.1)
+    if failed_requests:
+        raise RuntimeError(f'{failed_requests} margin provider requests failed')
+    if not all_rows:
+        raise RuntimeError('No margin provider data received')
     return all_rows
 
 
@@ -185,6 +192,12 @@ def main():
     print("  Upserting to DB...", flush=True)
     n = upsert_rows(rows)
     print(f"  Upserted {n} rows", flush=True)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+    import pipeline_state as ps
+    source_date = max(str(row['date']) for row in rows)
+    receipt = {'nightly_id': os.environ.get('TW_NIGHTLY_ID', 'manual'), 'requested_date': os.environ.get('TW_DATA_DATE'), 'latest_source_date': source_date, 'provider_rows': len(rows), 'status': 'ok', 'api_errors': 0}
+    ps.atomic_json(ps.RUNTIME / '_debug' / 'maintenance_fetch.json', receipt)
+    print(f"  requested_date={receipt['requested_date']} latest_source_date={source_date}", flush=True)
     print(f"[{datetime.now():%H:%M:%S}] Done.", flush=True)
 
 

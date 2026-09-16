@@ -3,6 +3,7 @@ Build patterns.html — 8 pattern chips + top 30 list per pattern + backtest sta
 Reads patterns.json and emits a single HTML page.
 """
 import json
+import math
 import os
 import sys
 from datetime import datetime
@@ -95,32 +96,35 @@ def _build_pattern_section(pkey: str, pinfo: dict, top_stocks: list, backtest: d
 
     # Stock rows
     rows = []
+    def number(value, pattern, scale=1, suffix=''):
+        try:
+            value = float(value) * scale
+            return format(value, pattern) + suffix if math.isfinite(value) else '—'
+        except (TypeError, ValueError, OverflowError):
+            return '—'
+    def color(value):
+        try:
+            value = float(value)
+            return ('pos' if value > 0 else 'neg' if value < 0 else '') if math.isfinite(value) else ''
+        except (TypeError, ValueError, OverflowError):
+            return ''
     for s in top_stocks:
-        ret_20d = s.get("ret_20d", 0)
-        ret_60d = s.get("ret_60d", 0)
-        ret_240d = s.get("ret_240d", 0)
-        fnet = s.get("fnet", 0)
-        fnet_s = f"{fnet/1000:+,.0f}" if fnet else "0"
-        cls = "pos" if ret_20d > 0 else "neg"
-        cls60 = "pos" if ret_60d > 0 else "neg"
-        cls240 = "pos" if ret_240d > 0 else "neg"
-        cls_fnet = "pos" if fnet > 0 else "neg"
-        roe = s.get("roe", 0)
-        roe_s = f"{roe:.0f}%" if roe else "—"
-        pe = s.get("pe")
-        pe_s = f"{pe:.1f}" if pe else "—"
-        pb = s.get("pb")
-        pb_s = f"{pb:.2f}" if pb else "—"
+        ret_20d, ret_60d, ret_240d = (s.get(key) for key in ('ret_20d', 'ret_60d', 'ret_240d'))
+        fnet = s.get('fnet')
+        fnet_s = number(fnet, '+,.0f', scale=0.001)
+        cls, cls60, cls240, cls_fnet = map(color, (ret_20d,ret_60d,ret_240d,fnet))
+        roe_s = number(s.get('roe'), '.0f', suffix='%')
+        pe_s, pb_s = number(s.get('pe'), '.1f'), number(s.get('pb'), '.2f')
         rows.append(f"""
         <tr>
-          <td><a href="https://groovelab.dev/analyze/{_esc(s['ticker'])}.html">{_esc(s['ticker'])}</a></td>
-          <td class="num">{s.get('close', 0):.2f}</td>
-          <td class="num {s.get('change_pct', 0) > 0 and 'pos' or 'neg'}">{s.get('change_pct', 0):+.2f}%</td>
-          <td class="num {cls}">{ret_20d:+.1f}%</td>
-          <td class="num {cls60}">{ret_60d:+.1f}%</td>
-          <td class="num {cls240}">{ret_240d:+.1f}%</td>
-          <td class="num">{s.get('rsi', 0):.0f}</td>
-          <td class="num">{s.get('volume', 0)/1000:,.1f}</td>
+          <td><a href="analyze/{_esc(s['ticker'])}.html">{_esc(s['ticker'])}</a></td>
+          <td class="num">{number(s.get('close'), '.2f')}</td>
+          <td class="num {color(s.get('change_pct'))}">{number(s.get('change_pct'), '+.2f', suffix='%')}</td>
+          <td class="num {cls}">{number(ret_20d, '+.1f', suffix='%')}</td>
+          <td class="num {cls60}">{number(ret_60d, '+.1f', suffix='%')}</td>
+          <td class="num {cls240}">{number(ret_240d, '+.1f', suffix='%')}</td>
+          <td class="num">{number(s.get('rsi'), '.0f')}</td>
+          <td class="num">{number(s.get('volume'), ',.1f', scale=0.001)}</td>
           <td class="num {cls_fnet}">{fnet_s}</td>
           <td class="num">{roe_s}</td>
           <td class="num">{pe_s}</td>
@@ -169,7 +173,7 @@ def _build_pattern_section(pkey: str, pinfo: dict, top_stocks: list, backtest: d
     <div id="p-{pkey}" class="pattern-section">
       <div class="pattern-header">
         <div class="pattern-title">{_esc(pinfo['name_zh'])} — {_esc(pinfo['desc'])}</div>
-        <div class="meta">{pinfo['count']} 檔符合 · 回測使用過去 240 日資料 · 樣本每 5 日取一次</div>
+        <div class="meta">{pinfo['count']} 檔符合 · 回測最多 240 個交易日資料 · 訊號每 5 個交易日取樣</div>
       </div>
       {bt_cards}
       <div class="verdict {verdict_cls}">{verdict_text}</div>

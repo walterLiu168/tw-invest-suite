@@ -35,6 +35,12 @@ SOURCE_FILES = (
     "bounded_deep_dive.py",
     "nightly_health.py", "nightly_health_daily.ps1",
     "check_openalice_health.py", "db_client.py", "deep_dive_prompts.py", "market_screen.py",
+    "process_lifecycle.ps1", "publish_verified_sites.ps1", "sync_groove_release.py",
+    "metadata_backfill_daily.ps1", "metadata_backfill.py", "market_screen_daily.ps1",
+    "company_refresh_daily.ps1", "company_refresh.py", "postflight_daily.ps1",
+    "sync_legacy_tables_runner.ps1", "sync_legacy_tables.py",
+    "yfinance_daily.py", "yfinance_batch.py", "cache_manager.py",
+    "groove_service_watch.ps1",
 )
 
 
@@ -148,6 +154,8 @@ def db_snapshot():
             raise ValueError(f"no screen run for {data_date}")
         c.execute("SELECT ticker,horizon,bucket,status FROM market_screen_picks WHERE run_id=%s ORDER BY bucket,horizon,ticker", (run["id"],))
         picks = c.fetchall()
+        c.execute("SELECT ticker FROM industry_type WHERE ticker REGEXP '^[0-9]{4}$|^[0-9]{4}[A-Z]$' ORDER BY ticker")
+        render_tickers = [row['ticker'] for row in c.fetchall()]
     groups = Counter((p["bucket"], p["horizon"]) for p in picks)
     expected = {(b, h): 3 for b in BUCKETS for h in ("long", "short")}
     if run["picks_count"] != 24 or len(picks) != 24 or groups != expected:
@@ -158,7 +166,7 @@ def db_snapshot():
         raise ValueError(f"OHLCV coverage insufficient: {coverage}")
     return {"data_date": data_date, "run_id": run["id"], "picks_count": 24,
             "bucket_counts": {b: 6 for b in sorted(BUCKETS)}, "picks": picks,
-            "ohlcv_rows": coverage["n"], "ohlcv_tickers": coverage["tickers"]}
+            "ohlcv_rows": coverage["n"], "ohlcv_tickers": coverage["tickers"], "render_tickers": render_tickers}
 
 
 @contextmanager
@@ -222,6 +230,17 @@ def artifact(path, gh_path):
             "sha256": sha256(path), "size": path.stat().st_size}
 
 
+def validate_maintenance_fetch(fetch, run):
+    dd = run['data_date']
+    if fetch.get('nightly_id') != run['nightly_id'] or fetch.get('requested_date') != dd or fetch.get('status') != 'ok' or not fetch.get('provider_rows') or fetch.get('api_errors') != 0:
+        raise ValueError('maintenance fetch does not certify this run')
+    source_date = date.fromisoformat(fetch['latest_source_date'])
+    previous_session = date.fromisoformat(expected_session(date.fromisoformat(dd) - timedelta(days=1)))
+    if not previous_session <= source_date <= date.fromisoformat(dd):
+        raise ValueError('maintenance provider data is stale or future-dated')
+    return source_date.isoformat()
+
+
 @state_guarded
 def complete(stages_path):
     run = read_json(STATE)
@@ -233,7 +252,7 @@ def complete(stages_path):
         if not REQUIRED.issubset({s["Name"] for s in required}) or any(not s["Ok"] for s in required):
             raise ValueError("required stage failed/missing")
         snapshot = db_snapshot()
-        if any(snapshot[k] != run[k] for k in ("data_date", "run_id", "picks")):
+        if any(snapshot[k] != run[k] for k in ("data_date", "run_id", "picks", "render_tickers")):
             raise ValueError("DB changed during nightly")
         if source_hashes() != run["source_hashes"]:
             raise ValueError("source changed during nightly")
@@ -242,6 +261,9 @@ def complete(stages_path):
             raise ValueError("render receipt does not certify this run")
         if len(receipt["artifacts"]) != receipt["expected_count"] or receipt["expected_count"] < 1900:
             raise ValueError("incomplete render coverage")
+        rendered = [Path(artifact['gh_path']).stem for artifact in receipt['artifacts']]
+        if sorted(rendered) != run['render_tickers']:
+            raise ValueError("render universe differs from the frozen metadata universe")
         if receipt.get("fresh_count", 0) < 1900:
             raise ValueError("fresh render coverage insufficient")
         artifacts = list(receipt["artifacts"])
@@ -275,11 +297,15 @@ def complete(stages_path):
             if src.resolve() != target.resolve():
                 shutil.copy2(src, target)
             artifacts.append(artifact(target, dest))
+        maintenance = {}
+        if any(stage['Name'] == 'finmind_maint' for stage in required):
+            fetch = read_json(RUNTIME / '_debug' / 'maintenance_fetch.json')
+            maintenance['maintenance_data_date'] = validate_maintenance_fetch(fetch, run)
         run.update(status="ok", marker_version="D056-2", completed_at=datetime.now().isoformat(),
                    stages=stages, degraded_stages=sum(not s["Ok"] for s in stages if s.get("Optional")),
                    render_data_issues=receipt.get("data_issues", []), render_count=receipt["expected_count"],
                    fresh_render_count=receipt["fresh_count"], render_numeric_issues=receipt.get("numeric_data_issues", {}),
-                   watchlist_fetch_errors=watch.get("fetch_errors", {}), artifacts=artifacts)
+                   watchlist_fetch_errors=watch.get("fetch_errors", {}), artifacts=artifacts, **maintenance)
         atomic_json(MARKER, run)
         atomic_json(STATE, run)
         return run
@@ -305,7 +331,7 @@ def verify_marker(marker=None, now=None, check_files=True):
         raise ValueError("invalid execution timestamps")
     if check_files:
         snapshot = db_snapshot()
-        if any(snapshot[k] != marker[k] for k in ("data_date", "run_id", "picks")):
+        if any(snapshot[k] != marker[k] for k in ("data_date", "run_id", "picks", "render_tickers")):
             raise ValueError("marker/DB mismatch")
         if source_hashes() != marker["source_hashes"]:
             raise ValueError("marker/source SHA mismatch")

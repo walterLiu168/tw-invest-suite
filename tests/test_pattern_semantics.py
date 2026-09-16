@@ -18,6 +18,21 @@ import render_only
 
 
 class PatternSemanticsTests(unittest.TestCase):
+    def test_missing_rsi_cannot_confirm_short_downtrend(self):
+        self.assertNotIn('short_downtrend', pc._classify_one({'Close':10,'sma_13':20}, {'ret_20d':-.1}, {}))
+
+    def test_top_stock_missing_returns_and_actual_zero_remain_distinct(self):
+        row = pc._top_stock_detail('7768', {'Close':100}, {'ret_20d':0,'ret_60d':None}, {'roe':0})
+        self.assertEqual(row['ret_20d'], 0)
+        self.assertEqual(row['roe'], 0)
+        self.assertIsNone(row['ret_60d'])
+        self.assertIsNone(row['ret_240d'])
+        self.assertIsNone(row['rsi'])
+        body = patterns_html._build_pattern_section('short_uptrend', {'name_zh':'短多','desc':'test','count':1}, [row], {})
+        self.assertIn('+0.0%', body)
+        self.assertGreaterEqual(body.count('—'), 4)
+        self.assertNotIn('https://groovelab.dev/analyze/', body)
+
     def test_drawdown_threshold_is_thirty_percent(self):
         row = {"Close": 60, "sma_54": 100}
         for fraction, expected in ((-0.0031, False), (-0.29, False), (-0.30, False), (-0.31, True)):

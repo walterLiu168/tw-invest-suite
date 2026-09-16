@@ -36,6 +36,8 @@ def render_dashboard():
     in_progress = False
     try:
         marker = ps.verify_marker()
+        if marker.get('maintenance_data_date') and marker['maintenance_data_date'] != marker['data_date']:
+            issues.append(('WARNING', f"融資維持率來源日 {marker['maintenance_data_date']}，報價資料日 {marker['data_date']}；來源落後一個交易日"))
         if marker.get("render_data_issues"):
             issues.append(("WARNING", f"{len(marker['render_data_issues'])} 個股資料不完整，頁面已標示；fresh={marker['fresh_render_count']} ／ rendered={marker['render_count']}"))
         if marker.get("watchlist_fetch_errors"):

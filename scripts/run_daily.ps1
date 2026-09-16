@@ -1,4 +1,4 @@
-﻿# tw-invest-suite daily report — fully autonomous batch
+# tw-invest-suite daily report — fully autonomous batch
 # Scheduled via Windows Task Scheduler: daily 22:25
 # Runs without any agent interaction.
 #
@@ -41,12 +41,14 @@ trap {
 }
 
 
+. (Join-Path $PSScriptRoot 'process_lifecycle.ps1')
+
 function Log-Msg {
     param([string]$msg)
     $ts = Get-Date -Format "HH:mm:ss"
     $line = "[$ts] $msg"
-    Write-Host $line
     Add-Content -Path $logFile -Value $line -Encoding UTF8
+    Write-Verbose $line
 }
 
 
@@ -79,7 +81,7 @@ function Test-Health {
     try {
         $conn = New-Object System.Data.Odbc.OdbcConnection
         # Use Python for DB check since pymysql is the standard
-        $r = python -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='1234',database='tw_elec',connect_timeout=5); c.close(); print('OK')" 2>&1
+        $r = C:\Python314\python.exe -X utf8 -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='1234',database='tw_elec',connect_timeout=5); c.close(); print('OK')" 2>&1
         if ($LASTEXITCODE -ne 0) { $issues += "DB connect failed: $r" }
     } catch { $issues += "DB check exception: $_" }
 
@@ -96,7 +98,7 @@ function Test-Health {
     }
 
     # 4. Python
-    $pyVer = python --version 2>&1
+    $pyVer = C:\Python314\python.exe --version 2>&1
     Log-Msg "  Python: $pyVer"
 
     # 5. Disk space
@@ -115,14 +117,7 @@ function Test-Health {
 }
 
 
-function Get-DbStatus {
-    # Always check DB first — show latest data dates before doing anything
-    Log-Msg ""
-    Log-Msg "[db] Checking latest data in MySQL..."
-    $r = python _debug\db_status.py 2>&1
-    $r | ForEach-Object { Log-Msg "  $_" }
-    Log-Msg ""
-}
+
 
 
 function Is-TradingDay {
@@ -203,17 +198,12 @@ function Run-Stage {
     $p = Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList $wrapperArgs -NoNewWindow -PassThru `
         -RedirectStandardOutput "$stageLogBase.wrapper.log" -RedirectStandardError "$stageLogBase.wrapper.err"
 
-    # Poll HasExited (no async readers, no pipe deadlock).
-    $deadline = (Get-Date).AddSeconds($TimeoutSec + 30)  # +30s buffer for wrapper overhead
-    while (-not $p.HasExited -and (Get-Date) -lt $deadline) {
-        Start-Sleep -Milliseconds 500
-    }
-
-    if (-not $p.HasExited) {
+    $wrapperCreatedTicks = $p.StartTime.ToUniversalTime().Ticks
+    if (-not (Wait-OwnedProcess $p.Id $wrapperCreatedTicks (($TimeoutSec + 30) * 1000))) {
         Log-Msg "[Stage $Number] TIMEOUT — killing process tree (wrapper + stage)"
         # PowerShell 5.1 has no Process.Kill(bool). Never use an unbounded wait.
         & taskkill.exe /F /T /PID $p.Id 1>"$stageLogBase.kill.log" 2>"$stageLogBase.kill.err"
-        if (-not $p.WaitForExit(5000)) { throw "Stage process tree could not be stopped" }
+        if (-not (Wait-OwnedProcess $p.Id $wrapperCreatedTicks 5000)) { throw "Stage process tree could not be stopped" }
     }
 
     # D056 P1+: read exit code from sidecar file (PowerShell's $p.ExitCode is
@@ -415,7 +405,8 @@ $certArgs = @('C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\run_stage.p
     'pipeline_state.py', 'complete', '--stages', $stagesPath)
 $certProcess = Start-Process -FilePath 'C:\Python314\python.exe' -ArgumentList $certArgs -NoNewWindow -PassThru `
     -RedirectStandardOutput "$completeLogPath.wrapper" -RedirectStandardError "$completeErrPath.wrapper"
-if (-not $certProcess.WaitForExit(210000)) {
+$certCreatedTicks = $certProcess.StartTime.ToUniversalTime().Ticks
+if (-not (Wait-OwnedProcess $certProcess.Id $certCreatedTicks 210000)) {
     & taskkill.exe /F /T /PID $certProcess.Id 1>"$completeLogPath.kill" 2>"$completeErrPath.kill"
     throw 'Certification exceeded three-minute deadline'
 }

@@ -44,6 +44,7 @@ class CertificationTests(unittest.TestCase):
                 (root / "pipeline_state.py").write_text(f"import sys\nprint('fixture cert reason',file=sys.stderr)\nsys.exit({rc})\n")
                 script = root / "cert.ps1"
                 prolog = "$ErrorActionPreference='Stop';$env:TW_NIGHTLY_ID='fixture';$stagesPath='fixture';$completeLogPath='cert.log';$completeErrPath='cert.err'\ntrap {exit 99}\n"
+                prolog += f". '{ROOT / 'scripts/process_lifecycle.ps1'}'\n"
                 script.write_text(prolog + block + f"\nif ($completionExit -ne {rc}) {{exit 9}}\nexit 0", encoding="utf-8-sig")
                 result = subprocess.run(["powershell.exe", "-NoProfile", "-File", str(script)], cwd=root, capture_output=True, timeout=20)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -203,6 +204,7 @@ class NativeWrapperTests(unittest.TestCase):
             function = function.replace(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts", str(root))
             script = root / "chain.ps1"
             prolog = "$ErrorActionPreference='Stop';$today='test';$TimeoutMin=1;$env:TW_NIGHTLY_ID='chain';function Log-Msg {param($msg)};function Write-Status {param($Stage,$State,$Pct)}\n"
+            prolog += f". '{ROOT / 'scripts/process_lifecycle.ps1'}'\n"
             script.write_text(prolog + function + f"\n$a=Run-Stage -Number 2 -Name render -Cmd '{child}' -TimeoutSec 10\n$b=Run-Stage -Number 3 -Name patterns -Cmd '{child}' -TimeoutSec 10\nif (-not ($a -and $b)) {{exit 9}}\nexit 0", encoding="utf-8-sig")
             result = subprocess.run(["powershell.exe", "-NoProfile", "-File", str(script)], cwd=root, capture_output=True, timeout=35)
             self.assertEqual(result.returncode, 0, result.stderr)

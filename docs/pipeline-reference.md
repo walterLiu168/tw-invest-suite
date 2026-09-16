@@ -63,7 +63,7 @@ Certification is terminal. `fail_run` cannot change the same certified attempt f
 
 `run_stage.py` writes a heartbeat every 15 seconds and records stage start, deadline and completion. Both the wrapper and child streams go directly to files. The watchdog permits valid stages beyond 90 minutes total, detects a five-minute gap after a completed stage, and never kills a run merely because an old log is quiet. Process creation identity prevents acting on a reused owner PID.
 
-`nightly_health.py` is versioned under scripts; the scheduled wrapper no longer depends on an ignored `_debug` helper. The 22:30–02:00 trigger expansion was applied on 2026-09-16; the actual 19:43:43 task execution returned zero. Further wake/retry/S4U settings are prepared, but the elevation attempt was cancelled and those settings remain unapplied.
+`nightly_health.py` is versioned under scripts; the scheduled wrapper no longer depends on an ignored `_debug` helper. The 22:30–02:00 trigger expansion and wake/S4U deployment were applied on 2026-09-16. Enabled analytical/data dependency tasks also received S4U/wake, preserving disabled old aliases. Actual updated-context checks are recorded in the deployment acceptance document.
 
 ## Publication
 
@@ -73,7 +73,11 @@ The publisher overlays certified artifacts onto a fresh staging directory, verif
 
 The same job runs final postflight and publishes the morning dashboard and daily summary in a second bounded status commit. Both reports are checked remotely even on an identical-content retry. Receipts retain the analytical and final status commit identities. The status reports are not part of the immutable analytical-artifact manifest, avoiding self-referential hashes.
 
-Walter authorized source pushes, publication and necessary Scheduler updates on 2026-09-16. Primary main was pushed through 44a153f. Current deployment evidence and remaining gates are recorded in `docs/chatgpt_debug/RESP-2026-09-16-deployment-acceptance.md`.
+Walter authorized source pushes, publication and necessary Scheduler updates on 2026-09-16. Current deployment evidence and remaining gates are recorded in `docs/chatgpt_debug/RESP-2026-09-16-deployment-acceptance.md`. The prepared `publish_verified_sites.ps1` verifies canonical publication and postflight before `sync_groove_release.py` copies certified stock paths and verifies Groove remote hashes. It preserves the music application's root index and configuration. Its final Scheduler action update remains pending after a cancelled UAC request.
+
+Managed provenance covers 43 runtime scripts and two repository maintenance modules. The render universe is frozen at begin and compared with both the current metadata universe and exact artifact identities at completion. Native stage waits use fresh process lookup and creation identity; ordinary logging writes to the file before optional verbose output.
+
+Margin maintenance requests use the frozen nightly date. The dated fetch receipt must match this nightly, contain provider rows and report no API errors. Its source may lag by one official trading session; reports display the actual source date and an explicit lag warning. Older or future source dates fail certification.
 
 ## Report data semantics
 
@@ -114,6 +118,6 @@ Keep current run/marker/publication receipts and all referenced evidence. Retain
 
 ## Known data issues
 
-FinMind weekly, Weekly Shareholding 1330, cloudflared, and ticker 7768 classification remain separately visible. No schema migration or quarantine row deletion is part of this hardening.
+Weekly shares passed same-day DB coverage 1949/1949 and actual S4U execution; the legacy task name remains while its weekday trigger is 21:10. Groove boot recovery was installed and proved by controlled owned-process recovery. Ticker 7768 metadata was resolved against the official TWSE listing notice, retaining all 13 quarantine records. Canonical maintenance dates and unregistered legacy domain snapshots remain separately visible. No schema migration or quarantine row deletion is part of this hardening.
 
 The 2026 session calendar is sourced from [TWSE's official holiday schedule](https://www.twse.com.tw/holidaySchedule/holidaySchedule?response=html). Unscheduled closures need an explicit update. Unknown calendar years fail closed and must be reviewed before use.

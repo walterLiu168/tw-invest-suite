@@ -3,17 +3,17 @@ Pattern classifier — query MySQL daily_data2_full directly, classify all 1,951
 listed tickers into 8 patterns, compute backtest stats.
 
 Patterns:
-  - 熱門噴出 (hot_breakout): 20d +10% AND volume > 20d avg × 1.5 AND 外資連 3 日買超
-  - 短多 (short_uptrend): ret_20d > 5% AND close > sma_13 AND RSI 50-65
-  - 中多 (mid_uptrend): ret_60d > 10% AND close > sma_27 AND MA 多頭排列
-  - 長多 (long_uptrend): ret_240d > 30% AND close > sma_54
-  - 價值低估 (value_undervalued): P/B < 1.5 AND P/E < 15 (if yfinance data available)
-  - 短空 (short_downtrend): ret_20d < -5% AND close < sma_13 AND RSI < 40
-  - 中空 (mid_downtrend): ret_60d < -10% AND close < sma_27
+  - 熱門噴出 (hot_breakout): ret_20d > 5%, RSI >= 55, ForeignNet > 0
+  - 短多 (short_uptrend): ret_20d > 0, close > sma_13, RSI >= 45
+  - 中多 (mid_uptrend): ret_60d > 0, close > sma_27
+  - 長多 (long_uptrend): ret_240d > 0, close > sma_54
+  - 價值低估 (value_undervalued): 0 < P/B < 2, 0 < P/E < 20
+  - 短空 (short_downtrend): ret_20d < 0, close < sma_13, RSI <= 55
+  - 中空 (mid_downtrend): ret_60d < 0, close < sma_27
   - 長空腰斬 (long_drawdown): ret_240d < -30% AND close < sma_54
 
-Backtest: for each pattern, look at historical instances (last 240 days),
-compute forward 20d/60d return distribution → win rate, avg, median, max gain/loss.
+20d uses trading observations; 60d/240d price returns use calendar cutoffs.
+Backtest samples up to 240 trading sessions, using completed 20/60 observation holds.
 """
 import json
 import os
@@ -49,12 +49,12 @@ PATTERNS = {
     "mid_uptrend": {
         "name_zh": "📊 中多",
         "color": "red",
-        "desc": "60 日均線多頭排列，趨勢向上",
+        "desc": "60 曆日股價報酬為正，股價站上 27 日均線",
     },
     "long_uptrend": {
         "name_zh": "🚀 長多",
         "color": "red",
-        "desc": "240 日大漲，長期持有候選",
+        "desc": "240 曆日股價報酬為正，股價站上 54 日均線",
     },
     "value_undervalued": {
         "name_zh": "💎 價值低估",
@@ -69,7 +69,7 @@ PATTERNS = {
     "mid_downtrend": {
         "name_zh": "📊 中空",
         "color": "green",
-        "desc": "60 日均線空頭排列",
+        "desc": "60 曆日股價報酬為負，股價跌破 27 日均線",
     },
     "long_drawdown": {
         "name_zh": "💀 長空腰斬",
@@ -79,7 +79,7 @@ PATTERNS = {
     "margin_distress_rebound": {
         "name_zh": "🎯 融資反彈候選",
         "color": "red",
-        "desc": "240d 平均維持率 < 133% + 融資餘額大，潛在 forced-sell 反彈",
+        "desc": "以 120 曆日平均股價估算維持率 < 133%，融資餘額 ≥ 5,000 張；非實際借款成本",
     },
 }
 
@@ -87,14 +87,14 @@ PATTERNS = {
 def _classify_one(snap: Dict, rets: Dict, yf: Dict, avg_cost: float = 0) -> List[str]:
     """Return list of pattern keys this ticker matches.
 
-    avg_cost: 240d average close (proxy for average margin cost basis).
+    avg_cost: 120-calendar-day average close (proxy, not actual borrowing cost).
     If provided and > 0, used to estimate margin maintenance rate.
     """
     close = float(snap.get("Close") or 0)
     sma13 = float(snap.get("sma_13") or 0)
     sma27 = float(snap.get("sma_27") or 0)
     sma54 = float(snap.get("sma_54") or 0)
-    rsi = float(snap.get("rsi_14") or 0)
+    rsi = _optional_number(snap.get("rsi_14"))
     volume = int(snap.get("Volume") or 0)
     fnet = int(snap.get("ForeignNet") or 0)
     margin = int(snap.get("MarginBalance") or 0)
@@ -122,11 +122,11 @@ def _classify_one(snap: Dict, rets: Dict, yf: Dict, avg_cost: float = 0) -> List
     patterns = []
 
     # 熱門噴出: 短線爆發 + 法人買
-    if r20 > 5 and rsi >= 55 and fnet > 0:
+    if r20 > 5 and rsi is not None and rsi >= 55 and fnet > 0:
         patterns.append("hot_breakout")
 
     # 短多: 20 日動能偏多 + 技術面多頭
-    if r20 > 0 and sma13 > 0 and close > sma13 and rsi >= 45:
+    if r20 > 0 and sma13 > 0 and close > sma13 and rsi is not None and rsi >= 45:
         patterns.append("short_uptrend")
 
     # 中多: 60 日均線多頭 + 動能
@@ -142,7 +142,7 @@ def _classify_one(snap: Dict, rets: Dict, yf: Dict, avg_cost: float = 0) -> List
         patterns.append("value_undervalued")
 
     # 短空: 20 日動能偏空 + 技術面空頭
-    if r20 < 0 and sma13 > 0 and close < sma13 and rsi <= 55:
+    if r20 < 0 and sma13 > 0 and close < sma13 and rsi is not None and rsi <= 55:
         patterns.append("short_downtrend")
 
     # 中空: 60 日均線空頭
@@ -153,7 +153,7 @@ def _classify_one(snap: Dict, rets: Dict, yf: Dict, avg_cost: float = 0) -> List
     if r240 < -30 and sma54 > 0 and close < sma54:
         patterns.append("long_drawdown")
 
-    # 融資反彈候選: 240d 平均維持率 < 133% + 融資餘額 >= 5000 張
+    # 融資反彈候選: 120 曆日平均股價代理維持率 < 133% + 融資餘額 >= 5000 張
     # 排除：close < 5（全額交割股）、volume 太低（沒量）、drop > 80%（可能下市）
     if avg_cost > 0 and margin >= 5000 and close >= 5 and volume >= 100_000:
         maint_avg = close / avg_cost * 100
@@ -200,9 +200,9 @@ def get_all_long_term_returns(tickers: List[str]) -> Dict[str, Dict]:
                 try:
                     out[t]["ret_20d"] = (float(r["cur_close"]) / float(r["c20"]) - 1)
                 except (TypeError, ZeroDivisionError):
-                    out[t]["ret_20d"] = 0
+                    out[t]["ret_20d"] = None
             else:
-                out[t]["ret_20d"] = 0
+                out[t]["ret_20d"] = None
         cur.close()
     return out
 
@@ -258,6 +258,30 @@ def get_avg_costs_120d(tickers: List[str]) -> Dict[str, float]:
             except (TypeError, ValueError):
                 pass
         return out
+
+
+def _optional_number(value):
+    import math
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _top_stock_detail(ticker, snap, rets, yf):
+    def percent(value):
+        value = _optional_number(value)
+        return value * 100 if value is not None else None
+    return {
+        'ticker': ticker, 'close': _optional_number(snap.get('Close')),
+        'change_pct': _optional_number(snap.get('change_pct')),
+        'volume': _optional_number(snap.get('Volume')), 'rsi': _optional_number(snap.get('rsi_14')),
+        'ret_20d': percent(rets.get('ret_20d')), 'ret_60d': percent(rets.get('ret_60d')),
+        'ret_240d': percent(rets.get('ret_240d')), 'fnet': _optional_number(snap.get('ForeignNet')),
+        'roe': percent(yf.get('roe')), 'pe': _optional_number(yf.get('pe')),
+        'pb': _optional_number(yf.get('pb')), 'mcap': _optional_number(yf.get('market_cap')),
+    }
 
 
 def classify_all() -> Dict[str, List[str]]:
@@ -529,25 +553,10 @@ def main():
             snap = snaps.get(t, {})
             rets = rets_map.get(t, {})
             yf = yf_map.get(t, {})
-            close = float(snap.get("Close") or 0)
-            items.append({
-                "ticker": t,
-                "close": close,
-                "change_pct": float(snap.get("change_pct") or 0),
-                "volume": int(snap.get("Volume") or 0),
-                "rsi": float(snap.get("rsi_14") or 0),
-                "ret_20d": (rets.get("ret_20d") or 0) * 100,
-                "ret_60d": (rets.get("ret_60d") or 0) * 100,
-                "ret_240d": (rets.get("ret_240d") or 0) * 100,
-                "fnet": int(snap.get("ForeignNet") or 0),
-                "roe": (yf.get("roe") or 0) * 100,
-                "pe": yf.get("pe"),
-                "pb": yf.get("pb"),
-                "mcap": yf.get("market_cap"),
-            })
+            items.append(_top_stock_detail(t, snap, rets, yf))
         # Sort: for uptrends by ret_20d desc, for downtrends by ret_20d asc
         is_down = "down" in pkey or "drawdown" in pkey
-        items.sort(key=lambda x: x["ret_20d"] if is_down else -x["ret_20d"])
+        items.sort(key=lambda x: (x['ret_20d'] is None, (x['ret_20d'] if is_down else -x['ret_20d']) if x['ret_20d'] is not None else 0))
         top_stocks[pkey] = items[:30]  # top 30
 
     # Build output JSON

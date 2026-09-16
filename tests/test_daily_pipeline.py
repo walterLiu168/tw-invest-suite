@@ -25,6 +25,11 @@ import nightly_health as nh
 
 
 class NativeStageTests(unittest.TestCase):
+    def test_live_process_creation_identity_is_required(self):
+        command = f". '{ROOT / 'scripts/process_lifecycle.ps1'}';$created=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;if (-not (Test-OwnedProcess $PID $created)) {{exit 7}};if (Test-OwnedProcess $PID 0) {{exit 8}};if (-not (Wait-OwnedProcess $PID 0 2000)) {{exit 9}}"
+        result = subprocess.run(['powershell.exe','-NoProfile','-Command',command], capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_powershell_child_flags_spaces_failure_and_optional(self):
         with tempfile.TemporaryDirectory(prefix="pipeline-native-") as folder:
             root = Path(folder)
@@ -35,6 +40,7 @@ class NativeStageTests(unittest.TestCase):
             fn = fn.replace(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\run_stage.py", str(ROOT / "scripts" / "run_stage.py"))
             fn = fn.replace(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts", str(root))
             prolog = "$ErrorActionPreference='Stop'; $today='test'; $TimeoutMin=1; $env:TW_NIGHTLY_ID='fixture'; function Log-Msg {param($msg)}; function Write-Status {param($Stage,$State,$Pct)}\n"
+            prolog += f". '{ROOT / 'scripts/process_lifecycle.ps1'}'\n"
             script = root / "test.ps1"
             script.write_text(prolog + fn + f"\n$cmd='\"{child}\" --no-news --out \"a b\"'\n$a=Run-Stage -Number 1 -Name required -Cmd $cmd -TimeoutSec 5\n$b=Run-Stage -Number 2 -Name optional -Cmd $cmd -TimeoutSec 5 -Optional\nif ($a -or $b) {{exit 9}}\nexit 0\n", encoding="utf-8-sig")
             r = subprocess.run(["powershell.exe", "-NoProfile", "-File", str(script)], cwd=root, capture_output=True, text=True, timeout=30)
@@ -88,8 +94,8 @@ class ReleaseGateTests(unittest.TestCase):
                 ps.verify_marker(self.marker, self.now, False)
 
     def test_missing_marker_artifacts_cannot_be_prepared(self):
-        marker = dict(self.marker, run_id=1, picks=[], source_hashes={})
-        with patch.object(ps, "db_snapshot", return_value={"data_date": marker["data_date"], "run_id": 1, "picks": []}), patch.object(ps, "source_hashes", return_value={}):
+        marker = dict(self.marker, run_id=1, picks=[], source_hashes={}, render_tickers=[])
+        with patch.object(ps, "db_snapshot", return_value={"data_date": marker["data_date"], "run_id": 1, "picks": [], "render_tickers": []}), patch.object(ps, "source_hashes", return_value={}):
             with self.assertRaisesRegex(ValueError, "no artifacts"):
                 ps.verify_marker(marker, self.now)
 
@@ -98,9 +104,15 @@ class ReleaseGateTests(unittest.TestCase):
         f.write_text("old")
         artifact = ps.artifact(f, "watchlist.html")
         f.write_text("changed")
-        marker = dict(self.marker, run_id=1, picks=[], source_hashes={}, artifacts=[artifact])
-        with patch.object(ps, "db_snapshot", return_value={"data_date": marker["data_date"], "run_id": 1, "picks": []}), patch.object(ps, "source_hashes", return_value={}):
+        marker = dict(self.marker, run_id=1, picks=[], source_hashes={}, artifacts=[artifact], render_tickers=[])
+        with patch.object(ps, "db_snapshot", return_value={"data_date": marker["data_date"], "run_id": 1, "picks": [], "render_tickers": []}), patch.object(ps, "source_hashes", return_value={}):
             with self.assertRaisesRegex(ValueError, "artifact changed"):
+                ps.verify_marker(marker, self.now)
+
+    def test_metadata_universe_change_invalidates_certified_render(self):
+        marker = dict(self.marker, run_id=1, picks=[], source_hashes={}, render_tickers=['2330'])
+        with patch.object(ps, 'db_snapshot', return_value={'data_date': marker['data_date'], 'run_id':1,'picks':[], 'render_tickers':['2330','7768']}):
+            with self.assertRaisesRegex(ValueError, 'marker/DB mismatch'):
                 ps.verify_marker(marker, self.now)
 
     def test_staged_hash_matches_actual_published_path(self):
