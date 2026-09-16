@@ -353,7 +353,11 @@ $scanScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\scan.p
 $stages += @{ N=5; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=30*60; Optional=$true }
 
 # Stage 6: Full watchlist render
-$stages += @{ N=6; Name='watchlist'; Cmd='render_full_watchlist.py'; To=10*60 }
+# D056-2 hardening: bumped to 30min from 10min. Stage 6 does parallel deep-dive
+# fetches for 24 picks (ThreadPoolExecutor=4 workers); if any single fetch
+# hangs, the whole stage can take much longer. 30min is well above the typical
+# 60s observation but tolerates transient network blips.
+$stages += @{ N=6; Name='watchlist'; Cmd='render_full_watchlist.py'; To=30*60 }
 
 # Stage 7-17 REMOVED in D056-A (砍掉 D027/D029 advanced stages)
 # 過去每天跑 25 分鐘，但 GitHub Pages 用不到。手動觸發 `-IncludeAdvancedStages` 加回來。
