@@ -1,4 +1,4 @@
-# D056 takeover — 2026-09-16 21:05 Taipei
+# D056 takeover — 2026-09-16 21:21 Taipei
 
 ## Objective and authorization
 
@@ -6,16 +6,18 @@ Finish the authorized feature/code hardening, source pushes, Scheduler deploymen
 
 ## Current source and runtime
 
-- Primary: `C:\Users\icemo\Projects\tw-invest-suite`, main pushed through `ddfc9fb`.
+- Primary: `C:\Users\icemo\Projects\tw-invest-suite`, source main pushed through `bccd12f`.
 - Scheduler runtime: `C:\Users\icemo\.claude\skills\tw-invest-suite\scripts`.
 - Served stock mirror: `C:\Groove-Lab\analyze`; preserve Groove music root index/config/data. Groove root is not a Git repo.
 - AI-Telegram: `D:\CODEX\AI-Telegram`, existing branch `experiment/minerva-validation-calibrated-20260625`, pushed through scoped `b3df3a9` (RSS outcome receipt). Numerous unrelated working changes remain.
 - Python314 primary / Python310 AI; native PowerShell 5.1 acceptance.
-- 136 primary tests and seven RSS tests passed. All 45 managed repo/runtime hashes match. Runtime backups are in primary `scripts/_debug/runtime_source_backup_*`.
+- 137 primary tests and seven RSS tests passed. All 45 managed repo/runtime hashes match. Runtime backups are in primary `scripts/_debug/runtime_source_backup_*`.
 
-## Next default S4U acceptance — recheck live state
+## Live default S4U acceptance — freeze managed source
 
-Nightly `8b3c60f2d38b45919de84f1e5aeff0e9` was stopped at 21:17–21:18 before certification to fix the price panel's confirmed shares/lots unit error. Actual S4U wrapper detected owner exit and terminated the renderer/four workers with exit -2; independent CIM found no owned process remaining, without UAC. The attempt is failed/un-certified. The next default full run is pending final tests/source push. Data date remains 2026-09-16, screen run 17, 24 picks, render universe 1974. Recheck runtime pipeline state for the next UUID and freeze all managed source while that owner is live.
+Current nightly `a4e06a1314a843469356dfb3a0b148d6`, default full S4U, owner PID4844 / creation `2026-09-16T21:20:27.965617`, began at 21:20:28–21:20:29. Data date 2026-09-16, screen run 17, 24 picks, frozen universe 1974. It is running, not certified. Recheck runtime state before acting; do not change managed source while this owner is live.
+
+Earlier nightly `8b3c60f2d38b45919de84f1e5aeff0e9` was stopped at 21:17–21:18 before certification to fix the confirmed closing-volume unit error. Its actual S4U wrapper detected owner exit and terminated renderer/four workers with exit -2; independent CIM found no owned process remaining, without UAC. That attempt is failed/un-certified.
 
 Useful observation: Python314 `scripts/_debug/observe_acceptance.py`. It reads runtime pipeline state, UUID-matched heartbeats, source equality and the parent log. Do not restart just because observation timed out. Required maintenance/render/patterns/patterns_html/watchlist must pass; margin scan and supplemental deep dives remain optional/degraded. Full completion must write this UUID's valid `last_completed.json`, exact artifact hashes and 24-pick identity.
 
@@ -30,7 +32,7 @@ Earlier attempts are failed/un-certified: `83217e7ab18343adbe50968f625e251d` ren
 - Maintenance receipt explicitly records Sep16 requested / Sep15 source, 10232 rows, API errors=0. One official session lag is allowed and warned; older/future receipts fail certification.
 - The 21:00 RSS trigger failed; the 21:11:11 retry completed with result 0. Durable receipt at AI `.codex-work-state/rss_ingestion_latest.json`: 81 queries, fetched=1101, raw_inserted=16, derived_inserted=4, duplicates=193, projection_skipped=0, projection_missing_urls=3, errors=0. Full raw URLs remain preserved; nullable links are explicit. The first failure's exact cause was not captured, and a later read-only fetch succeeded.
 - Final Scheduler configuration snapshot: primary `scripts/_debug/scheduler_final_configuration.json`, enabled_count=23, configuration_issues=0. Health was rerun after RSS recovery; observe its terminal result rather than reusing the earlier failed result.
-- Health recheck at 21:13:13 returned 0. Fresh 1452 UI passed all 18 tabs and zero JavaScript errors. Its price panel then exposed raw shares mislabeled lots; fixed output shows shares plus precise lots, unavailable missing values and real zero volume. The static tab is renamed 收盤行情 in both modes. Eight report-identity tests passed; final full suite is running.
+- Health recheck at 21:13:13 returned 0. Fresh 1452 UI passed all 18 tabs and zero JavaScript errors. Fixed closing panel visibly shows shares plus precise lots, unavailable missing values and real zero volume; static tab is 收盤行情 in both modes. Eight report-identity tests and final 137-test full suite passed. At 390px, page width is 375px with no page-level horizontal overflow; viewport reset.
 
 ## Remaining gates
 
