@@ -1,6 +1,6 @@
 # Daily pipeline reference — D056-2 hardening
 
-Updated: 2026-09-15. Runtime and repository copies of scheduled files must have identical SHA-256.
+Updated: 2026-09-16. Runtime and repository copies of scheduled files must have identical SHA-256.
 
 ## Source boundaries
 
@@ -8,7 +8,7 @@ Updated: 2026-09-15. Runtime and repository copies of scheduled files must have 
 - Scheduler runtime: `C:\Users\icemo\.claude\skills\tw-invest-suite\scripts`
 - Render output: `C:\Groove-Lab\analyze`
 - Published files: a fresh staging directory, populated from the completion marker's exact artifact paths and SHA-256 values.
-- All operational helpers are now ordinary versioned `scripts/*.py` files. Legacy `_debug` helpers are not called by the scheduled pipeline.
+- Daily report, completion, watchdog, publication and postflight helpers are ordinary versioned `scripts/*.py` files. The independent health-check Scheduler action still points to its legacy runtime `_debug/check_openalice_health.py`; do not confuse that diagnostic with daily completion evidence.
 
 ## Schedule and dependency
 
@@ -62,7 +62,7 @@ It atomically writes `last_completed.json` (version `D056-2`) only after these c
 
 `publish_ghpages.py` defaults to local preparation; `--publish` is the scheduled mode. `publish_ghpages_daily.ps1 -PrepareOnly` performs the full gate and staging without pushing.
 
-The publisher overlays certified artifacts onto a fresh staging directory, verifies every staged artifact hash, and uses a fast-forward Git push to `gh-pages`. No force push is needed. It verifies the remote manifest, watchlist, patterns, JSON and all selected ticker pages by byte hashes. Only then is the publication receipt marked verified.
+The publisher overlays certified artifacts onto a fresh staging directory, verifies every staged artifact hash, and uses a fast-forward Git push to `gh-pages`. Its local Git configuration and `info/attributes` preserve the certified bytes, including CRLF, regardless of Windows autocrlf defaults. No force push is needed. It verifies the remote manifest, watchlist, patterns, JSON and all selected ticker pages by byte hashes. Only then is the publication receipt marked verified.
 
 The same job runs final postflight and publishes the morning dashboard in a second bounded status commit. Dashboard bytes are checked remotely too. The status report is not part of the immutable analytical-artifact manifest, avoiding a self-referential hash.
 
@@ -87,7 +87,7 @@ C:\Python314\python.exe -B -m unittest discover -s tests -p test_daily_pipeline.
 powershell.exe -NoProfile -File scripts\publish_ghpages_daily.ps1 -PrepareOnly
 ```
 
-Tests cover PowerShell 5.1 argument boundaries, whitespace, child errors, timeouts, old/failed/watchdog markers, altered artifacts, exact pick identity, calendar closures, and false-green status.
+Tests cover PowerShell 5.1 argument boundaries, whitespace, child errors, timeouts, old/failed/watchdog markers, altered artifacts, exact pick identity with optional margin cards, calendar closures, and false-green status. Publication checks include an actual local HTTP server serving a stale selected page, actual Git staging under Windows autocrlf, prepare-only behavior, and remote verification failure.
 
 ## Known data issues
 
