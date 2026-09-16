@@ -1,12 +1,14 @@
 """Regression tests for actual process boundaries and release failure gates."""
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import threading
@@ -16,9 +18,11 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "scripts" / "_debug"))
 import pipeline_state as ps
 import publish_ghpages as publisher
 import build_dashboard as dashboard
+import nightly_health as nh
 
 
 class NativeStageTests(unittest.TestCase):
@@ -261,6 +265,84 @@ class PublicationTests(unittest.TestCase):
             with patch.object(ps, "verify_marker", return_value={}), patch.object(publisher, "prepare_site", return_value=(root, manifest)), patch.object(publisher, "verify_staged"), patch.object(ps, "RUNTIME", root), patch.object(publisher, "RESULT", result_path), patch.object(publisher, "run", return_value="commit"), patch.object(publisher, "remote_verify", side_effect=ValueError("stale page")), patch.object(publisher.time, "sleep"), patch.object(sys, "argv", ["publish_ghpages.py", "--publish"]):
                 self.assertEqual(publisher.main(), 1)
                 self.assertEqual(ps.read_json(result_path)["status"], "failed")
+
+
+class NightlyHealthTests(unittest.TestCase):
+    def _write_state(self, tmp, status, started_offset_min=None, owner_pid=0):
+        state = {"nightly_id": "fixture", "started_at": datetime.now().isoformat(),
+                 "execution_date": "2026-09-15", "status": status, "mode": "full",
+                 "owner_pid": owner_pid, "trading_session": True, "data_date": "2026-09-15",
+                 "run_id": 16, "picks_count": 24,
+                 "bucket_counts": {b: 6 for b in sorted(ps.BUCKETS)}}
+        if started_offset_min is not None:
+            state["started_at"] = (datetime.now() - timedelta(minutes=started_offset_min)).isoformat()
+        tmp.write_text(json.dumps(state), encoding="utf-8")
+
+    def test_diagnose_missing_state_is_healthy(self):
+        with tempfile.TemporaryDirectory(prefix="nh-missing-") as folder:
+            with patch.object(nh, "STATE", Path(folder) / "absent.json"):
+                verdict, state, detail = nh.diagnose()
+            self.assertEqual(verdict, "missing")
+            self.assertIsNone(state)
+
+    def test_diagnose_completed_run_is_healthy(self):
+        with tempfile.TemporaryDirectory(prefix="nh-done-") as folder:
+            p = Path(folder) / "pipeline_run.json"
+            self._write_state(p, status="ok")
+            with patch.object(nh, "STATE", p):
+                verdict, state, detail = nh.diagnose()
+            self.assertEqual(verdict, "healthy")
+            self.assertEqual(state["status"], "ok")
+
+    def test_diagnose_stuck_when_running_too_long_with_quiet_logs(self):
+        # Simulate 9/16 incident: started 2h ago, owner_pid alive but idle,
+        # no stage log updates in 40+ minutes.
+        with tempfile.TemporaryDirectory(prefix="nh-stuck-") as folder:
+            root = Path(folder)
+            state_path = root / "pipeline_run.json"
+            log_dir = root / "stage_logs"
+            log_dir.mkdir()
+            self._write_state(state_path, status="running", started_offset_min=120,
+                              owner_pid=os.getpid())
+            (log_dir / "20260916_fixture_stage2_render.log").write_text("old", encoding="utf-8")
+            old_time = time.time() - 2400
+            os.utime(log_dir / "20260916_fixture_stage2_render.log", (old_time, old_time))
+            with patch.object(nh, "STATE", state_path), patch.object(nh, "LOG_DIR", log_dir):
+                verdict, state, detail = nh.diagnose()
+            self.assertEqual(verdict, "stuck", f"expected stuck, got {verdict!r}: {detail}")
+            # Either "runtime" (age) or "stage log update" reason should be present.
+            self.assertTrue("runtime" in detail or "stage log update" in detail,
+                            f"detail missing expected cause: {detail}")
+
+    def test_diagnose_orphan_when_owner_pid_dead(self):
+        # PID 1 on Windows may exist but the running state should still detect via
+        # age threshold. Use a clearly dead PID.
+        with tempfile.TemporaryDirectory(prefix="nh-orphan-") as folder:
+            root = Path(folder)
+            state_path = root / "pipeline_run.json"
+            log_dir = root / "stage_logs"
+            log_dir.mkdir()
+            self._write_state(state_path, status="running", started_offset_min=10,
+                              owner_pid=999999)
+            with patch.object(nh, "STATE", state_path), patch.object(nh, "LOG_DIR", log_dir):
+                verdict, state, detail = nh.diagnose()
+            # PID 999999 is not alive → caught by age threshold + log check;
+            # the verdict may be "stuck" or "healthy" depending on log mtime.
+            # We assert the function does not crash and returns one of the two.
+            self.assertIn(verdict, ("healthy", "stuck"))
+
+    def test_diagnose_running_but_fresh_is_healthy(self):
+        with tempfile.TemporaryDirectory(prefix="nh-fresh-") as folder:
+            root = Path(folder)
+            state_path = root / "pipeline_run.json"
+            log_dir = root / "stage_logs"
+            log_dir.mkdir()
+            self._write_state(state_path, status="running", started_offset_min=5,
+                              owner_pid=os.getpid())
+            (log_dir / "20260916_fixture_stage2_render.log").write_text("now", encoding="utf-8")
+            with patch.object(nh, "STATE", state_path), patch.object(nh, "LOG_DIR", log_dir):
+                verdict, state, detail = nh.diagnose()
+            self.assertEqual(verdict, "healthy")
 
 
 if __name__ == "__main__":

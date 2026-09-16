@@ -401,11 +401,30 @@ foreach ($s in $stages) {
 # Certify the exact data run, required stages and publish artifacts together.
 $stagesPath = Join-Path $PSScriptRoot "_debug\stages_$($env:TW_NIGHTLY_ID).json"
 ConvertTo-Json -InputObject @($stageResults) -Depth 5 | Set-Content -LiteralPath $stagesPath -Encoding UTF8
-& C:\Python314\python.exe pipeline_state.py complete --stages $stagesPath
+# D056-2 hardening: capture complete() stderr/stdout to file so the FATAL reason
+# is logged (previously `& python ...` dropped stderr, leaving only "FATAL: nightly
+# not certified" without which cert check failed).
+$completeLogPath = Join-Path $PSScriptRoot "_debug\complete_$($env:TW_NIGHTLY_ID).log"
+$completeErrPath = Join-Path $PSScriptRoot "_debug\complete_$($env:TW_NIGHTLY_ID).err"
+Remove-Item -LiteralPath $completeLogPath -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $completeErrPath -ErrorAction SilentlyContinue
+& C:\Python314\python.exe pipeline_state.py complete --stages $stagesPath `
+    1>"$completeLogPath" 2>"$completeErrPath"
 $completionExit = $LASTEXITCODE
 if ($completionExit -ne 0) {
     Write-Status -Stage 'complete' -State 'failed' -Pct 0
-    Log-Msg 'FATAL: nightly not certified; publication is blocked'
+    # Surface the actual reason — without this the cert failure is invisible.
+    $certReason = 'unknown'
+    if (Test-Path -LiteralPath $completeErrPath) {
+        $errText = (Get-Content -LiteralPath $completeErrPath -Raw -Encoding UTF8).Trim()
+        if ($errText) { $certReason = $errText }
+    } elseif (Test-Path -LiteralPath $completeLogPath) {
+        $outText = (Get-Content -LiteralPath $completeLogPath -Raw -Encoding UTF8).Trim()
+        if ($outText) { $certReason = $outText }
+    }
+    Log-Msg "FATAL: nightly not certified; publication is blocked"
+    Log-Msg "  reason: $certReason"
+    Log-Msg "  detail: $completeErrPath"
     exit $completionExit
 }
 Log-Msg 'Artifacts certified. Scheduled publish consumes this run after completion.'
