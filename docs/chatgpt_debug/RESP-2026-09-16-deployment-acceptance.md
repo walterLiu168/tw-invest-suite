@@ -31,9 +31,19 @@ Walter authorized necessary feature fixes, source pushes, publication and Schedu
 - Isolated worker acceptance: C:\Users\icemo\Projects\tw-worker-acceptance-e_33rkw1, four real cached tickers; serial 10.4s / parallel 4.7s, generated content equal after generation-time normalization.
 - 10 semantic/worker tests pass. Full suite after these additions is being rerun.
 
-## Scheduler configuration limitation
+## Scheduler configuration applied
 
-The legitimate RunAs elevation attempt returned 操作被使用者取消. `register_verified_pipeline.ps1` has not run; health action, Weekly timing, UTF-8 actions, S4U, wake and retry changes remain pending. Do not claim they were applied or silently bypass elevation. Existing nightly-health trigger expansion remains installed.
+The first legitimate RunAs attempt was cancelled. Walter authorized retry with "continue"; the second UAC invocation completed at 20:14:58, process 29212, exit 0. All six existing-task changes were applied, including wake, ordinary health action, UTF-8, Weekly weekday 21:10, S4U and scoped retry settings. XML backups and transcript are under scripts/_debug/scheduler_backup_20260916.
+
+After application, actual S4U Weekly execution at 20:17:17 completed with LastTaskResult=0. RSS and health-check executions in the updated context are being observed. The current daily-report instance began before the principal change and does not prove a new S4U execution context.
+
+## Live full validation and site recovery
+
+- Primary commits 44a153f and bd81e3b are pushed to origin/main. All 30 managed source hashes matched repo/runtime before the current run. Full suite: 118 tests passed; final pattern lookback adjustment additionally passed the 10 semantic tests and compilation.
+- Actual daily-report UUID 83217e7ab18343adbe50968f625e251d, data_date=2026-09-16, run_id=17, picks=24. Owner 30508 / wrapper 25784 / renderer 26076. Assemble 1973/1973 in 202s; rendering 600/1973, failures=0 at the latest observation. No managed-source edits while this run is live.
+- GrooveLab 1033 was reproduced in the browser. The configured named connector and existing origin were absent; ordinary hidden processes restored the existing config and server (connector 21416, origin 21172). The separate existing Cloudflared Windows service was preserved.
+- Browser now opens https://groovelab.dev/watchlist.html and correctly displays the previous 2026-09-15 watchlist. Fresh release validation remains pending.
+- Prepared ordinary groove_service_watch.ps1 and register_groove_service.ps1 for boot and process recovery. Native PowerShell parser and actual healthy -Once probe passed. Startup task installation and owned-process recovery acceptance remain pending.
 
 ## Explicitly stopped validation
 
