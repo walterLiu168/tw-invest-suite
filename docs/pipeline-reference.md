@@ -77,6 +77,8 @@ Walter authorized source pushes, publication and necessary Scheduler updates on 
 
 Managed provenance covers 43 runtime scripts and two repository maintenance modules. The render universe is frozen at begin and compared with both the current metadata universe and exact artifact identities at completion. Native stage waits use fresh process lookup and creation identity; ordinary logging writes to the file before optional verbose output.
 
+Cross-logon S4U monitoring falls back to bounded CIM when OpenProcess is denied. It compares process creation identity and rejects PID reuse; CIM errors remain unknown. Each stage wrapper also monitors its exact parent and kills its child tree within its heartbeat interval if Scheduler stops that parent, preventing orphan writers.
+
 Margin maintenance requests use the frozen nightly date. The dated fetch receipt must match this nightly, contain provider rows and report no API errors. Its source may lag by one official trading session; reports display the actual source date and an explicit lag warning. Older or future source dates fail certification.
 
 ## Report data semantics

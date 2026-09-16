@@ -57,22 +57,45 @@ def owner_running(run):
     kernel.OpenProcess.restype = ctypes.c_void_p
     handle = kernel.OpenProcess(0x1000, False, int(run["owner_pid"]))
     if not handle:
+        if ctypes.get_last_error() == 5:
+            return owner_creation_matches(run, cim_process_creation_time(run['owner_pid']))
         return False
     try:
         code = ctypes.c_ulong()
         if not kernel.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code)) or code.value != 259:
             return False
         created = process_creation_time(run["owner_pid"])
-        if run.get("owner_created_at"):
-            return created == run["owner_created_at"]
-        if run.get("started_at"):
-            if not created:
-                return False
-            delta = datetime.fromisoformat(run["started_at"]) - datetime.fromisoformat(created)
-            return timedelta(seconds=-2) <= delta <= timedelta(minutes=2)
-        return True
+        return owner_creation_matches(run, created)
     finally:
         kernel.CloseHandle(ctypes.c_void_p(handle))
+
+
+def owner_creation_matches(run, created):
+    if not created:
+        return False
+    actual = datetime.fromisoformat(created)
+    if run.get('owner_created_at'):
+        # FILETIME float conversion and CIM truncation differ by at most 1us.
+        return abs(actual - datetime.fromisoformat(run['owner_created_at'])) <= timedelta(microseconds=2)
+    if run.get('started_at'):
+        return timedelta(seconds=-2) <= datetime.fromisoformat(run['started_at']) - actual <= timedelta(minutes=2)
+    return True
+
+
+def cim_process_creation_time(pid):
+    """Read public process identity when another logon denies OpenProcess."""
+    import subprocess
+    command = (f"$p=Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}' -ErrorAction Stop;"
+               "if($p){$p.CreationDate.ToString('yyyy-MM-ddTHH:mm:ss.ffffff')}")
+    result = subprocess.run([r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+                             '-NoProfile', '-Command', command], capture_output=True, text=True,
+                            timeout=10, creationflags=0x08000000)
+    if result.returncode:
+        raise RuntimeError('Cannot verify process identity through CIM')
+    created = result.stdout.strip()
+    if created:
+        datetime.fromisoformat(created)
+    return created or None
 
 
 def process_creation_time(pid):
@@ -82,6 +105,8 @@ def process_creation_time(pid):
     kernel.OpenProcess.restype = ctypes.c_void_p
     handle = kernel.OpenProcess(0x1000, False, int(pid))
     if not handle:
+        if ctypes.get_last_error() == 5:
+            return cim_process_creation_time(pid)
         return None
     try:
         times = [FILETIME() for _ in range(4)]

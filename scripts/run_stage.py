@@ -11,7 +11,11 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from pipeline_state import atomic_json
+from pipeline_state import atomic_json, owner_running, process_creation_time
+
+
+class OwnerExited(RuntimeError):
+    pass
 
 
 def main():
@@ -44,7 +48,14 @@ def main():
     print(f"[wrapper:{args.label}] start timeout={args.timeout}s workdir={workdir}", file=sys.stderr)
     print(f"[wrapper:{args.label}] cmd={cmd}", file=sys.stderr)
 
+    proc = None
     try:
+        parent_pid = os.getppid()
+        parent_created = process_creation_time(parent_pid)
+        if not parent_created:
+            raise RuntimeError('Cannot verify stage owner creation identity')
+        owner = {'status':'running', 'owner_pid':parent_pid, 'owner_created_at':parent_created}
+        heartbeat.update(owner_pid=parent_pid, owner_created_at=parent_created)
         with open(args.out, "wb") as fout, open(args.err, "wb") as ferr:
             proc = subprocess.Popen(
                 cmd,
@@ -67,17 +78,28 @@ def main():
                     except subprocess.TimeoutExpired:
                         if time.monotonic() >= deadline:
                             raise
+                        if not owner_running(owner):
+                            raise OwnerExited('Stage owner exited or its PID was reused')
                         beat("running")
-            except subprocess.TimeoutExpired:
-                print(f"[wrapper:{args.label}] TIMEOUT after {args.timeout}s — killing process tree", file=sys.stderr)
+            except (subprocess.TimeoutExpired, OwnerExited) as stopped:
+                reason = 'owner exited' if isinstance(stopped, OwnerExited) else f'timeout after {args.timeout}s'
+                heartbeat['stop_reason'] = reason
+                print(f"[wrapper:{args.label}] {reason} — killing process tree", file=sys.stderr)
                 _kill_tree(proc)
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait(timeout=5)
-                rc = -1  # signal timeout
+                rc = -2 if isinstance(stopped, OwnerExited) else -1
     except Exception as e:
+        if proc is not None and proc.poll() is None:
+            _kill_tree(proc)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
         print(f"[wrapper:{args.label}] FATAL: {e}", file=sys.stderr)
         # Still write a sidecar file so PowerShell can read something
         try:

@@ -79,3 +79,11 @@ Run 1a159eaa1bf44ca78a28a7804b0d3aa8 was intentionally terminated to fix confirm
 - RSS dependencies have seven passing focused tests and actual updated-context RSS result 0 at 20:41:41. Reviewed active parser/writer and task-owned tracking prefixes were committed and pushed as 0b4adde on the existing AI-Telegram branch, with unrelated user changes preserved.
 - Independent latest-date SQL: 2026-09-16 daily rows=1949, missing company=0; 7768 quarantine total=13, open=0. Actual S4U market-screen task at 20:58:58 returned 0 through its existing complete-run idempotency path (run_id=17, picks=24); this does not claim a new screening computation. The frozen metadata render universe is now 1974.
 - The final publisher action update UAC was cancelled. The user choice to retry is pending; the installed publisher currently performs canonical publication. The two-site wrapper and mirror are prepared and tested but are not yet the installed action.
+
+## S4U process identity acceptance
+
+The actual default S4U attempt 89f4a2f3e9db451386d14859af59e83a began at 20:59:16, owner 15472, and successfully advanced from maintenance to render. Interactive monitoring could see the process through CIM but OpenProcess and Get-Process.StartTime were denied. This confirmed a false dead-owner result in the monitor. The attempt was stopped early; Scheduler stopped only its parent, leaving wrapper 23676 and renderer 29208. A normal UAC cleanup verified the same UUID and exact wrapper creation identity before terminating that owned tree; cleanup exit 0. The attempt is failed and un-certified.
+
+Process identity now falls back to bounded CIM only on access denied, preserving creation identity and rejecting PID reuse. Unknown CIM failures propagate rather than being labeled dead. The original handle and CIM timestamps may differ by one microsecond from conversion; comparisons allow two microseconds. Four focused identity tests passed, including actual native/CIM identity comparison; the full suite before orphan cleanup changes passed 135 tests.
+
+The stage wrapper now monitors its exact parent creation identity and terminates its child tree if Scheduler stops that parent. A real child/grandchild owner-termination acceptance test passed; all five focused identity/orphan tests passed in 16.6 seconds before the next source freeze and full S4U run.
