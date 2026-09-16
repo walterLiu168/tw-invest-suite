@@ -35,6 +35,16 @@ def verify_staged(root, manifest):
             raise ValueError(f"staged SHA mismatch: {relative}")
 
 
+def initialize_release_git(root):
+    run(["git", "init", "-b", "main"], root)
+    # Git on Windows otherwise converts CRLF to LF on add, invalidating the
+    # certified byte hashes even though the working tree remains unchanged.
+    run(["git", "config", "core.autocrlf", "false"], root)
+    attributes = root / ".git" / "info" / "attributes"
+    attributes.parent.mkdir(parents=True, exist_ok=True)
+    attributes.write_text("* -text -filter -ident -working-tree-encoding\n", encoding="utf-8")
+
+
 def prepare_site(marker):
     manifest = pm.build_certified_manifest(marker)
     root = Path(tempfile.mkdtemp(prefix="tw-invest-release-", dir=ps.REPO.parent))
@@ -91,7 +101,7 @@ def main():
             return 0
         result = {"nightly_id": manifest["nightly_id"], "data_date": manifest["data_date"], "run_id": manifest["run_id"], "status": "publishing"}
         ps.atomic_json(RESULT, result)
-        run(["git", "init", "-b", "main"], root)
+        initialize_release_git(root)
         run(["git", "remote", "add", "origin", "https://github.com/walterLiu168/tw-invest-suite.git"], root)
         run(["git", "fetch", "--depth=1", "origin", "gh-pages"], root)
         run(["git", "reset", "--mixed", "FETCH_HEAD"], root)

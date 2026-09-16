@@ -28,6 +28,8 @@ SOURCE_FILES = (
     "postflight_daily.py", "daily_summary.py", "build_dashboard.py",
     "marker_watchdog_daily.ps1", "cross_source_runner.py", "market_calendar.py",
     "market_screen_runner.py",
+    "render_ticker_full.py", "daily_full_tickers.py",
+    "market_report.py", "market_report_html.py",
 )
 
 

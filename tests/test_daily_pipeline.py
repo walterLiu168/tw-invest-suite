@@ -7,6 +7,9 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import threading
 import unittest
 from datetime import date
 from unittest.mock import patch
@@ -130,6 +133,68 @@ class ContentTests(unittest.TestCase):
         self.assertEqual(dashboard.evaluate(None, {}, []), "CRITICAL")
         self.assertEqual(dashboard.evaluate({"nightly_id": "a"}, {"nightly_id": "b", "status": "verified"}, []), "WARNING")
         self.assertEqual(dashboard.evaluate({"nightly_id": "a"}, {"nightly_id": "a", "status": "verified"}, []), "OK")
+
+
+class PublicationTests(unittest.TestCase):
+    def test_git_release_preserves_certified_bytes_with_windows_autocrlf(self):
+        with tempfile.TemporaryDirectory(prefix="pipeline-git-") as folder:
+            root = Path(folder)
+            publisher.run(["git", "init", "-b", "main"], root)
+            publisher.run(["git", "config", "core.autocrlf", "true"], root)
+            # Attributes, including nested ones, must not rewrite release bytes.
+            (root / ".gitattributes").write_text("*.html text eol=lf\n")
+            page = root / "analyze" / "2330.html"
+            page.parent.mkdir()
+            page.write_bytes(b"<html>\r\ncurrent\r\n</html>\r\n")
+            publisher.initialize_release_git(root)
+            publisher.run(["git", "add", "-A"], root)
+            blob = subprocess.run(["git", "show", ":analyze/2330.html"], cwd=root, check=True, capture_output=True).stdout
+            self.assertEqual(blob, page.read_bytes())
+
+    def test_remote_verifier_rejects_one_stale_selected_ticker(self):
+        with tempfile.TemporaryDirectory(prefix="pipeline-http-") as folder:
+            root = Path(folder)
+            served, staged = root / "served", root / "staged"
+            manifest = {"nightly_id": "fixture", "data_date": "2026-09-15", "tickers": [{"ticker": "2330"}, {"ticker": "2317"}]}
+            paths = ["watchlist.html", "patterns.html", "data/patterns.json", "data/watchlist-full.json", "data/publish_manifest_2026-09-15.json", "analyze/2330.html", "analyze/2317.html"]
+            for base in (served, staged):
+                for relative in paths:
+                    f = base / relative
+                    f.parent.mkdir(parents=True, exist_ok=True)
+                    f.write_text("current " + relative, encoding="utf-8")
+            class QuietHandler(SimpleHTTPRequestHandler):
+                def log_message(self, *args):
+                    pass
+            server = ThreadingHTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(served)))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch.object(publisher.pm, "GITHUB_PAGES_BASE", f"http://127.0.0.1:{server.server_port}"):
+                    self.assertEqual(set(publisher.remote_verify(staged, manifest)), set(paths))
+                    (served / "analyze" / "2317.html").write_text("yesterday")
+                    with self.assertRaisesRegex(ValueError, "2317"):
+                        publisher.remote_verify(staged, manifest)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_default_prepare_never_invokes_git_push(self):
+        with tempfile.TemporaryDirectory(prefix="pipeline-prepare-") as folder:
+            root = Path(folder)
+            manifest = {"nightly_id": "fixture", "data_date": "2026-09-15", "run_id": 16, "artifacts": []}
+            with patch.object(ps, "verify_marker", return_value={}), patch.object(publisher, "prepare_site", return_value=(root, manifest)), patch.object(ps, "RUNTIME", root), patch.object(publisher, "run") as git, patch.object(sys, "argv", ["publish_ghpages.py"]):
+                self.assertEqual(publisher.main(), 0)
+                git.assert_not_called()
+
+    def test_remote_failure_never_becomes_verified(self):
+        with tempfile.TemporaryDirectory(prefix="pipeline-remote-failure-") as folder:
+            root = Path(folder)
+            manifest = {"nightly_id": "fixture", "data_date": "2026-09-15", "run_id": 16, "artifacts": []}
+            result_path = root / "result.json"
+            with patch.object(ps, "verify_marker", return_value={}), patch.object(publisher, "prepare_site", return_value=(root, manifest)), patch.object(publisher, "verify_staged"), patch.object(ps, "RUNTIME", root), patch.object(publisher, "RESULT", result_path), patch.object(publisher, "run", return_value="commit"), patch.object(publisher, "remote_verify", side_effect=ValueError("stale page")), patch.object(publisher.time, "sleep"), patch.object(sys, "argv", ["publish_ghpages.py", "--publish"]):
+                self.assertEqual(publisher.main(), 1)
+                self.assertEqual(ps.read_json(result_path)["status"], "failed")
 
 
 if __name__ == "__main__":

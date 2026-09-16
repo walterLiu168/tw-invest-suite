@@ -1746,20 +1746,63 @@ a.news-title:hover { color: var(--acc); text-decoration: underline; }
 """
 
 
+def _compute_kd(highs, lows, closes, n=9):
+    """KD 隨機指標 (Stochastic). RSV = (C-LowN) / (HighN-LowN) * 100.
+    K = 2/3*prev_K + 1/3*RSV  (初始 K=50)
+    D = 2/3*prev_D + 1/3*K    (初始 D=50)
+    回傳 (K[], D[]) 與 closes 等長, 前 n-1 個為 None."""
+    k_vals = [None] * len(closes)
+    d_vals = [None] * len(closes)
+    prev_k = 50.0
+    prev_d = 50.0
+    for i in range(len(closes)):
+        c = closes[i]
+        h = highs[i] if i < len(highs) else None
+        l = lows[i] if i < len(lows) else None
+        if c is None or h is None or l is None:
+            continue
+        if i < n - 1:
+            continue
+        window_h = [highs[j] for j in range(i - n + 1, i + 1) if highs[j] is not None]
+        window_l = [lows[j] for j in range(i - n + 1, i + 1) if lows[j] is not None]
+        if not window_h or not window_l or max(window_h) == min(window_l):
+            continue
+        rsv = (c - min(window_l)) / (max(window_h) - min(window_l)) * 100
+        prev_k = (2 * prev_k + rsv) / 3
+        prev_d = (2 * prev_d + prev_k) / 3
+        k_vals[i] = prev_k
+        d_vals[i] = prev_d
+    return k_vals, d_vals
+
+
 def _build_chart_data(history: List[Dict]) -> str:
-    """Build Chart.js data from history rows."""
+    """Build Chart.js data from history rows. NULL/0/負值都視為缺值 (避免假性暴跌到 0)."""
     if not history:
         return "[]"
+    def _safe(v):
+        """轉 float, NULL/None/<=0 一律變 None (Chart.js 會畫成 gap)."""
+        if v is None: return None
+        try:
+            f = float(v)
+            if f <= 0: return None
+            return f
+        except (TypeError, ValueError):
+            return None
     dates = [str(r.get("Date", "")) for r in history]
-    closes = [float(r.get("Close") or 0) for r in history]
-    sma13 = [float(r.get("sma_13") or 0) for r in history]
-    sma27 = [float(r.get("sma_27") or 0) for r in history]
-    sma54 = [float(r.get("sma_54") or 0) for r in history]
-    rsi14 = [float(r.get("rsi_14") or 0) for r in history]
+    closes = [_safe(r.get("Close")) for r in history]
+    sma13 = [_safe(r.get("sma_13")) for r in history]
+    sma27 = [_safe(r.get("sma_27")) for r in history]
+    sma54 = [_safe(r.get("sma_54")) for r in history]
+    rsi14 = [_safe(r.get("rsi_14")) for r in history]
+    volumes = [_safe(r.get("Volume")) for r in history]
+    highs = [_safe(r.get("High")) for r in history]
+    lows = [_safe(r.get("Low")) for r in history]
+    k9, d9 = _compute_kd(highs, lows, closes, n=9)
     import json
     return json.dumps({
         "dates": dates, "close": closes,
         "sma13": sma13, "sma27": sma27, "sma54": sma54, "rsi14": rsi14,
+        "volume": volumes, "k9": k9, "d9": d9,
     }, ensure_ascii=False)
 
 
