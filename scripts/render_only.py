@@ -92,15 +92,22 @@ def main():
     ok, fail = 0, 0
     failures, artifacts = [], []
     issue_tickers = {i["ticker"] for i in data_issues}
+    numeric_issues = {t: d.get("_meta", {}).get("numeric_warnings") for t, d in all_data.items()
+                      if d.get("_meta", {}).get("numeric_warnings")}
 
     def _render_one(t):
         try:
             if all_data[t].get("_err"):
                 raise ValueError(all_data[t]["_err"])
             rtf.render_ticker_tabbed(t, all_data[t], output_dir=str(HTML_DIR))
+            notices = []
             if t in issue_tickers:
+                notices.append(f'資料不完整：本次資料日 {data_date}，此股票最後報價日 {html.escape(str(all_data[t].get("latest_date") or "無"))}。可能停牌、下市或來源缺漏，請勿視為當日可交易報價。')
+            if t in numeric_issues:
+                notices.append('估值／基本面來源含無效數值，已標為缺漏：' + html.escape(', '.join(numeric_issues[t])))
+            if notices:
                 path = HTML_DIR / f"{t}.html"
-                notice = f'<aside role="status" style="padding:12px;background:#fff3cd;color:#533f03">資料不完整：本次資料日 {data_date}，此股票最後報價日 {html.escape(str(all_data[t].get("latest_date") or "無"))}。可能停牌、下市或來源缺漏，請勿視為當日可交易報價。</aside>'
+                notice = '<aside role="status" style="padding:12px;background:#fff3cd;color:#533f03">' + '<br>'.join(notices) + '</aside>'
                 body = path.read_text(encoding="utf-8")
                 path.write_text(body.replace("<body>", "<body>" + notice, 1), encoding="utf-8")
             return t, True
@@ -131,6 +138,7 @@ def main():
         "nightly_id": nightly_id, "data_date": data_date, "expected_count": len(tickers),
         "failures": failures, "artifacts": sorted(artifacts, key=lambda a: a["gh_path"]),
         "data_issues": data_issues, "fresh_count": len(tickers) - len(data_issues) - len(failures),
+        "numeric_data_issues": numeric_issues,
     })
     if failures:
         raise RuntimeError(f"render failed for {len(failures)} tickers: {failures[:5]}")

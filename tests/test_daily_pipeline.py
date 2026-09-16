@@ -111,6 +111,23 @@ class ReleaseGateTests(unittest.TestCase):
 
 
 class ContentTests(unittest.TestCase):
+    def test_provider_numeric_placeholders_become_missing_with_warnings(self):
+        import cross_source_runner as csr
+        raw = {"trailingPE": "Infinity", "forwardPE": "12.5", "priceToBook": "N/A",
+               "dividendYield": float("nan"), "marketCap": "1000000", "beta": "-0.2",
+               "returnOnEquity": True, "longName": "Example", "industry": "Textiles"}
+        with patch.object(csr, "_db_basic", return_value={"ticker": "1452"}), patch.object(csr.cm, "get_fresh", side_effect=lambda ticker, key: {"data": raw} if key == "yfinance" else None):
+            result = csr.assemble("1452", use_yfinance=False, fetch_news=False, cache_only=True)
+        self.assertIsNone(result["valuation"]["pe"])
+        self.assertIsNone(result["valuation"]["pb"])
+        self.assertIsNone(result["valuation"]["dividend_yield"])
+        self.assertIsNone(result["yfinance"]["returnOnEquity"])
+        self.assertEqual(result["valuation"]["forward_pe"], 12.5)
+        self.assertEqual(result["valuation"]["beta"], -0.2)
+        self.assertEqual(result["yfinance"]["industry"], "Textiles")
+        self.assertEqual(set(result["_meta"]["numeric_warnings"]), {"trailingPE", "priceToBook", "dividendYield", "returnOnEquity"})
+        self.assertEqual(raw["trailingPE"], "Infinity")  # provider cache is preserved
+
     def test_expected_session_uses_official_closures_not_db_max(self):
         self.assertEqual(ps.expected_session(date(2026, 9, 28)), "2026-09-24")
         self.assertEqual(ps.expected_session(date(2026, 2, 20)), "2026-02-11")

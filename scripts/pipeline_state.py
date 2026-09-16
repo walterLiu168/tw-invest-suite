@@ -212,7 +212,8 @@ def complete(stages_path):
         run.update(status="ok", marker_version="D056-2", completed_at=datetime.now().isoformat(),
                    stages=stages, degraded_stages=sum(not s["Ok"] for s in stages if s.get("Optional")),
                    render_data_issues=receipt.get("data_issues", []), render_count=receipt["expected_count"],
-                   fresh_render_count=receipt["fresh_count"], watchlist_fetch_errors=watch.get("fetch_errors", {}), artifacts=artifacts)
+                   fresh_render_count=receipt["fresh_count"], render_numeric_issues=receipt.get("numeric_data_issues", {}),
+                   watchlist_fetch_errors=watch.get("fetch_errors", {}), artifacts=artifacts)
         atomic_json(MARKER, run)
         atomic_json(STATE, run)
         return run

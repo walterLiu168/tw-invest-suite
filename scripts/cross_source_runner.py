@@ -48,6 +48,27 @@ def _log_verify(ticker: str, diffs: List[Dict]):
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def _normalize_yfinance(data):
+    """Treat provider Infinity/NaN/placeholders as unavailable, never as prices."""
+    import math
+    result, invalid = dict(data), []
+    for key in ("trailingPE", "forwardPE", "priceToBook", "dividendYield",
+                "marketCap", "fiftyTwoWeekHigh", "fiftyTwoWeekLow", "beta",
+                "returnOnEquity", "_shares_outstanding"):
+        value = result.get(key)
+        if value is None:
+            continue
+        try:
+            number = float(value)
+            if isinstance(value, bool) or not math.isfinite(number):
+                raise ValueError("not a finite number")
+            result[key] = number
+        except (TypeError, ValueError, OverflowError):
+            result[key] = None
+            invalid.append(key)
+    return result, invalid
+
+
 def _pct_diff(a, b) -> Optional[float]:
     """Return percent diff (b - a) / a * 100. None if invalid."""
     try:
@@ -101,7 +122,8 @@ def assemble(ticker: str, news_tier: str = "all", use_yfinance: bool = True,
 
     # ---- 2. yfinance (with fallback) - OPTIONAL ----
     if use_yfinance:
-        yf_data = yfb._fetch_one_with_fallback(ticker)
+        yf_data, invalid = _normalize_yfinance(yfb._fetch_one_with_fallback(ticker))
+        out["_meta"]["numeric_warnings"] = invalid
         out["yfinance"] = yf_data
         if yf_data.get("_source") == "yfinance":
             out["_meta"]["sources"].append("yfinance")
@@ -124,7 +146,8 @@ def assemble(ticker: str, news_tier: str = "all", use_yfinance: bool = True,
         # without triggering HTTP requests to yfinance.
         cached = cm.get_fresh(ticker, "yfinance")
         if cached:
-            yf = cached["data"]
+            yf, invalid = _normalize_yfinance(cached["data"])
+            out["_meta"]["numeric_warnings"] = invalid
             out["yfinance"] = yf
             out["_meta"]["sources"].append("yfinance_cache")
             # Build valuation dict from cached yfinance data
