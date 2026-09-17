@@ -213,14 +213,15 @@ def close_on_or_before(ticker: str, cutoff_date: str) -> Optional[float]:
 
 
 def long_term_returns_batch(tickers: List[str], target_date: str) -> Dict[str, Dict[str, float]]:
-    """For each ticker, compute ret against prior ~60d/120d/240d/500d dates.
+    """Compute returns against prior ~20/60/120/240/500 calendar-day dates.
 
-    Returns {ticker: {ret_60d, ret_120d, ret_240d, ret_500d}}.
-    Single round-trip per ticker (4 small queries), batched in a loop.
+    Each endpoint is the latest valid close on/before its date cutoff.
+    One current query and five historical queries, each batching all tickers.
     """
     from datetime import datetime, timedelta
     end = datetime.strptime(target_date, "%Y-%m-%d")
     cutoffs = {
+        "ret_20d": (end - timedelta(days=20)).strftime("%Y-%m-%d"),
         "ret_60d": (end - timedelta(days=60)).strftime("%Y-%m-%d"),
         "ret_120d": (end - timedelta(days=120)).strftime("%Y-%m-%d"),
         "ret_240d": (end - timedelta(days=240)).strftime("%Y-%m-%d"),

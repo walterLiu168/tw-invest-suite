@@ -22,6 +22,96 @@ def candidate(**values):
 
 
 class ReportIdentityTests(unittest.TestCase):
+    def test_return_batch_includes_twenty_calendar_days_without_future_endpoints(self):
+        cursor = MagicMock()
+        cursor.fetchall.side_effect = [[{'Ticker':'1452','Close':100}]] + [
+            [{'Ticker':'1452','Close':80}] for _ in range(5)]
+        @contextmanager
+        def mocked_cursor():
+            yield cursor
+        with patch.object(db,'get_cursor',mocked_cursor):
+            result = db.long_term_returns_batch(['1452'],'2026-09-16')
+        self.assertEqual(result['1452']['ret_20d'],0.25)
+        self.assertEqual(cursor.execute.call_args_list[1].args[1],('1452','2026-08-27'))
+        self.assertEqual(cursor.execute.call_count,6)
+
+    def test_trader_sizing_obeys_cash_and_does_not_invent_ma_or_kelly(self):
+        result = renderer.section_traderhub({}, {'Close':1000,'atr_14':1,'sma_13':1010})
+        self.assertIn('張數上限 1 張',result)
+        self.assertIn('回升至 MA13 觀察',result)
+        self.assertNotIn('Kelly 簡化',result)
+        missing = renderer.section_traderhub({}, {'Close':1000,'atr_14':1})
+        self.assertIn('| MA13 參考 | **—** | 資料不足 |',missing)
+        self.assertIn('無有效',renderer.section_traderhub({}, {'Close':1000,'atr_14':float('nan')}))
+
+    def test_historical_signal_observation_does_not_claim_executable_backtest(self):
+        history = [{'Date':f'row-{i}', 'Close':100+i,'sma_27':99,
+                    'rsi_14':35,'ForeignNet':1000} for i in range(120)]
+        result = renderer.section_backtest({'ticker':'1452'},history[-1],history)
+        self.assertIn('歷史訊號後續價格觀察',result)
+        self.assertIn('| 訊號 | 樣本數 | 上漲比例 |',result)
+        self.assertIn('未模擬T+1成交、交易成本、滑價',result)
+        self.assertNotIn('最佳策略報酬',result)
+        for row in history:
+            row['Close'] = 100
+        constant = renderer.section_backtest({'ticker':'1452'},history[-1],history)
+        self.assertIn('| +0.00% | +0.00% | +0.00% | — |',constant)
+
+    def test_missing_roe_does_not_assert_portfolio_bear_consensus(self):
+        data = {'ticker':'1452','valuation':{},'monthly_revenue':[{'yoy_pct':-10}]}
+        latest = {'Date':'2026-09-16','Close':10,'sma_13':11,'sma_27':12,
+                  'ForeignNet':-1000,'rsi_14':None}
+        with patch.object(db,'long_term_returns_batch',return_value={'1452':{'ret_240d':-0.5}}):
+            tags = renderer.master_tags_full('1452',data,latest)
+            views = renderer._trigger_expert_views(data,latest)
+        self.assertNotIn('空頭共識',tags)
+        self.assertNotIn('RSI 0',tags)
+        self.assertFalse(any(v['expert']=='組合經理' for v in views))
+
+    def test_minerva_missing_inputs_do_not_create_a_composite_or_default_numbers(self):
+        with patch.object(db,'long_term_returns_batch',return_value={'1452':{'ret_20d':0}}):
+            result = renderer.section_minerva({'ticker':'1452'},{'Date':'2026-09-16'},[])
+        self.assertIn('資料不足（不計綜合分數）',result)
+        self.assertIn('| 動能 (Momentum) | 40% | — |',result)
+        self.assertIn('| 波動 (Volatility) | 10% | — |',result)
+        self.assertIn('- 品質：ROE —',result)
+        self.assertIn('20d +0.0% · 60d —',result)
+        self.assertNotIn('25-40%',result)
+
+    def test_minerva_weights_and_composite_use_the_same_known_values(self):
+        data = {'ticker':'1452','yfinance':{'returnOnEquity':0.1,'beta':1},
+                'valuation':{'pe':10,'pb':1,'market_cap':2e12}}
+        with patch.object(db,'long_term_returns_batch',return_value={'1452':{
+            f'ret_{days}d':0 for days in (20,60,120,240)}}):
+            result = renderer.section_minerva(data,{'Date':'2026-09-16'},[])
+        self.assertIn('| 動能 (Momentum) | 40% | 50 |',result)
+        self.assertIn('| 價值 (Value) | 25% | 70 |',result)
+        self.assertIn('| 品質 (Quality) | 20% | 60 |',result)
+        self.assertIn('| 波動 (Volatility) | 10% | 100 |',result)
+        self.assertIn('| 市值 (Size) | 5% | 100 |',result)
+        self.assertIn('| **加權綜合** | 100% | **64** |',result)
+
+    def test_margin_unknown_and_zero_denominators_are_not_zero_ratios(self):
+        with patch.object(db,'ticker_history',return_value=[]):
+            missing = renderer.section_margin('1452',{'MarginBalance':None,'ShortBalance':None})
+            zero = renderer.section_margin('1452',{'MarginBalance':0,'ShortBalance':0})
+            real_zero_ratio = renderer.section_margin('1452',{'MarginBalance':100,'ShortBalance':0})
+        self.assertIn('| 融資餘額 | **—** | — |',missing)
+        self.assertIn('| 融資餘額 | **0 張** | — |',zero)
+        self.assertIn('| 券資比 | — |',zero)
+        self.assertIn('| 券資比 | 0.0% |',real_zero_ratio)
+
+    def test_institutional_missing_fields_do_not_erase_other_fields_or_invent_totals(self):
+        rows = [{'Date':'2026-09-16','ForeignNet':None,'InvestmentNet':1000,
+                 'DealerNet':0,'ThreeNet':float('nan')}]
+        with patch.object(db,'ticker_history',return_value=rows):
+            result = renderer.section_institutional('1452',rows[0])
+        self.assertIn('>— 張</span>',result)
+        self.assertIn('>+1</span>',result)
+        self.assertIn("<span class='inst-num zero'>0</span>",result)
+        self.assertIn('"foreign": [null]',result)
+        self.assertNotIn('NaN',result)
+
     def test_income_statement_comprehensive_income_is_not_roe_equity(self):
         result = renderer.section_finlab_roe({'fundamentals': {'rows': [
             {'date':'2026-06-30','type':'IncomeAfterTaxes','value':2592000},

@@ -74,6 +74,16 @@ def _fmt_pct(v):
     return f"{float(v):+.2f}%"
 
 
+def _finite_number(value):
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _fmt_num(v, decimals=0):
     if v is None: return "—"
     try:
@@ -507,34 +517,29 @@ def section_institutional(ticker: str, db_latest: Dict) -> str:
     # 轉成 (date, f, t, d, total)，並算 max_abs for bar scaling
     items = []
     for r in rows:
-        try:
-            f = float(r.get("ForeignNet") or 0) / 1000.0
-            t = float(r.get("InvestmentNet") or 0) / 1000.0
-            d = float(r.get("DealerNet") or 0) / 1000.0
-            total = float(r.get("ThreeNet") or 0) / 1000.0
-        except (TypeError, ValueError):
-            f = t = d = total = 0
+        values = [_finite_number(r.get(key)) for key in
+                  ("ForeignNet", "InvestmentNet", "DealerNet", "ThreeNet")]
+        f, t, d, total = [value / 1000.0 if value is not None else None
+                          for value in values]
         d_str = str(r.get("Date"))[:10]
         items.append({"date": d_str, "f": f, "t": t, "d": d, "total": total})
     # max abs for bar scaling (per row's total)
-    max_abs = max((abs(x["total"]) for x in items), default=1) or 1
+    max_abs = max((abs(x["total"]) for x in items if x["total"] is not None), default=1) or 1
     # 3 windows
     def _sum_window(n: int) -> Dict[str, float]:
         sub = items[-n:] if len(items) >= n else items
-        return {
-            "f": sum(x["f"] for x in sub),
-            "t": sum(x["t"] for x in sub),
-            "d": sum(x["d"] for x in sub),
-            "total": sum(x["total"] for x in sub),
-        }
+        return {key: sum(x[key] for x in sub) if all(x[key] is not None for x in sub) else None
+                for key in ("f", "t", "d", "total")}
     w5 = _sum_window(5)
     w10 = _sum_window(10)
     w20 = _sum_window(20)
     def _cls(v: float) -> str:
+        if v is None: return ""
         if v > 0: return "pos"
         if v < 0: return "neg"
         return ""
     def _sign(v: float) -> str:
+        if v is None: return "—"
         if v == 0: return "0"
         return f"{v:+,.0f}"
     # === Summary cards (5d / 10d / 20d) ===
@@ -553,6 +558,8 @@ def section_institutional(ticker: str, db_latest: Dict) -> str:
     summary_html = "<div class='inst-summary'>" + _sum_card("近 5 日", w5) + _sum_card("近 10 日", w10) + _sum_card(f"近 {len(items)} 日", w20) + "</div>"
     # === Table ===
     def _cell(v: float, show_zero: bool = True) -> str:
+        if v is None:
+            return "<span class='inst-num'>—</span>"
         if v == 0 and not show_zero:
             return "<span class='inst-num zero'>—</span>"
         if v == 0:
@@ -570,8 +577,8 @@ def section_institutional(ticker: str, db_latest: Dict) -> str:
     for x in reversed(items):
         total = x["total"]
         row_cls = ""
-        if total > max_abs * 0.6: row_cls = "hot-up"
-        elif total < -max_abs * 0.6: row_cls = "hot-dn"
+        if total is not None and total > max_abs * 0.6: row_cls = "hot-up"
+        elif total is not None and total < -max_abs * 0.6: row_cls = "hot-dn"
         tr = (
             f"<tr class='{row_cls}'>"
             f"<td class='date-col'>{_esc(x['date'])}</td>"
@@ -598,7 +605,7 @@ def section_institutional(ticker: str, db_latest: Dict) -> str:
         "<div class='inst-source'>"
         "<span style='color:#ec7063'>■ 買超</span> · "
         "<span style='color:#58d68d'>■ 賣超</span> · "
-        "色塊 = 該日合計相對最大絕對值的比例 · "
+        "色塊 = 該日合計相對最大絕對值的比例 · 缺值顯示 —，含缺值的累計不推算 · "
         "<em>資料來源：MySQL `daily_data2_full`</em>"
         "</div>"
     )
@@ -619,22 +626,30 @@ def section_margin(ticker: str, db_latest: Dict) -> str:
     import db_client as db
     if not db_latest:
         return "_無融資資料_"
-    mb = int(db_latest.get("MarginBalance") or 0)
-    ms = int(db_latest.get("ShortBalance") or 0)
-    ratio = (mb / ms) if ms else None
-    ratio_s = f"{ratio:.1f}" if ratio else "—"
+    def balance(row, key):
+        value = _finite_number(row.get(key))
+        return value if value is not None and value >= 0 else None
+    mb = balance(db_latest, "MarginBalance")
+    ms = balance(db_latest, "ShortBalance")
+    ratio = mb / ms if mb is not None and ms is not None and ms > 0 else None
+    ratio_s = f"{ratio:.1f}" if ratio is not None else "—"
     # Get trend (last 30 days)
     rows = db.ticker_history(ticker, days=32)
     rows = rows[-30:] if rows else []
-    mb_trend = [int(r.get("MarginBalance") or 0) for r in rows]
-    ms_trend = [int(r.get("ShortBalance") or 0) for r in rows]
-    mb_change = (mb_trend[-1] - mb_trend[0]) if len(mb_trend) >= 2 else 0
-    ms_change = (ms_trend[-1] - ms_trend[0]) if len(ms_trend) >= 2 else 0
+    def change(key):
+        if len(rows) < 2:
+            return None
+        first, last = balance(rows[0], key), balance(rows[-1], key)
+        return last - first if first is not None and last is not None else None
+    mb_change, ms_change = change("MarginBalance"), change("ShortBalance")
+    def amount(value, delta=False):
+        return (f"{value:+,.0f}" if delta else f"{value:,.0f}") + " 張" if value is not None else "—"
     md = "| 項目 | 數值 | 30 日變化 |\n|---|---|---|\n"
-    md += f"| 融資餘額 | **{mb:,} 張** | {mb_change:+,.0f} 張 |\n"
-    md += f"| 融券餘額 | **{ms:,} 張** | {ms_change:+,.0f} 張 |\n"
+    md += f"| 融資餘額 | **{amount(mb)}** | {amount(mb_change, True)} |\n"
+    md += f"| 融券餘額 | **{amount(ms)}** | {amount(ms_change, True)} |\n"
     md += f"| 融資融券比 | {ratio_s} | — |\n"
-    md += f"| 券資比 | {(ms/mb*100 if mb else 0):.1f}% | — |\n"
+    short_ratio = ms / mb * 100 if ms is not None and mb is not None and mb > 0 else None
+    md += f"| 券資比 | {f'{short_ratio:.1f}%' if short_ratio is not None else '—'} | — |\n"
     md += "\n_資料來源：MySQL `daily_data2_full` (DB)_"
     return md
 
@@ -799,17 +814,20 @@ def master_tags_full(ticker: str, data: Dict, db_latest: Dict) -> str:
             1 if (rev_yoy and rev_yoy > 15) else 0,
             1 if (sma13 and sma27 and cur > sma13 > sma27) else 0,
         ])
-        if bull_signals >= 4:
-            tags.append(f'<span class="tag tag-green">組合經理</span> 多頭共識 {bull_signals}/5 訊號一致')
-        elif bull_signals <= 1:
-            tags.append(f'<span class="tag tag-red">組合經理</span> 空頭共識 {5-bull_signals}/5 訊號一致')
+        consensus_complete = all(_finite_number(value) is not None for value in (
+            roe, rets.get(ticker,{}).get("ret_240d"), db_latest.get("ForeignNet"),
+            rev_yoy, db_latest.get("Close"), db_latest.get("sma_13"), db_latest.get("sma_27")))
+        if consensus_complete and bull_signals >= 4:
+            tags.append(f'<span class="tag tag-green">組合經理</span> 偏多條件 {bull_signals}/5 成立')
+        elif consensus_complete and bull_signals <= 1:
+            tags.append(f'<span class="tag tag-yellow">組合經理</span> 偏多條件 {bull_signals}/5 成立')
 
         # ===== Technical signals =====
         if 50 <= rsi14 <= 65:
             tags.append(f'<span class="tag tag-green">RSI {rsi14:.0f} 甜蜜區</span>')
         elif rsi14 > 70:
             tags.append(f'<span class="tag tag-red">RSI {rsi14:.0f} 過熱</span>')
-        elif rsi14 < 30:
+        elif db_latest.get("rsi_14") is not None and rsi14 < 30:
             tags.append(f'<span class="tag tag-green">RSI {rsi14:.0f} 超賣</span>')
         if dy is not None and dy > 0.5:
             dy_pct = dy if dy > 0.5 else dy * 100
@@ -826,54 +844,59 @@ def section_minerva(data: Dict, db_latest: Dict, history: List[Dict]) -> str:
     try:
         yf = data.get("yfinance", {}) or {}
         val = data.get("valuation", {}) or {}
-        pe = val.get("pe") or 50
-        pb = val.get("pb") or 3
-        roe = (yf.get("returnOnEquity") or 0) * 100
-        mcap = val.get("market_cap") or 0
-        beta = yf.get("beta") or 1.0
-        cur = float(db_latest.get("Close") or 0) if db_latest else 0
-        # 1. Momentum (40%): ret_20/60/120/240 z-score
+        fm_pe = data.get("finmind_pe_latest") or {}
+        pe = _finite_number(val.get("pe"))
+        pb = _finite_number(val.get("pb"))
+        pe = pe if pe is not None else _finite_number(fm_pe.get("PER"))
+        pb = pb if pb is not None else _finite_number(fm_pe.get("PBR"))
+        roe_ratio = _finite_number(yf.get("returnOnEquity"))
+        roe = roe_ratio * 100 if roe_ratio is not None else None
+        mcap = _finite_number(val.get("market_cap"))
+        beta = _finite_number(yf.get("beta"))
+        # Momentum is a heuristic normalization, not a cross-sectional z-score.
         rets = db.long_term_returns_batch([data["ticker"]], str(db_latest.get("Date")) if db_latest else None)
         r = rets.get(data["ticker"], {})
-        ret_20 = (r.get("ret_20d") or 0) * 100
-        ret_60 = (r.get("ret_60d") or 0) * 100
-        ret_120 = (r.get("ret_120d") or 0) * 100
-        ret_240 = (r.get("ret_240d") or 0) * 100
+        returns = [_finite_number(r.get(f"ret_{days}d")) for days in (20,60,120,240)]
+        ret_20, ret_60, ret_120, ret_240 = [value*100 if value is not None else None for value in returns]
         # momentum score: avg of returns, normalized
-        mom = min(100, max(0, 50 + (ret_20 + ret_60 + ret_120 + ret_240) / 8))
+        mom = min(100, max(0, 50 + sum(returns)*100/8)) if all(value is not None for value in returns) else None
         # 2. Value (25%): low P/E + low P/B
-        val_score = min(100, max(0, 100 - pe * 2 - pb * 10))
+        val_score = min(100, max(0, 100 - pe * 2 - pb * 10)) if pe is not None and pe > 0 and pb is not None and pb > 0 else None
         # 3. Quality (20%): high ROE
-        qual = min(100, max(0, roe * 3 + 30))
+        qual = min(100, max(0, roe * 3 + 30)) if roe is not None else None
         # 4. Volatility (10%): low beta preferred
-        vol = min(100, max(0, 100 - abs(beta - 1) * 30))
+        vol = min(100, max(0, 100 - abs(beta - 1) * 30)) if beta is not None else None
         # 5. Size (5%): larger market cap better (institutional-grade)
-        if mcap > 1e12: size = 100
+        if mcap is None or mcap <= 0: size = None
+        elif mcap > 1e12: size = 100
         elif mcap > 1e11: size = 80
         elif mcap > 1e10: size = 60
         elif mcap > 1e9: size = 40
         else: size = 20
         # Composite weighted score
-        composite = mom * 0.4 + val_score * 0.25 + qual * 0.20 + vol * 0.10 + size * 0.05
+        factors = [("動能 (Momentum)",mom,40,"🚀","📉"),
+                   ("價值 (Value)",val_score,25,"💰","⚠️"),
+                   ("品質 (Quality)",qual,20,"✨","⚠️"),
+                   ("波動 (Volatility)",vol,10,"🛡️","⚡"),
+                   ("市值 (Size)",size,5,"🏛️","🪙")]
+        composite = sum(score*weight/100 for _,score,weight,_,_ in factors) if all(score is not None for _,score,_,_,_ in factors) else None
         # Star rating
-        stars = "★★★★★" if composite >= 80 else "★★★★" if composite >= 60 else "★★★" if composite >= 40 else "★★" if composite >= 20 else "★"
-        md = f"### Minerva 量化評分：{composite:.0f}/100 {stars}\n\n"
+        stars = ("★★★★★" if composite >= 80 else "★★★★" if composite >= 60 else "★★★" if composite >= 40 else "★★" if composite >= 20 else "★") if composite is not None else "資料不足"
+        md = f"### Minerva 因子評分：{f'{composite:.0f}/100 {stars}' if composite is not None else '資料不足（不計綜合分數）'}\n\n"
         md += "| 因子 | 權重 | 分數 | 信號 |\n|---|---|---|---|\n"
-        for name, score, sig in [
-            ("動能 (Momentum)", mom, "🚀" if mom > 60 else "📉" if mom < 40 else "➡️"),
-            ("價值 (Value)", val_score, "💰" if val_score > 60 else "⚠️" if val_score < 40 else "➡️"),
-            ("品質 (Quality)", qual, "✨" if qual > 60 else "⚠️" if qual < 40 else "➡️"),
-            ("波動 (Volatility)", vol, "🛡️" if vol > 60 else "⚡" if vol < 40 else "➡️"),
-            ("市值 (Size)", size, "🏛️" if size > 60 else "🪙" if size < 40 else "➡️"),
-        ]:
-            md += f"| {name} | 25-40% | {score:.0f} | {sig} |\n"
-        md += f"| **加權綜合** | 100% | **{composite:.0f}** | {stars} |\n\n"
+        for name, score, weight, positive, negative in factors:
+            sig = "資料不足" if score is None else positive if score > 60 else negative if score < 40 else "➡️"
+            md += f"| {name} | {weight}% | {f'{score:.0f}' if score is not None else '—'} | {sig} |\n"
+        md += f"| **加權綜合** | 100% | **{f'{composite:.0f}' if composite is not None else '—'}** | {stars} |\n\n"
+        md += "_研究用啟發式分數，未經策略績效驗證；缺少任何因子時不以預設值補分，也不重配權重。_\n\n"
         # 個別指標細節
         md += "**原始數據**：\n"
-        md += f"- 動能：20d {ret_20:+.1f}% · 60d {ret_60:+.1f}% · 120d {ret_120:+.1f}% · 240d {ret_240:+.1f}%\n"
-        md += f"- 價值：P/E {pe:.1f} · P/B {pb:.2f}\n"
-        md += f"- 品質：ROE {roe:.1f}%\n"
-        md += f"- 波動：β {beta:.2f}\n"
+        def number(value, spec, suffix=""):
+            return format(value,spec)+suffix if value is not None else "—"
+        md += "- 動能：" + " · ".join(f"{days}d {number(value,'+.1f','%')}" for days,value in zip((20,60,120,240),(ret_20,ret_60,ret_120,ret_240))) + "（約日曆日，取截止日以前最近有效收盤）\n"
+        md += f"- 價值：P/E {number(pe,'.1f')} · P/B {number(pb,'.2f')}\n"
+        md += f"- 品質：ROE {number(roe,'.1f','%')}\n"
+        md += f"- 波動：β {number(beta,'.2f')}\n"
         md += f"- 市值：{_fmt_num(mcap)}\n"
         return md
     except Exception as e:
@@ -986,14 +1009,14 @@ def section_backtest(data: Dict, db_latest: Dict, history: List[Dict]) -> str:
         for r in history:
             try:
                 close = float(r.get("Close") or 0)
-                if close <= 0:
+                if not math.isfinite(close) or close <= 0:
                     continue
                 rows.append({
                     "date": r.get("Date"),
                     "close": close,
-                    "foreign": int(r.get("ForeignNet") or 0),
-                    "rsi": float(r.get("rsi_14") or 50),
-                    "sma27": float(r.get("sma_27") or 0),
+                    "foreign": _finite_number(r.get("ForeignNet")),
+                    "rsi": _finite_number(r.get("rsi_14")),
+                    "sma27": _finite_number(r.get("sma_27")),
                 })
             except (TypeError, ValueError):
                 continue
@@ -1023,7 +1046,7 @@ def section_backtest(data: Dict, db_latest: Dict, history: List[Dict]) -> str:
             max_loss = min(t["ret"] for t in trades)
             import statistics
             std = statistics.stdev(t["ret"] for t in trades) if len(trades) > 1 else 0
-            sharpe = (avg_ret / std) if std > 0 else 0
+            sharpe = (avg_ret / std) if std > 0 else None
             return {
                 "n": len(trades), "wins": len(wins), "losses": len(losses),
                 "win_rate": win_rate, "avg_ret": avg_ret,
@@ -1032,14 +1055,14 @@ def section_backtest(data: Dict, db_latest: Dict, history: List[Dict]) -> str:
 
         # Strategy 1: MA cross
         def s_ma(i, rs):
-            return rs[i]["close"] > rs[i]["sma27"] and rs[i]["sma27"] > 0
+            return rs[i]["sma27"] is not None and rs[i]["sma27"] > 0 and rs[i]["close"] > rs[i]["sma27"]
         # Strategy 2: RSI oversold recovery
         def s_rsi(i, rs):
-            return 30 <= rs[i]["rsi"] <= 45
+            return rs[i]["rsi"] is not None and 30 <= rs[i]["rsi"] <= 45
         # Strategy 3: Foreign net 3-day positive
         def s_fgn(i, rs):
             if i < 3: return False
-            return all(rs[j]["foreign"] > 0 for j in range(i-2, i+1))
+            return all(rs[j]["foreign"] is not None and rs[j]["foreign"] > 0 for j in range(i-2, i+1))
 
         strategies = [
             ("MA 趨勢 (close > MA27)", s_ma),
@@ -1047,9 +1070,10 @@ def section_backtest(data: Dict, db_latest: Dict, history: List[Dict]) -> str:
             ("外資 3 日連買", s_fgn),
         ]
 
-        md = f"### Backtest 多策略回測 (過去 {len(rows)} 日)\n\n"
-        md += f"_回測期間_: {rows[0]['date']} ~ {rows[-1]['date']}\n\n"
-        md += "| 策略 | 交易次數 | 勝率 | 平均報酬 | 最高報酬 | 最低報酬 | 均值／標準差 |\n"
+        md = f"### 歷史訊號後續價格觀察 ({len(rows)} 個交易日資料)\n\n"
+        md += f"_觀察期間_: {rows[0]['date']} ~ {rows[-1]['date']}\n\n"
+        md += "_比較訊號日收盤與其後20個交易日收盤，每30個交易日取樣。未模擬T+1成交、交易成本、滑價或持倉；不代表可成交策略回測、實際勝率或投資績效。_\n\n"
+        md += "| 訊號 | 樣本數 | 上漲比例 | 平均變動 | 最高變動 | 最低變動 | 均值／標準差 |\n"
         md += "|---|---|---|---|---|---|---|\n"
         all_valid = False
         for name, fn in strategies:
@@ -1059,20 +1083,16 @@ def section_backtest(data: Dict, db_latest: Dict, history: List[Dict]) -> str:
                 md += f"| {name} | 0 | — | — | — | — | — |\n"
             else:
                 all_valid = True
-                md += f"| {name} | {s['n']} | {s['win_rate']:.0f}% | {s['avg_ret']:+.2f}% | {s['max_win']:+.2f}% | {s['max_loss']:+.2f}% | {s['sharpe']:.2f} |\n"
+                dispersion_ratio = f"{s['sharpe']:.2f}" if s['sharpe'] is not None else "—"
+                md += f"| {name} | {s['n']} | {s['win_rate']:.0f}% | {s['avg_ret']:+.2f}% | {s['max_win']:+.2f}% | {s['max_loss']:+.2f}% | {dispersion_ratio} |\n"
         if not all_valid:
-            return "_無符合條件的交易可回測_"
+            return "_無符合條件且後續20個交易日完整的歷史觀察樣本_"
         # 整體建議
-        md += "\n**綜合判斷**：\n"
+        md += "\n**樣本摘要**：\n"
         # Best strategy
         best = max(((_stats(_backtest_strategy(fn, hold=20, step=30)) or {"avg_ret": -999})["avg_ret"] for _, fn in strategies))
-        if best > 1:
-            md += f"- 🟢 有 {best:+.1f}% 最佳策略報酬，建議關注對應訊號\n"
-        elif best > -2:
-            md += f"- 🟡 策略表現普通 (-2% ~ +1%)，無強烈訊號\n"
-        else:
-            md += f"- 🔴 策略整體偏弱 (< -2%)，建議觀望\n"
-        md += "\n_來源：backtest-orchestrator skill (OpenAlice) — 簡化版 walk-forward_\n"
+        md += f"- 三種訊號中最高的樣本平均價格變動為 {best:+.1f}%；尚未檢驗統計顯著性或樣本外績效。\n"
+        md += "\n_來源：MySQL daily_data2_full 歷史資料。_\n"
         return md
     except Exception as e:
         return f"_backtest 失敗：{e}_"
@@ -1083,25 +1103,23 @@ def section_traderhub(data: Dict, db_latest: Dict) -> str:
     Uses ATR-based position sizing.
     """
     try:
-        cur = float(db_latest.get("Close") or 0) if db_latest else 0
-        atr14 = float(db_latest.get("atr_14") or 0) if db_latest else 0
-        sma13 = float(db_latest.get("sma_13") or 0) if db_latest else 0
-        sma27 = float(db_latest.get("sma_27") or 0) if db_latest else 0
-        rsi14 = float(db_latest.get("rsi_14") or 0) if db_latest else 0
-        if not cur or not atr14:
-            return "_無價格資料_"
+        cur = _finite_number(db_latest.get("Close")) if db_latest else None
+        atr14 = _finite_number(db_latest.get("atr_14")) if db_latest else None
+        sma13 = _finite_number(db_latest.get("sma_13")) if db_latest else None
+        rsi14 = _finite_number(db_latest.get("rsi_14")) if db_latest else None
+        if cur is None or cur <= 0 or atr14 is None or atr14 <= 0:
+            return "_無有效收盤／ATR 資料，無法試算_"
         # 進場策略：拉回到 MA13 附近 + RSI < 70
         entry_aggressive = round(cur, 2)
-        entry_conservative = round(sma13, 2) if sma13 else round(cur * 0.98, 2)
+        entry_conservative = round(sma13, 2) if sma13 is not None and sma13 > 0 else None
         # 停損：-2 ATR
         stop_loss = round(cur - 2 * atr14, 2)
+        if stop_loss <= 0 or stop_loss >= cur:
+            return "_ATR 停損點位無效，無法試算_"
         # 目標：+3 ATR (風險報酬比 1.5:1)
         target_1 = round(cur + 2 * atr14, 2)
         target_2 = round(cur + 3 * atr14, 2)
         target_3 = round(cur + 5 * atr14, 2)
-        # Kelly 建議倉位
-        # Win rate ~ 55%, payoff 1.5:1 → Kelly ≈ 5% of capital
-        kelly_pct = 5
         # 風險/股 (每股 1 張 = 1000 股)
         risk_per_share = cur - stop_loss
         shares_per_lot = 1000
@@ -1109,25 +1127,25 @@ def section_traderhub(data: Dict, db_latest: Dict) -> str:
         # Sizing: 假設單筆最大虧損 = 帳戶 1%
         if max_loss_per_lot > 0:
             account_size = 1_000_000  # 假設 100 萬
-            max_lots = int(account_size * 0.01 / max_loss_per_lot)
+            max_lots = min(int(account_size * 0.01 / max_loss_per_lot), int(account_size / (cur * shares_per_lot)))
         else:
             max_lots = 0
-        md = f"### TraderHub 進出場策略 (ATR-based)\n\n"
-        md += f"**現價**：{cur:.2f} · **ATR(14)**：{atr14:.2f} (波動度)\n\n"
+        md = f"### TraderHub ATR 點位試算\n\n"
+        md += f"**收盤參考**：{cur:.2f} · **ATR(14)**：{atr14:.2f} (波動度)\n\n"
         md += "| 項目 | 價格 | 說明 |\n|---|---|---|\n"
-        md += f"| 進場（積極）| **{entry_aggressive:.2f}** | 現價直接進場 |\n"
-        md += f"| 進場（保守）| **{entry_conservative:.2f}** | 拉回 MA13 進場 |\n"
+        md += f"| 試算基準 | **{entry_aggressive:.2f}** | 資料日收盤價 |\n"
+        ma_note = "回升至 MA13 觀察" if entry_conservative is not None and entry_conservative > cur else "回測 MA13 觀察"
+        md += f"| MA13 參考 | **{f'{entry_conservative:.2f}' if entry_conservative is not None else '—'}** | {ma_note if entry_conservative is not None else '資料不足'} |\n"
         md += f"| 停損 | **{stop_loss:.2f}** | -2 ATR ({abs(stop_loss-cur)/cur*100:.1f}% from 現價) |\n"
         md += f"| 目標 1 | {target_1:.2f} | +2 ATR ({abs(target_1-cur)/cur*100:.1f}%) |\n"
         md += f"| 目標 2 | **{target_2:.2f}** | +3 ATR ({abs(target_2-cur)/cur*100:.1f}%) |\n"
         md += f"| 目標 3 | {target_3:.2f} | +5 ATR ({abs(target_3-cur)/cur*100:.1f}%) |\n"
-        md += "\n**倉位建議**（Kelly 簡化）\n"
-        md += f"- 單筆風險佔比：**{kelly_pct}%** of capital\n"
-        md += f"- 每張最大虧損：{max_loss_per_lot:,.0f} 元 (假設 1 張 = 1000 股)\n"
-        md += f"- 100 萬帳戶最多 {max_lots} 張 (1% 帳戶風險)\n"
+        md += "\n**風險／現金限制試算**\n"
+        md += f"- 每張價差風險：{max_loss_per_lot:,.0f} 元 (假設 1 張 = 1000 股)\n"
+        md += f"- 假設100萬帳戶、1%價差風險預算，且不超過現金，張數上限 {max_lots} 張；未含費用與滑價。\n"
         if rsi14 and rsi14 > 70:
             md += "\n⚠️ **警示**：RSI {0:.0f} 超買，建議分批進場或觀望\n".format(rsi14)
-        md += "\n_來源：traderhub skill (OpenAlice) — 簡化版 ATR 倉位法_\n"
+        md += "\n_點位為收盤資料的公式試算，未驗證策略勝率、成交可行性或 Kelly 參數。_\n"
         return md
     except Exception as e:
         return f"_traderhub 失敗：{e}_"
@@ -1209,8 +1227,8 @@ EXPERT_VIEWS = {
         ("超賣注意止損", "rsi14 and rsi14 < 25", "RSI {rsi}", "RSI {rsi} 嚴重超賣，風險師提醒要設好止損"),
     ],
     "組合經理": [
-        ("多頭共識", "bull_signals >= 4", "{n}/5 訊號一致", "{n} 個多頭訊號（基本面/動能/法人/技術/總經）一致，組合經理建議加碼"),
-        ("空頭共識", "bull_signals <= 1", "{n}/5 訊號反向", "{n} 個空頭訊號，組合經理建議減碼或避開"),
+        ("偏多條件多", "bull_signals is not None and bull_signals >= 4", "{n}/5 條件成立", "五項資料完整，其中 {n} 項偏多條件成立"),
+        ("偏多條件少", "bull_signals is not None and bull_signals <= 1", "{n}/5 條件成立", "五項資料完整，其中 {n} 項偏多條件成立；未成立不等於已確認空頭"),
     ],
 }
 
@@ -1229,7 +1247,7 @@ def _trigger_expert_views(data: Dict, db_latest: Dict) -> List[Dict]:
     cur = float(db_latest.get("Close") or 0) if db_latest else 0
     sma13 = float(db_latest.get("sma_13") or 0) if db_latest else 0
     sma27 = float(db_latest.get("sma_27") or 0) if db_latest else 0
-    rsi14 = float(db_latest.get("rsi_14") or 0) if db_latest else 0
+    rsi14 = _finite_number(db_latest.get("rsi_14")) if db_latest else None
     foreign_net = int(db_latest.get("ForeignNet") or 0) if db_latest else 0
     rev_yoy = None
     rev_list = data.get("monthly_revenue", [])
@@ -1249,6 +1267,10 @@ def _trigger_expert_views(data: Dict, db_latest: Dict) -> List[Dict]:
         1 if (rev_yoy is not None and rev_yoy > 15) else 0,
         1 if (sma13 and sma27 and cur > sma13 > sma27) else 0,
     ])
+    if not all(_finite_number(value) is not None for value in (
+        roe, r.get("ret_240d"), db_latest.get("ForeignNet"), rev_yoy,
+        db_latest.get("Close"), db_latest.get("sma_13"), db_latest.get("sma_27"))):
+        bull_signals = None
 
     # Build context dict for condition eval
     ctx = {
@@ -1266,7 +1288,7 @@ def _trigger_expert_views(data: Dict, db_latest: Dict) -> List[Dict]:
         "roe": f"{roe*100:.0f}%" if roe else "—",
         "pe": f"{pe:.1f}" if pe else "—",
         "pb": f"{pb:.2f}" if pb else "—",
-        "rsi": f"{rsi14:.0f}",
+        "rsi": f"{rsi14:.0f}" if rsi14 is not None else "—",
         "r60": f"{ret_60:.0f}%",
         "r120": f"{ret_120:.0f}%",
         "ret": f"{ret_240:.0f}%",
@@ -1533,7 +1555,7 @@ def render_ticker_full(ticker: str, data: Dict, output_dir: str = r"C:\Groove-La
         "experts":  ("🧠 18 大師解讀", section_expert_views(data, db_latest)),
         "minerva":  ("🧮 Minerva 量化評分", section_minerva(data, db_latest, history)),
         "thesis":   ("🎯 Build-Thesis 多空", section_build_thesis(data, db_latest)),
-        "backtest": ("📊 Backtest 因子驗證", section_backtest(data, db_latest, history)),
+        "backtest": ("📊 歷史訊號觀察", section_backtest(data, db_latest, history)),
         "trader":   ("💹 TraderHub 進出場", section_traderhub(data, db_latest)),
         "obs":      ("💡 觀察重點", section_observations(data, db_latest)),
     }
@@ -1872,7 +1894,7 @@ def render_ticker_tabbed(ticker: str, data: Dict, output_dir: str = r"C:\Groove-
         "zen":      ("🧘 纏論 (Chanlun)", section_zen(data, history)),
         "minerva":  ("🧮 Minerva 量化評分", section_minerva(data, db_latest, history)),
         "thesis":   ("🎯 Build-Thesis 多空", section_build_thesis(data, db_latest)),
-        "backtest": ("📊 Backtest 因子驗證", section_backtest(data, db_latest, history)),
+        "backtest": ("📊 歷史訊號觀察", section_backtest(data, db_latest, history)),
         "trader":   ("💹 TraderHub 進出場", section_traderhub(data, db_latest)),
         "experts":  ("🧠 18 大師解讀", section_expert_views(data, db_latest)),
         "obs":      ("💡 觀察重點", section_observations(data, db_latest)),
