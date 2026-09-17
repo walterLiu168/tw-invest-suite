@@ -27,25 +27,20 @@ if CONCEPT_PATH.exists():
 
 def main():
     # tickers.json
+    from report_inputs import load_inputs
+    inputs = load_inputs()
     out = []
-    for f in CACHE.glob("*.json"):
-        try:
-            j = json.loads(f.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        t = f.stem
-        yf = (j.get("yfinance") or {}).get("data") or {}
-        if not yf:
-            continue
-        ind_en = yf.get("industry") or ""
-        sec_en = yf.get("sector") or ""
+    for t, metadata in inputs['metadata'].items():
+        ind_en = metadata['industry']
+        sec_en = metadata['sector']
         tw_name_v = tw_name(t)
         ind_zh = resolve(t, ind_en, sec_en)
         sec_zh = zh_sector(sec_en)
         concepts = TICKER_CONCEPTS.get(t, [])
         out.append({
             "ticker": t,
-            "name": tw_name_v or yf.get("longName") or t,
+            "name": metadata['name'],
+            "date": inputs['date'],
             "sector": sec_en,
             "industry": ind_en,
             "sector_zh": sec_zh,

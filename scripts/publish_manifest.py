@@ -196,7 +196,9 @@ def build_certified_manifest(marker=None):
     import pipeline_state as ps
     marker = ps.verify_marker(marker)
     return {
-        "manifest_version": "D056-2", "nightly_id": marker["nightly_id"],
+        "manifest_version": "D056-3", "nightly_id": marker["nightly_id"],
+        "all_reports_coverage": {k:marker['all_reports'][k] for k in
+            ('current_rows','metadata_tickers','rank_tickers','advanced_tickers','advanced_excluded_incomplete_price','history_dates')},
         "data_date": marker["data_date"], "run_id": marker["run_id"],
         "picks_count": marker["picks_count"], "bucket_counts": marker["bucket_counts"],
         "tickers": marker["picks"], "source_commit": git_head_full(),

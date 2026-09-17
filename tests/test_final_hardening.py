@@ -53,7 +53,7 @@ class CertificationTests(unittest.TestCase):
     def test_late_failure_cannot_overwrite_terminal_success(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            marker = {"nightly_id": "current", "status": "ok", "marker_version": "D056-2"}
+            marker = {"nightly_id": "current", "status": "ok", "marker_version": "D056-3"}
             with patch.object(ps, "STATE", root / "state"), patch.object(ps, "MARKER", root / "marker"):
                 ps.atomic_json(ps.STATE, marker)
                 ps.atomic_json(ps.MARKER, marker)
@@ -67,7 +67,7 @@ class CertificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             with patch.object(ps, "STATE", root / "state"), patch.object(ps, "MARKER", root / "marker"):
-                ps.atomic_json(ps.MARKER, {"nightly_id": "old", "status": "ok", "marker_version": "D056-2"})
+                ps.atomic_json(ps.MARKER, {"nightly_id": "old", "status": "ok", "marker_version": "D056-3"})
                 ps.atomic_json(ps.STATE, {"nightly_id": "new", "status": "running"})
                 self.assertEqual(ps.fail_run("new")["status"], "failed")
 

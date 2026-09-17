@@ -40,13 +40,12 @@ def main():
     t2c = cs["ticker_to_concepts"]
 
     # chips data
-    chips = {}
-    if CHIPS_JSON.exists():
-        c = json.loads(CHIPS_JSON.read_text(encoding="utf-8"))
-        all_picks = c["tabs"]["all_buy"] + c["tabs"]["all_sell"]
-        chips = {p["ticker"]: p for p in all_picks}
-
-    today = datetime.now().strftime("%Y-%m-%d")
+    c = json.loads(CHIPS_JSON.read_text(encoding="utf-8"))
+    if cs.get('date') != c['date'] or cs.get('nightly_id') != c.get('nightly_id'):
+        raise ValueError('Concept/chips date or run identity mismatch')
+    all_picks = c.get('features') or c["tabs"]["all_buy"] + c["tabs"]["all_sell"]
+    chips = {p["ticker"]: p for p in all_picks}
+    today = c['date']
 
     def render_concept(name, info):
         tickers = info["tickers"]
@@ -62,8 +61,8 @@ def main():
                 t_sum += p["t_5d_shares"]; t_n += 1
             if p.get("d_5d_shares") is not None:
                 d_sum += p["d_5d_shares"]; d_n += 1
-        three = f_sum + t_sum + d_sum
-        three_class = "v-pos" if three > 0 else ("v-neg" if three < 0 else "")
+        three = f_sum + t_sum + d_sum if f_n and t_n and d_n else None
+        three_class = "v-pos" if (three or 0) > 0 else ("v-neg" if (three or 0) < 0 else "")
 
         # 成分股卡片
         comp_html = ""
@@ -88,8 +87,8 @@ def main():
           <summary>
             <span class="ci-icon">{info["icon"]}</span>
             <span class="cn-name">{name}</span>
-            <span class="cn-desc muted">{info["desc"]} · {len(tickers)} 檔</span>
-            <span class="cn-stat {three_class}">3 法人 {fmt_shares(three)} 張</span>
+            <span class="cn-desc muted">{info["desc"]} · {len(tickers)} 檔 · 資料涵蓋 {f_n}/{len(tickers)} 檔</span>
+            <span class="cn-stat {three_class}">3 法人 {fmt_shares(three)}</span>
             <span class="cn-arrow">▾</span>
           </summary>
           <div class="comp-grid">{comp_html}</div>

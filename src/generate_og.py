@@ -87,7 +87,7 @@ def parse_watchlist(html_path: Path):
 
     # --- 結構 2: <div class="pick-head long/short"> price-bucket 區塊 ---
     head_blocks = re.findall(
-        r'<div class="pick-head (long|short)">(.*?)(?=<div class="pick-head (?:long|short)">|</main>)',
+        r'<div class="pick-head (long|short)">(.*?)(?=<div class="pick-head (?:long|short)">|</main>|</body>)',
         html, re.DOTALL,
     )
     for horizon, body in head_blocks:
@@ -238,7 +238,7 @@ def render_og(picks, out_path: Path, date_str: str):
             draw_pick_card(d, x, 100, card_w, 180, p, accent)
 
     # === 中段說明 (y: 300-340) ===
-    d.text((40, 305), "今日焦點 24 檔精選（剩餘 6 檔）", font=font(15, bold=True), fill=AMBER)
+    d.text((40, 305), f"{len(picks)} 檔精選 · 圖卡展示前 {min(9,len(picks))} 檔，完整名單見網站", font=font(15, bold=True), fill=AMBER)
     d.line([(0, 340), (W, 340)], fill=BORDER, width=1)
 
     # === 後 6 個 pick (y: 360-560, 6 行 × ~32px) ===
@@ -252,7 +252,7 @@ def render_og(picks, out_path: Path, date_str: str):
     # === Footer (y: 580-630) ===
     d.line([(0, 580), (W, 580)], fill=BORDER, width=1)
     d.text((40, 600), "walterliu168.github.io/tw-invest-suite", font=font(15, mono=True), fill=ACC)
-    d.text((W - 530, 600), "18 大師 · 9 型態 · 1,962 檔", font=font(15), fill=MUTED)
+    d.text((W - 530, 600), "18 分析分頁 · 9 型態", font=font(15), fill=MUTED)
     d.text((W - 250, 600), "每日 22:25 自動更新", font=font(13), fill=MUTED)
 
     img.save(out_path, "PNG", optimize=True)

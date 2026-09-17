@@ -1,4 +1,4 @@
-"""板塊輪動 — 把 1,962 檔依產業 (yfinance industry) 加總
+"""板塊輪動 — 把 1,962 檔依產業 (canonical industry_type) 加總
 產出:
   public/data/sectors.json
   public/sectors.html
@@ -82,45 +82,29 @@ def load_ticker_metadata():
 
 
 def compute_revenue_yoy(meta):
-    """讀 finmind_month，算每檔的最近月營收 YoY %。
-    回傳 ticker → yoy_pct (float or None)"""
-    yoy = {}
-    for f in CACHE_DIR.glob("*.json"):
-        try:
-            j = json.loads(f.read_text(encoding="utf-8"))
-        except Exception:
+    """Fresh published monthly revenues, preserving true zero and excluding future rows."""
+    from report_inputs import finite, report_date
+    import cache_manager as cache
+    target = report_date()
+    result = {}
+    for ticker in meta:
+        entry = cache.get_fresh(ticker,'finmind_month') or {}
+        rows = [r for r in (entry.get('data') or []) if r.get('date','') <= target]
+        rows.sort(key=lambda r:r.get('date',''),reverse=True)
+        result[ticker] = None
+        if not rows:
             continue
-        t = f.stem
-        rows = ((j.get("finmind_month") or {}).get("data")) or []
-        if not rows or len(rows) < 13:
-            yoy[t] = None
-            continue
-        # 排序（最新在前）
-        rows = sorted(rows, key=lambda r: r.get("date", ""), reverse=True)
         latest = rows[0]
-        latest_amt = latest.get("revenue") or 0
-        latest_year = latest.get("revenue_year")
-        latest_month = latest.get("revenue_month")
-        if not latest_year or not latest_month or not latest_amt:
-            yoy[t] = None
+        try:
+            year,month = int(latest['revenue_year']),int(latest['revenue_month'])
+            prior = next((r for r in rows[1:] if int(r['revenue_year']) == year-1 and int(r['revenue_month']) == month),None)
+        except (KeyError,TypeError,ValueError):
             continue
-        # 找去年同月
-        target = (latest_year - 1, latest_month)
-        prev_ym = None
-        for r in rows[1:]:
-            if (r.get("revenue_year"), r.get("revenue_month")) == target:
-                prev_ym = r
-                break
-        if not prev_ym or not prev_ym.get("revenue"):
-            yoy[t] = None
-            continue
-        prev_amt = prev_ym["revenue"]
-        if prev_amt <= 0:
-            yoy[t] = None
-        else:
-            yoy[t] = (latest_amt - prev_amt) / prev_amt * 100.0
-    print(f"[yoy] computed for {sum(1 for v in yoy.values() if v is not None)} tickers", file=sys.stderr)
-    return yoy
+        amount = finite(latest.get('revenue'))
+        previous = finite(prior.get('revenue')) if prior else None
+        if amount is not None and previous is not None and previous > 0:
+            result[ticker] = (amount-previous)/previous*100
+    return result
 
 
 def fetch_institutional_5d(meta):
@@ -249,7 +233,11 @@ def aggregate(meta, yoy, inst5):
             "dealer_5d_lots": round(d_lots, 0) if d_lots is not None else None,
             "three_net_5d_lots": round(three_net, 0) if three_net is not None else None,
             "pe_median": round(pe_med, 2) if pe_med else None,
-            "yoy_median_pct": round(yoy_med, 2) if yoy_med else None,
+            "yoy_median_pct": round(yoy_med, 2) if yoy_med is not None else None,
+            "institutional_coverage": f_n,
+            "market_cap_coverage": len(with_cap),
+            "pe_coverage": len(pes),
+            "revenue_coverage": len(yoys),
         })
     sectors.sort(key=lambda s: (s["three_net_5d_lots"] or 0) * -1)
     print(f"[agg] {len(sectors)} industries, {skipped_pe} have no PE", file=sys.stderr)
@@ -258,7 +246,7 @@ def aggregate(meta, yoy, inst5):
 
 def write_json(sectors, dates):
     out = {
-        "date": datetime.now().strftime("%Y-%m-%d"),
+        "date": dates[0],
         "trading_dates_5d": dates,
         "industry_count": len(sectors),
         "ticker_count_total": sum(s["count"] for s in sectors),
@@ -276,10 +264,10 @@ def fmt_lots(n):
         return "—"
     sign = "+" if n > 0 else ("−" if n < 0 else "")
     if abs(n) >= 10000:
-        return f"{sign}{n/10000:.1f}萬"
+        return f"{sign}{abs(n)/10000:.1f}萬"
     if abs(n) >= 1000:
-        return f"{sign}{n/1000:.1f}k"
-    return f"{sign}{int(n)}"
+        return f"{sign}{abs(n)/1000:.1f}k"
+    return f"{sign}{int(abs(n))}"
 
 
 def fmt_pct(n, decimals=1):
@@ -302,7 +290,7 @@ def render_html(sectors, dates, total_tickers):
     - D016 一行一訊息：每個 chip = 1 個事實
     - 行動裝置優先：手機上單欄可讀
     """
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = dates[0]
     rows = []
     for s in sectors:
         # 法人淨買超：紅=正（買超），綠=負（賣超）
@@ -334,8 +322,9 @@ def render_html(sectors, dates, total_tickers):
         <div class="chip-v">{fmt_pe(pe)}</div>
       </div>
       <div class="chip">
-        <div class="chip-k">檔數 / 總市值</div>
-        <div class="chip-v">{s["count"]} 檔 · {s["mkt_cap_total"]/1e12:.1f} 兆</div>
+        <div class="chip-k">檔數 / 已知市值加總</div>
+        <div class="chip-v">{s["count"]} 檔 · {f'{s["mkt_cap_total"]/1e12:.1f} 兆' if s.get('market_cap_coverage') else '—'}</div>
+        <div class="muted">法人涵蓋 {s.get('institutional_coverage',0)}/{s['count']} 檔；市值涵蓋 {s.get('market_cap_coverage',0)}/{s['count']} 檔</div>
       </div>
     </div>
   </a>''')
@@ -350,10 +339,10 @@ def render_html(sectors, dates, total_tickers):
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>板塊輪動 · tw-invest-suite</title>
-<meta name="description" content="台股 1,962 檔依產業加總：5 日法人淨買超、月營收 YoY、PE 中位數">
+<meta name="description" content="台股市場依產業加總：5 日法人淨買超、月營收 YoY、PE 中位數">
 <meta name="theme-color" content="#0a0e1a">
 <meta property="og:title" content="板塊輪動 · tw-invest-suite">
-<meta property="og:description" content="台股 1,962 檔依產業加總，看資金正湧向哪些板塊">
+<meta property="og:description" content="台股市場依產業加總，看資金正湧向哪些板塊">
 <meta property="og:image" content="https://walterliu168.github.io/tw-invest-suite/data/og.png">
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="assets/textsize.css">
@@ -432,7 +421,7 @@ footer a {{ color: var(--acc); }}
 
 <div class="hdr">
   <h1>🌊 板塊輪動</h1>
-  <p class="sub">台股 {total_tickers} 檔依產業 (yfinance industry) 加總 — 每日 22:25 自動更新</p>
+  <p class="sub">台股 {total_tickers} 檔依產業 (canonical industry_type) 加總 — 每日 22:25 自動更新</p>
   <div class="meta">
     <div class="pill">📅 資料日 <b>{today}</b></div>
     <div class="pill">📊 5 日區間 <b>{dates_str}</b></div>

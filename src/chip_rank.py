@@ -43,6 +43,7 @@ CONCEPT_ICON = {
 
 # 法人分項代號對照
 INST_CAT = {
+    "Dealer": "d",             # Canonical warehouse combined dealer net
     "Foreign_Investor": "f",   # 外資
     "Investment_Trust": "t",   # 投信
     "Dealer_self": "ds",        # 自營商 (自行)
@@ -137,7 +138,7 @@ def build_per_ticker_calendar(all_rows):
         b = r.get("buy") or 0
         s = r.get("sell") or 0
         try:
-            net = float(b) - float(s)
+            net = float(r['net']) if 'net' in r else float(b) - float(s)
         except (TypeError, ValueError):
             continue
         slot = by.setdefault(t, {}).setdefault(d, {"f": 0.0, "t": 0.0, "d": 0.0, "ds": 0.0, "dh": 0.0})
@@ -145,6 +146,8 @@ def build_per_ticker_calendar(all_rows):
             slot["f"] = net
         elif cat == "Investment_Trust":
             slot["t"] = net
+        elif cat == "Dealer":
+            slot["d"] = net
         elif cat == "Dealer_self":
             slot["ds"] = net
         elif cat == "Dealer_Hedging":
@@ -160,7 +163,7 @@ def build_per_ticker_calendar(all_rows):
                 "date": d,
                 "f": v["f"],
                 "t": v["t"],
-                "d": v["ds"] + v["dh"],  # 自營 = 自行 + 避險
+                "d": v["d"] + v["ds"] + v["dh"],
                 "ds": v["ds"],
                 "dh": v["dh"],
             })
@@ -296,9 +299,11 @@ def write_json(features, dates, adv_features=None):
                 f["f_stay_dir"] = af.get("f_stay_dir", 0)
                 f["force_ratio"] = af.get("force_ratio")
     out = {
-        "date": datetime.now().strftime("%Y-%m-%d"),
+        "date": dates[0],
+        "features": features,
         "trading_dates_5d": dates[:5],
-        "trading_dates_10d": dates,
+        "trading_dates_10d": dates[:10],
+        "trading_dates_20d": dates[:20],
         "ticker_count": len(features),
         "tabs": {
             "all_buy": by_today_buy,
@@ -517,7 +522,7 @@ def render_html(data, out_path: Path):
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>籌碼排行 · tw-invest-suite</title>
-<meta name="description" content="台股 1,962 檔法人流向排行 — 今日 / 5 日 / 連買連賣 / 同買同賣">
+<meta name="description" content="台股市場法人流向排行 — 今日 / 5 日 / 連買連賣 / 同買同賣">
 <meta name="theme-color" content="#0a0e1a">
 <meta property="og:title" content="籌碼排行 · tw-invest-suite">
 <meta property="og:description" content="1,962 檔法人流向 — 今日 3 法人淨買超、同買同賣、外資連買連賣">
@@ -603,7 +608,7 @@ footer a {{ color: var(--acc); }}
 
 <div class="hdr">
   <h1>💎 籌碼排行</h1>
-  <p class="sub">台股 1,962 檔法人流向 — 今日 / 5 日 / 連買連賣 / 同買同賣</p>
+  <p class="sub">台股市場法人流向 — 今日 / 5 日 / 連買連賣 / 同買同賣</p>
   <div class="meta">
     <div class="pill">📅 資料日 <b>{today}</b></div>
     <div class="pill">📊 5 日區間 <b>{" · ".join(dates[::-1])}</b></div>

@@ -69,7 +69,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.state_patch = patch.object(ps, "STATE", self.root / "state.json")
         self.state_patch.start()
-        self.marker = {"marker_version": "D056-2", "nightly_id": "current", "status": "ok",
+        self.marker = {"marker_version": "D056-3", "nightly_id": "current", "status": "ok",
                        "execution_date": "2026-09-15", "data_date": "2026-09-15",
                        "started_at": "2026-09-15T22:25:00", "completed_at": "2026-09-15T23:55:00"}
         ps.atomic_json(ps.STATE, self.marker)
@@ -236,7 +236,7 @@ class PublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="pipeline-http-") as folder:
             root = Path(folder)
             served, staged = root / "served", root / "staged"
-            manifest = {"nightly_id": "fixture", "data_date": "2026-09-15", "tickers": [{"ticker": "2330"}, {"ticker": "2317"}]}
+            manifest = {"nightly_id": "fixture", "data_date": "2026-09-15", "artifacts": [], "tickers": [{"ticker": "2330"}, {"ticker": "2317"}]}
             paths = ["watchlist.html", "patterns.html", "data/patterns.json", "data/watchlist-full.json", "data/publish_manifest_2026-09-15.json", "analyze/2330.html", "analyze/2317.html"]
             for base in (served, staged):
                 for relative in paths:

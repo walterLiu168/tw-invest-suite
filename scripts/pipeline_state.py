@@ -22,7 +22,14 @@ ANALYZE = Path(r"C:\Groove-Lab\analyze")
 STATE = RUNTIME / "_debug" / "pipeline_run.json"
 MARKER = RUNTIME / "_debug" / "last_completed.json"
 BUCKETS = {"<100", "100-300", "300-1000", ">1000"}
-REQUIRED = {"render", "patterns", "patterns_html", "watchlist"}
+REQUIRED = {"render", "patterns", "patterns_html", "watchlist", "all_reports"}
+REPO_SOURCE_FILES = (
+    'src/margin_rebound/finmind_maint.py', 'src/margin_rebound/scan.py',
+    'src/all_reports.py', 'src/report_inputs.py', 'src/chip_rank.py',
+    'src/chip_advanced.py', 'src/sector_aggregate.py', 'src/build_ticker_meta.py',
+    'src/concept_stocks.py', 'src/render_concepts.py', 'src/render_chips_advanced.py',
+    'src/industry_zh.py', 'src/generate_og.py', 'src/chip_push.py',
+)
 SOURCE_FILES = (
     "run_daily.ps1", "run_stage.py", "pipeline_state.py", "render_only.py",
     "render_full_watchlist.py", "pattern_classifier.py", "build_patterns_html.py",
@@ -139,7 +146,7 @@ def source_hashes():
         if not runtime.is_file() or sha256(runtime) != digest:
             raise ValueError(f"runtime/repo SHA mismatch: {name}")
         result[name] = digest
-    for name in ("src/margin_rebound/finmind_maint.py", "src/margin_rebound/scan.py"):
+    for name in REPO_SOURCE_FILES:
         result[name] = sha256(REPO / name)
     return result
 
@@ -255,6 +262,40 @@ def artifact(path, gh_path):
             "sha256": sha256(path), "size": path.stat().st_size}
 
 
+def validate_all_reports(receipt, run):
+    if (receipt.get('status') != 'ok' or receipt.get('nightly_id') != run['nightly_id']
+            or receipt.get('data_date') != run['data_date']):
+        raise ValueError('All-report receipt identity/status mismatch')
+    dates = receipt.get('history_dates', [])
+    if len(dates) != 30 or len(set(dates)) != 30 or dates != sorted(dates, reverse=True) or dates[0] != run['data_date']:
+        raise ValueError('All-report history coverage mismatch')
+    if receipt.get('current_rows', 0) < 1900 or receipt.get('metadata_tickers') != len(run['render_tickers']):
+        raise ValueError('All-report market coverage mismatch')
+    if receipt.get('rank_tickers',0) < 1900 or receipt.get('advanced_tickers',0) <= 0:
+        raise ValueError('All-report ranking/advanced coverage mismatch')
+    expected = {'sectors.html','chips.html','chips-advanced.html','concepts.html',
+        'data/sectors.json','data/chips.json','data/chips-advanced.json','data/concept-stocks.json',
+        'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png'}
+    expected.update(f'data/chips-history/{day}.json' for day in dates)
+    artifacts = receipt.get('artifacts', [])
+    if len(artifacts) != len(expected) or {a['gh_path'] for a in artifacts} != expected:
+        raise ValueError('All-report artifact set mismatch')
+    for item in artifacts:
+        path = (PUBLIC / item['gh_path']).resolve()
+        if path != Path(item['abs_path']).resolve() or not path.is_relative_to(PUBLIC.resolve()) or sha256(path) != item['sha256']:
+            raise ValueError('All-report artifact changed/unsafe')
+        if path.suffix == '.json':
+            value = read_json(path)
+            if isinstance(value,dict):
+                expected_date = path.stem if path.parent.name == 'chips-history' else run['data_date']
+                if value.get('date') != expected_date or value.get('nightly_id') != run['nightly_id']:
+                    raise ValueError('All-report JSON identity mismatch')
+            elif path.name == 'tickers.json':
+                if sorted(v['ticker'] for v in value) != run['render_tickers'] or any(v.get('date') != run['data_date'] for v in value):
+                    raise ValueError('Ticker metadata universe/date mismatch')
+    return artifacts
+
+
 def validate_maintenance_fetch(fetch, run):
     dd = run['data_date']
     if fetch.get('nightly_id') != run['nightly_id'] or fetch.get('requested_date') != dd or fetch.get('status') != 'ok' or not fetch.get('provider_rows') or fetch.get('api_errors') != 0:
@@ -292,6 +333,8 @@ def complete(stages_path):
         if receipt.get("fresh_count", 0) < 1900:
             raise ValueError("fresh render coverage insufficient")
         artifacts = list(receipt["artifacts"])
+        all_reports = read_json(RUNTIME / '_debug' / 'all_reports_receipt.json')
+        artifacts += validate_all_reports(all_reports, run)
         for a in artifacts:
             if sha256(a["abs_path"]) != a["sha256"]:
                 raise ValueError(f"render artifact changed: {a['gh_path']}")
@@ -326,7 +369,8 @@ def complete(stages_path):
         if any(stage['Name'] == 'finmind_maint' for stage in required):
             fetch = read_json(RUNTIME / '_debug' / 'maintenance_fetch.json')
             maintenance['maintenance_data_date'] = validate_maintenance_fetch(fetch, run)
-        run.update(status="ok", marker_version="D056-2", completed_at=datetime.now().isoformat(),
+        run.update(status="ok", marker_version="D056-3", completed_at=datetime.now().isoformat(),
+                   all_reports=all_reports,
                    stages=stages, degraded_stages=sum(not s["Ok"] for s in stages if s.get("Optional")),
                    render_data_issues=receipt.get("data_issues", []), render_count=receipt["expected_count"],
                    fresh_render_count=receipt["fresh_count"], render_numeric_issues=receipt.get("numeric_data_issues", {}),
@@ -345,7 +389,7 @@ def verify_marker(marker=None, now=None, check_files=True):
     run = read_json(STATE)
     now = now or datetime.now()
     execution_day = now.date() if now.hour >= 18 else now.date() - timedelta(days=1)
-    if marker.get("marker_version") != "D056-2" or marker.get("regenerated_by"):
+    if marker.get("marker_version") != "D056-3" or marker.get("regenerated_by"):
         raise ValueError("uncertified/legacy marker")
     if marker.get("status") != "ok" or run.get("status") != "ok" or marker.get("nightly_id") != run.get("nightly_id"):
         raise ValueError("nightly is incomplete/failed or marker belongs to another run")
@@ -365,6 +409,7 @@ def verify_marker(marker=None, now=None, check_files=True):
         for a in marker["artifacts"]:
             if sha256(a["abs_path"]) != a["sha256"]:
                 raise ValueError(f"artifact changed: {a['gh_path']}")
+        validate_all_reports(marker.get('all_reports', {}), marker)
     return marker
 
 
@@ -378,7 +423,7 @@ def fail_run(nightly_id, reason="orchestrator failed; see daily log"):
     if value.get("status") == "ok":
         marker = read_json(MARKER)
         if (marker.get("nightly_id") == nightly_id and marker.get("status") == "ok"
-                and marker.get("marker_version") == "D056-2"):
+                and marker.get("marker_version") == "D056-3"):
             return value
         raise ValueError("inconsistent completed state; refusing overwrite")
     value.update(status="failed", error=reason)

@@ -81,12 +81,12 @@ def build_features(ohlcv, inst_rows, meta):
         t = str(r.get("stock_id", "")).strip()
         d = r.get("date", "")
         cat = r.get("name", "")
-        if not t or not d or cat not in ("Foreign_Investor", "Investment_Trust", "Dealer_self", "Dealer_Hedging"):
+        if not t or not d or cat not in ("Foreign_Investor", "Investment_Trust", "Dealer", "Dealer_self", "Dealer_Hedging"):
             continue
         b = r.get("buy") or 0
         s = r.get("sell") or 0
         try:
-            net = float(b) - float(s)
+            net = float(r['net']) if 'net' in r else float(b) - float(s)
         except (TypeError, ValueError):
             continue
         slot = by.setdefault(t, {}).setdefault(d, {"f": 0.0, "t": 0.0, "d": 0.0})
@@ -94,7 +94,7 @@ def build_features(ohlcv, inst_rows, meta):
             slot["f"] = net
         elif cat == "Investment_Trust":
             slot["t"] = net
-        elif cat in ("Dealer_self", "Dealer_Hedging"):
+        elif cat in ("Dealer", "Dealer_self", "Dealer_Hedging"):
             slot["d"] += net
     # 取交集日期
     all_dates = sorted(ohlcv.keys(), reverse=True)
@@ -122,7 +122,7 @@ def build_features(ohlcv, inst_rows, meta):
                 "d": id_["d"],
                 "three": three_net,
             })
-        if not per_day:
+        if len(per_day) != 20 or [row['date'] for row in per_day] != use_dates:
             continue
         # per_day[0] = 最新, per_day[-1] = 最舊
         # 我們要按時間正序算 20 日均
@@ -244,17 +244,19 @@ def write_json(features, dates, ohlcv_map=None):
         for p in all_top:
             t = p["ticker"]
             # 取 use_dates 範圍內的 close
-            closes = []
+            closes, close_dates = [], []
             for d in dates:
                 by_date = ohlcv_map.get(d, {})
                 c = by_date.get(t)
                 if c is not None:
                     closes.append(c)
+                    close_dates.append(d)
             if closes and len(closes) >= 5:
                 chart_data[t] = {"name": p.get("name", t), "vwap": p.get("vwap_buy_20d"),
-                                  "price_now": p.get("price"), "closes": closes, "dates": dates[:len(closes)]}
+                                  "price_now": p.get("price"), "closes": closes, "dates": close_dates}
     out = {
-        "date": datetime.now().strftime("%Y-%m-%d"),
+        "date": dates[0],
+        "price_proxy": "positive institutional net weighted closing price; not actual transaction cost or VWAP",
         "trading_dates_20d": dates,
         "ticker_count": len(features),
         "features": features,

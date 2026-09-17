@@ -1,11 +1,11 @@
-# tw-invest-suite daily report — fully autonomous batch
+﻿# tw-invest-suite daily report — fully autonomous batch
 # Scheduled via Windows Task Scheduler: daily 22:25
 # Runs without any agent interaction.
 #
 # Required: maintenance (weekday full mode), render, patterns, patterns_html, watchlist.
-# Optional: margin_scan. Advanced stages require -IncludeAdvancedStages.
+# Optional: margin_scan. All market reports are required.
 # Outputs are certified by pipeline_state.py; only the scheduled publisher pushes.
-# Default stage budgets total at most 200 minutes (render budget: 90 minutes).
+# Default stage budgets total at most 230 minutes (render budget: 90 minutes).
 # -Mode render runs the rendering chain without maintenance; -Mode publish uses
 # the same completion gate as the scheduled publisher.
 
@@ -292,7 +292,7 @@ $startTime = Get-Date
 
 # Publish mode uses the same verified release gate as the scheduled publisher.
 if ($Mode -eq 'publish') {
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'publish_ghpages_daily.ps1')
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'publish_verified_sites.ps1')
     exit $LASTEXITCODE
 }
 
@@ -342,37 +342,10 @@ $stages += @{ N=5; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$s
 # Supplemental fetches have per-worker and overall deadlines; all picks remain.
 $stages += @{ N=6; Name='watchlist'; Cmd='render_full_watchlist.py'; To=30*60 }
 
-# Stage 7-17 REMOVED in D056-A (砍掉 D027/D029 advanced stages)
-# 過去每天跑 25 分鐘，但 GitHub Pages 用不到。手動觸發 `-IncludeAdvancedStages` 加回來。
-if ($IncludeAdvancedStages) {
-    Log-Msg "[advanced] re-enabling D027/D029 stages 7-17"
-$secScript = "C:\Users\icemo\Projects\tw-invest-suite\src\sector_aggregate.py"
-$stages += @{ N=7; Name='sectors'; Cmd="$secScript"; To=5*60 }
-$ogScript = "C:\Users\icemo\Projects\tw-invest-suite\src\generate_og.py"
-$watchlistHtml = "C:\Groove-Lab\watchlist.html"
-$ogOut = "C:\Users\icemo\Projects\tw-invest-suite\public\data\og.png"
-if (Test-Path $watchlistHtml) {
-    $stages += @{ N=8; Name='og_image'; Cmd="$ogScript `"$watchlistHtml`" `"$ogOut`""; To=2*60 }
-}
-$chipScript = "C:\Users\icemo\Projects\tw-invest-suite\src\chip_rank.py"
-$stages += @{ N=9; Name='chips'; Cmd="$chipScript"; To=5*60 }
-$chipAdvScript = "C:\Users\icemo\Projects\tw-invest-suite\src\chip_advanced.py"
-$stages += @{ N=10; Name='chips_advanced'; Cmd="$chipAdvScript"; To=10*60 }
-$chipsAdvHtml = "C:\Users\icemo\Projects\tw-invest-suite\src\render_chips_advanced.py"
-$stages += @{ N=11; Name='render_chips_advanced'; Cmd="$chipsAdvHtml"; To=60 }
-$chipHist = "C:\Users\icemo\Projects\tw-invest-suite\src\chip_history.py"
-$stages += @{ N=12; Name='chips_history'; Cmd="$chipHist"; To=5*60 }
-$buildMeta = "C:\Users\icemo\Projects\tw-invest-suite\src\build_ticker_meta.py"
-$stages += @{ N=13; Name='build_ticker_meta'; Cmd="$buildMeta"; To=30 }
-$chipPush = "C:\Users\icemo\Projects\tw-invest-suite\src\chip_push.py"
-$stages += @{ N=14; Name='chip_push'; Cmd="$chipPush"; To=30 }
-$twIndustry = "C:\Users\icemo\Projects\tw-invest-suite\src\fetch_tw_industry.py"
-$conceptStocks = "C:\Users\icemo\Projects\tw-invest-suite\src\concept_stocks.py"
-$renderConcepts = "C:\Users\icemo\Projects\tw-invest-suite\src\render_concepts.py"
-$stages += @{ N=15; Name='tw_industry'; Cmd="$twIndustry"; To=30 }
-$stages += @{ N=16; Name='concept_stocks'; Cmd="$conceptStocks"; To=10 }
-$stages += @{ N=17; Name='render_concepts'; Cmd="$renderConcepts"; To=30 }
-}
+# Every existing market report is required in the default scheduled run.
+# IncludeAdvancedStages remains accepted for older callers; reports always run.
+$allReports = "C:\Users\icemo\Projects\tw-invest-suite\src\all_reports.py"
+$stages += @{ N=7; Name='all_reports'; Cmd=$allReports; To=30*60 }
 
 # Leave five minutes for preflight/certification under the four-hour task cap.
 $stageBudgetSec = 0

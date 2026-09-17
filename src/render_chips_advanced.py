@@ -1,6 +1,6 @@
 """render_chips_advanced.py — 從 chips-advanced.json 產 chips-advanced.html
 4 個 tab:
-  - 法人 20 日均價 (現價 vs 法人 VWAP 折溢價)
+  - 20 日淨買超加權收盤代理價 (現價 vs 收盤代理價 折溢價)
   - 力道標 (今日 / 5 日均日 ratio)
   - 雷達 (force_strong_buy/sell + below/above_inst_cost)
 """
@@ -38,7 +38,7 @@ def card(p, mode):
     if mode == "vwap":
         chips = f'''
             <div class="chip"><div class="k">現價</div><div class="v">{p.get("price", 0):.2f}</div></div>
-            <div class="chip"><div class="k">法人 20 日 VWAP</div><div class="v">{p.get("vwap_buy_20d", 0):.2f}</div></div>
+            <div class="chip"><div class="k">20 日淨買超加權收盤代理價</div><div class="v">{p.get("vwap_buy_20d", 0):.2f}</div></div>
             <div class="chip"><div class="k">折溢價</div><div class="v {('v-pos' if (p.get('vs_vwap_pct') or 0) > 0 else 'v-neg')}">{fmt_pct(p.get('vs_vwap_pct'))}</div></div>
             <div class="chip"><div class="k">20 日累計 3 法人</div><div class="v {('v-pos' if (p.get('cum_20d_shares') or 0) > 0 else 'v-neg')}">{fmt_shares(p.get('cum_20d_shares'))}</div></div>'''
     elif mode == "force":
@@ -52,7 +52,7 @@ def card(p, mode):
     else:  # radar — show everything
         chips = f'''
             <div class="chip"><div class="k">力道</div><div class="v">{p.get('force_ratio') or 0:.1f}×</div></div>
-            <div class="chip"><div class="k">vs 法人 VWAP</div><div class="v {('v-pos' if (p.get('vs_vwap_pct') or 0) > 0 else 'v-neg')}">{fmt_pct(p.get('vs_vwap_pct'))}</div></div>
+            <div class="chip"><div class="k">vs 收盤代理價</div><div class="v {('v-pos' if (p.get('vs_vwap_pct') or 0) > 0 else 'v-neg')}">{fmt_pct(p.get('vs_vwap_pct'))}</div></div>
             <div class="chip"><div class="k">5d 3 法人</div><div class="v {('v-pos' if (p.get('cum_5d_shares') or 0) > 0 else 'v-neg')}">{fmt_shares(p.get('cum_5d_shares'))}</div></div>
             <div class="chip"><div class="k">20d 3 法人</div><div class="v {('v-pos' if (p.get('cum_20d_shares') or 0) > 0 else 'v-neg')}">{fmt_shares(p.get('cum_20d_shares'))}</div></div>'''
     return f'''
@@ -92,11 +92,11 @@ def main():
 
     body = f'''
     <div class="tab-content active" data-bucket="vwap-below">
-      <h2 class="bucket-title">現價低於法人 20 日均價 <small>折價 ≥ 3% · 法人加碼買進成本區</small></h2>
+      <h2 class="bucket-title">現價低於20 日淨買超加權收盤代理價 <small>折價 ≥ 3% · 低於代理價，不代表實際持倉成本</small></h2>
       <div class="grid">{render_grid(vwap_below, "vwap")}</div>
     </div>
     <div class="tab-content" data-bucket="vwap-above">
-      <h2 class="bucket-title">現價高於法人 20 日均價 <small>溢價 ≥ 3% · 法人已獲利了結</small></h2>
+      <h2 class="bucket-title">現價高於20 日淨買超加權收盤代理價 <small>溢價 ≥ 3% · 高於代理價，不代表法人已賣出</small></h2>
       <div class="grid">{render_grid(vwap_above, "vwap")}</div>
     </div>
     <div class="tab-content" data-bucket="force-buy">
@@ -116,7 +116,7 @@ def main():
       <div class="grid">{render_grid(radar_sell, "radar")}</div>
     </div>
     <div class="tab-content" data-bucket="chart">
-      <h2 class="bucket-title">📈 法人 20 日均價走勢圖 <small>折溢價 ±3% 個股 · 藍線=收盤價 · 紅線=法人 20 日 VWAP</small></h2>
+      <h2 class="bucket-title">📈 20 日淨買超加權收盤代理價走勢圖 <small>折溢價 ±3% 個股 · 藍線=收盤價 · 紅線=20 日淨買超加權收盤代理價</small></h2>
       <div class="chart-grid" id="chart-grid">
         <div class="empty">載入中…</div>
       </div>
@@ -129,10 +129,10 @@ def main():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>籌碼進階 · tw-invest-suite</title>
-<meta name="description" content="法人 20 日均價 · 力道標 · 籌碼雷達">
+<meta name="description" content="20 日淨買超加權收盤代理價 · 力道標 · 籌碼雷達">
 <meta name="theme-color" content="#0a0e1a">
 <meta property="og:title" content="籌碼進階 · tw-invest-suite">
-<meta property="og:description" content="法人 20 日 VWAP、力道標、多條件籌碼雷達">
+<meta property="og:description" content="20 日淨買超加權收盤代理價、力道標、多條件籌碼雷達">
 <meta property="og:image" content="https://walterliu168.github.io/tw-invest-suite/data/og.png">
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="assets/textsize.css">
@@ -204,7 +204,7 @@ footer a {{ color: var(--acc); }}
 
 <div class="hdr">
   <h1>📡 籌碼進階</h1>
-  <p class="sub">法人 20 日均價 · 力道標 · 籌碼雷達 — 多條件篩選 + 雷達</p>
+  <p class="sub">20 日淨買超加權收盤代理價 · 力道標 · 籌碼雷達 — 多條件篩選 + 雷達</p>
   <div class="meta">
     <div class="pill">📅 資料日 <b>{today}</b></div>
     <div class="pill">📊 20 日區間 <b>{" · ".join(dates[::-1][:5])}…</b></div>
@@ -221,8 +221,8 @@ footer a {{ color: var(--acc); }}
 </div>
 
 <div class="tabs">
-  <button class="tab active" data-tab="vwap-below">法人均價之下 <span class="cnt">{len(vwap_below)}</span></button>
-  <button class="tab" data-tab="vwap-above">法人均價之上 <span class="cnt">{len(vwap_above)}</span></button>
+  <button class="tab active" data-tab="vwap-below">代理價之下 <span class="cnt">{len(vwap_below)}</span></button>
+  <button class="tab" data-tab="vwap-above">代理價之上 <span class="cnt">{len(vwap_above)}</span></button>
   <button class="tab" data-tab="force-buy">力道強買 <span class="cnt">{len(force_buy)}</span></button>
   <button class="tab" data-tab="force-sell">力道強賣 <span class="cnt">{len(force_sell)}</span></button>
   <button class="tab" data-tab="radar-buy">雷達強買 <span class="cnt">{len(radar_buy)}</span></button>
@@ -266,7 +266,7 @@ fetch('data/chips-advanced.json').then(function (r) {{ return r.ok ? r.json() : 
       var c = data[t];
       html += '<div class="chart-card">' +
         '<div class="chart-head"><span class="ticker">' + t + '</span><span class="name">' + (c.name || '') + '</span>' +
-        '<span class="chart-stat">收 ' + (c.price_now || 0).toFixed(1) + ' / VWAP ' + (c.vwap || 0).toFixed(1) + '</span></div>' +
+        '<span class="chart-stat">收 ' + (c.price_now || 0).toFixed(1) + ' / 代理價 ' + (c.vwap || 0).toFixed(1) + '</span></div>' +
         '<canvas id="cv-' + t + '" width="380" height="120"></canvas></div>';
     }});
     document.getElementById('chart-grid').innerHTML = html;
@@ -280,7 +280,7 @@ fetch('data/chips-advanced.json').then(function (r) {{ return r.ok ? r.json() : 
           labels: c.closes.map(function (_, i) {{ return 'D' + (i + 1); }}),
           datasets: [
             {{ label: '收盤', data: c.closes, borderColor: '#5fb1ff', backgroundColor: 'rgba(95,177,255,0.1)', tension: 0.25, pointRadius: 0, borderWidth: 2 }},
-            {{ label: '法人 VWAP', data: c.closes.map(function () {{ return c.vwap; }}), borderColor: '#ec7063', borderDash: [4, 4], pointRadius: 0, borderWidth: 2, fill: false }}
+            {{ label: '收盤代理價', data: c.closes.map(function () {{ return c.vwap; }}), borderColor: '#ec7063', borderDash: [4, 4], pointRadius: 0, borderWidth: 2, fill: false }}
           ]
         }},
         options: {{
