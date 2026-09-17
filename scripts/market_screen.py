@@ -16,7 +16,7 @@ Batch queries for speed (1,943 stocks × per-stock lookups = slow).
 """
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -243,6 +243,10 @@ def screen_market() -> Dict[str, Dict[str, List[Candidate]]]:
         enrich_from_features_map(c, feat_map)
         candidates.append(c)
 
+    # The existing long-term score reads these returns, so populate them before ranking.
+    print(f"[4/5] Computing returns for {len(candidates)} candidates (target={target_date})…", flush=True)
+    enrich_long_term_returns(candidates, target_date)
+
     # Bucket
     by_bucket: Dict[str, List[Candidate]] = {label: [] for label, _, _ in PRICE_BUCKETS}
     for c in candidates:
@@ -256,19 +260,11 @@ def screen_market() -> Dict[str, Dict[str, List[Candidate]]]:
     final_picks: List[Candidate] = []
     for label, _, _ in PRICE_BUCKETS:
         bucket = by_bucket.get(label, [])
-        longs = pick_long_term(bucket, PICKS_PER_HORIZON)
-        shorts = pick_short_term(bucket, PICKS_PER_HORIZON)
-        for c in longs:
-            c.horizon = "long"
-        for c in shorts:
-            c.horizon = "short"
+        longs = [replace(c, horizon="long") for c in pick_long_term(bucket, PICKS_PER_HORIZON)]
+        shorts = [replace(c, horizon="short") for c in pick_short_term(bucket, PICKS_PER_HORIZON)]
         result[label] = {"long": longs, "short": shorts}
         final_picks.extend(longs + shorts)
 
-    # Long-term returns from daily_data2_full (compute ourselves since stock_features is null for 60d/240d)
-    target_date = db.latest_date("daily_data2_full")
-    print(f"[4/4] Computing long-term returns for {len(final_picks)} picks (target={target_date})…", flush=True)
-    enrich_long_term_returns(final_picks, target_date)
     enrich_news_for_picks(final_picks)
 
     # Zen (纏論) for ALL picks (long + short)

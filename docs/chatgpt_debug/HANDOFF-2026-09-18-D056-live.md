@@ -1,6 +1,14 @@
 # D056 live continuation — 2026-09-18
 
-## Latest evidence at07:20 Asia/Taipei
+## Latest correction at07:37 Asia/Taipei
+
+Primary67bec17 was pushed and68 runtime hashes synchronized07:21:29. Actual S4U UUID63b2632953c54dd5b99d9aac25c63800 passed valuation1954/1974 (20 explicit missing), canonical30-session validation in7min/current1958/price58736/chips293680/revised0/mismatch0, four-table Date17 sync1958 proof and maintenance sourceDate17 in577sec; market screen24 passed. Both report/publisher were stopped BEFORE certification at input freeze after discovering the existing long-term scorer ranked candidates before their return inputs were populated. Owner dead and same UUID explicitly failed; do not publish/reuse a certificate from it.
+
+Current scoped correction loads canonical returns for all candidates BEFORE existing long-term ranking, retains scoring weights/horizon definitions, and copies overlapping long/short candidates so downstream expert prompts keep the right horizon. Historical endpoint SQL uses indexed latest-valid-close lookups instead of grouping the entire history. Actual whole-market original six-query baseline1936 tickers202.32sec; new indexed single historical endpoint1936/1934 valid34.517sec. Execute dated SQL regression fixtures prove future/zero prices excluded and missing history remains unknown; ranking fixture proves returns influence selection and overlapping horizons stay independent. Complete suite186 before the final horizon-copy correction and focused post-correction tests are being verified. Final source commit/push/runtime synchronization and corrected full S4U run still required.
+
+Complete suite186 passed53.571sec; five focused endpoint/ranking/horizon/date/unknown-flag tests passed after the horizon-copy correction. NativePS5 syntax unchanged from prior passing check; scoped diff check passed. Deploy only these owned changes, then actual full-market bootstrap latency and new nightly certification.
+
+## Historical evidence at07:20 Asia/Taipei
 
 Canonical recovery session49762 exited0 after31.9min. Actual Date17 universe1958: all six current source lanes exact0 differences and DB_VERIFY expected=complete1958/missing0. Thirty price sessions contain58736 checks/revised0/mismatch0. Five chips lanes across30 sessions contain293680 checks/revised95085/mismatch0. Derived1958 rows recalculated; simulation cache invalidated. Independent read-only provider rechecks Sep15/Sep17/Aug07 pass institutional/margin/daytrade/foreign ownership exact0 differences. Original Sep15 difference baseline is preserved as canonical_source_lanes_20260915_before_recovery.json.
 

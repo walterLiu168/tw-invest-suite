@@ -218,6 +218,8 @@ def long_term_returns_batch(tickers: List[str], target_date: str) -> Dict[str, D
     Each endpoint is the latest valid close on/before its date cutoff.
     One current query and five historical queries, each batching all tickers.
     """
+    if not tickers:
+        return {}
     from datetime import datetime, timedelta
     end = datetime.strptime(target_date, "%Y-%m-%d")
     cutoffs = {
@@ -239,14 +241,14 @@ def long_term_returns_batch(tickers: List[str], target_date: str) -> Dict[str, D
         cur_close = {r["Ticker"]: float(r["Close"]) for r in cur.fetchall() if r.get("Close")}
     # For each cutoff, query the historical close
     for label, cutoff in cutoffs.items():
+        universe = " UNION ALL ".join(["SELECT %s AS Ticker"] + ["SELECT %s"] * (len(tickers) - 1))
         sql = f"""
-            SELECT t.Ticker, t.Close FROM daily_data2_full t
-            INNER JOIN (
-                SELECT Ticker, MAX(Date) AS max_date
-                FROM daily_data2_full
-                WHERE Ticker IN ({placeholders}) AND Date <= %s AND Close > 0
-                GROUP BY Ticker
-            ) m ON t.Ticker = m.Ticker AND t.Date = m.max_date
+            SELECT u.Ticker, p.Close FROM ({universe}) u
+            LEFT JOIN daily_data2_full p ON p.Ticker = u.Ticker AND p.Date = (
+                SELECT p2.Date FROM daily_data2_full p2
+                WHERE p2.Ticker = u.Ticker AND p2.Date <= %s AND p2.Close > 0
+                ORDER BY p2.Date DESC LIMIT 1
+            )
         """
         with get_cursor() as cur:
             cur.execute(sql, (*tickers, cutoff))
