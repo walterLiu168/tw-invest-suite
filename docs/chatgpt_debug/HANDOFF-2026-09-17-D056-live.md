@@ -4,7 +4,9 @@
 
 Complete automatic download, every report, daily verification, both site publications/source pushes and Telegram chips summary to the existing configured chat. User explicitly confirmed all reports and Telegram on Sep17. Preserve unrelated user changes. No schema migrations, experimental strategy commissioning or broker actions.
 
-## Current status: fresh full acceptance still required
+## Current status: reports certified; Windows UAC service reload pending
+
+Latest verified outcome: UUID `ced12fa357764e81a2f9e5e035ef0b23`, D056-3,65 managed source hashes,2035 artifacts/all_reports50, all7 stages exit0/degraded0, actual default S4U nightly result0. Canonical85 analytical paths plus2 final status reports verified, final postflight0. Groove failed rawSHA because Cloudflare appended a Web Analytics beacon; Telegram remains unsent. Stock-only no-transform header fix is reviewed/tested and applied to server.py, but origin still needs reload. Current token cannot stop the reviewed old origin; legitimate Windows UAC helper is pending (session5890). Press Windows UAC Yes, inspect restart transcript/new service children, verify remote rawSHA, then retry actual S4U publisher. No nightly rerun is needed. See the final transport-repair section below; older remaining steps are superseded.
 
 - Morning UUID `18296982df5841218f3ec1bed1b118b9` was intentionally stopped before certification after discovering a fabricated ROE denominator. State is failed; do not publish/reuse it. No owner/renderer remains.
 - Source main pushed through `123f2af`; final frontend and metadata corrections follow. This change adds the default required all_reports stage, D056-3 certificate/50 artifact receipt, all advanced remote SHA checks and post-verification Telegram delivery.
