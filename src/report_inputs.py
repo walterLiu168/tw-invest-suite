@@ -47,19 +47,21 @@ def load_inputs():
         if not dates:
             raise ValueError('No market-report history')
         marks = ','.join(['%s']*len(dates))
-        cursor.execute(f'''SELECT Ticker, Date, Close, ForeignNet, InvestmentNet, DealerNet
+        cursor.execute(f'''SELECT Ticker, Date, Close, SharesOutstanding_shares, ForeignNet, InvestmentNet, DealerNet
             FROM daily_data2_full WHERE Date IN ({marks}) ORDER BY Date DESC, Ticker''',tuple(dates))
         rows = cursor.fetchall()
     latest = validate_rows(rows, dates, target)
     metadata = {}
     prices = {r['Ticker']:finite(r['Close']) for r in latest}
+    shares = {r['Ticker']:finite(r.get('SharesOutstanding_shares')) for r in latest}
     for ticker, industry in db.all_industries().items():
         if '\ufffd' in str(industry.get('company') or ''):
             raise ValueError(f'Corrupt canonical company name: {ticker}; run company_refresh.py')
         yf_entry = cache.get_fresh(ticker,'yfinance') or {}
         pe_entry = cache.get_fresh(ticker,'finmind_pe') or {}
         yf, pe = yf_entry.get('data') or {}, pe_entry.get('data') or {}
-        market_cap = finite(yf.get('marketCap'))
+        price, issued = prices.get(ticker), shares.get(ticker)
+        market_cap = price * issued if price and price > 0 and issued and issued > 0 else finite(yf.get('marketCap'))
         earnings_multiple = finite(pe.get('PER'))
         if earnings_multiple is None:
             earnings_multiple = finite(yf.get('trailingPE'))

@@ -322,6 +322,8 @@ $stages = @()
 $maintScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\finmind_maint.py"
 if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipFinmind) {
     $stages += @{ N=1; Name='finmind_maint'; Cmd=$maintScript; To=10*60 }
+    $stages += @{ N=1; Name='market_screen'; Cmd="market_screen_runner.py --data-date $($env:TW_DATA_DATE) --refresh-existing"; To=4*60 }
+    $stages += @{ N=1; Name='finalize_inputs'; Cmd='pipeline_state.py finalize-inputs'; To=60 }
 }
 
 # Stage 2: Render (1,962 tickers)
@@ -360,6 +362,10 @@ foreach ($s in $stages) {
     $stageResults += @{ N=$s.N; Name=$s.Name; Ok=$ok; Optional=[bool]$s.Optional }
     if (-not $ok) {
         Log-Msg "[!] Stage $($s.Name) failed — continuing to next stage"
+        if ($s.Name -in @('finmind_maint','market_screen','finalize_inputs')) {
+            Log-Msg 'Required input preparation failed; stop before rendering'
+            break
+        }
     }
 }
 

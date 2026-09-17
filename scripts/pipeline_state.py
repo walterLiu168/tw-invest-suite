@@ -267,6 +267,50 @@ def artifact(path, gh_path):
             "sha256": sha256(path), "size": path.stat().st_size}
 
 
+def canonical_inputs_hash(data_date):
+    """Detect canonical value changes while reports are being generated."""
+    import db_client as db
+    fields = ('Ticker,Date,Open,High,Low,Close,Volume,ForeignBuy,ForeignSell,ForeignNet,'
+              'InvestmentBuy,InvestmentSell,InvestmentNet,DealerBuy,DealerSell,DealerNet,ThreeNet,'
+              'MarginBalance,ShortBalance,DayTradeVol,DayTradeBuyAmt,DayTradeSellAmt,'
+              'ForeignRatio,ForeignShare,SharesOutstanding_shares')
+    with db.get_cursor() as cursor:
+        cursor.execute('SELECT DISTINCT Date FROM daily_data2_full WHERE Date<=%s ORDER BY Date DESC LIMIT 240', (data_date,))
+        dates = [str(row['Date']) for row in cursor.fetchall()]
+        if len(dates) < 30 or dates[0] != data_date:
+            raise ValueError('Canonical input history/date incomplete')
+        marks = ','.join(['%s'] * len(dates))
+        cursor.execute(f'SELECT {fields} FROM daily_data2_full WHERE Date IN ({marks}) ORDER BY Date,Ticker', tuple(dates))
+        digest = hashlib.sha256()
+        for row in cursor.fetchall():
+            digest.update(json.dumps(row, sort_keys=True, default=str, separators=(',', ':')).encode('utf-8'))
+        cursor.execute('SELECT ticker,company,industry FROM industry_type ORDER BY ticker')
+        digest.update(json.dumps(cursor.fetchall(), sort_keys=True, default=str, separators=(',', ':')).encode('utf-8'))
+    return digest.hexdigest()
+
+
+@state_guarded
+def finalize_inputs():
+    run = read_json(STATE)
+    if run.get('status') != 'running' or os.environ.get('TW_NIGHTLY_ID') != run.get('nightly_id'):
+        raise ValueError('Cannot finalize another or completed run')
+    if run.get('inputs_finalized_at'):
+        raise ValueError('Canonical inputs already finalized')
+    if (ANALYZE / 'render_receipt.json').is_file() and read_json(ANALYZE / 'render_receipt.json').get('nightly_id') == run['nightly_id']:
+        raise ValueError('Cannot finalize inputs after rendering')
+    if source_hashes() != run['source_hashes']:
+        raise ValueError('Source changed before input finalization')
+    validate_maintenance_fetch(read_json(RUNTIME / '_debug' / 'maintenance_fetch.json'), run)
+    snapshot = db_snapshot()
+    if snapshot['data_date'] != run['data_date'] or snapshot['render_tickers'] != run['render_tickers']:
+        raise ValueError('Data date or metadata universe changed before finalization')
+    run.update(snapshot)
+    run['canonical_inputs_sha256'] = canonical_inputs_hash(run['data_date'])
+    run['inputs_finalized_at'] = datetime.now().isoformat()
+    atomic_json(STATE, run)
+    return run
+
+
 def validate_all_reports(receipt, run):
     if (receipt.get('status') != 'ok' or receipt.get('nightly_id') != run['nightly_id']
             or receipt.get('data_date') != run['data_date']):
@@ -308,6 +352,12 @@ def validate_maintenance_fetch(fetch, run):
         raise ValueError('maintenance fetch does not certify this run')
     if fetch.get('price_refresh_date') != dd or not isinstance(fetch.get('price_refresh_rows'), int) or fetch['price_refresh_rows'] < 1900:
         raise ValueError('maintenance price refresh does not certify this run')
+    if (fetch.get('canonical_refresh_date') != dd or fetch.get('canonical_refresh_rows') != fetch['price_refresh_rows']
+            or set(fetch.get('canonical_datasets', [])) != {'price','inst','margin','daytrade','shareholding','shares'}
+            or fetch.get('source_value_mismatches') != 0):
+        raise ValueError('maintenance canonical source values do not certify this run')
+    if fetch.get('price_history_sessions') != 30 or fetch.get('price_history_mismatches') != 0:
+        raise ValueError('maintenance price history does not certify this run')
     source_date = date.fromisoformat(fetch['latest_source_date'])
     previous_session = date.fromisoformat(expected_session(date.fromisoformat(dd) - timedelta(days=1)))
     if not previous_session <= source_date <= date.fromisoformat(dd):
@@ -325,6 +375,8 @@ def complete(stages_path):
         required = [s for s in stages if not s.get("Optional")]
         if not REQUIRED.issubset({s["Name"] for s in required}) or any(not s["Ok"] for s in required):
             raise ValueError("required stage failed/missing")
+        if run.get('mode') == 'full' and run.get('trading_session') and 'finmind_maint' not in {s['Name'] for s in required}:
+            raise ValueError('Full trading-day certification requires canonical source refresh')
         snapshot = db_snapshot()
         if any(snapshot[k] != run[k] for k in ("data_date", "run_id", "picks", "render_tickers")):
             raise ValueError("DB changed during nightly")
@@ -377,6 +429,10 @@ def complete(stages_path):
             artifacts.append(artifact(target, dest))
         maintenance = {}
         if any(stage['Name'] == 'finmind_maint' for stage in required):
+            if not {'market_screen','finalize_inputs'} <= {stage['Name'] for stage in required} or not run.get('inputs_finalized_at'):
+                raise ValueError('Canonical refresh/picks were not finalized before rendering')
+            if run.get('canonical_inputs_sha256') != canonical_inputs_hash(dd):
+                raise ValueError('Canonical DB values changed during nightly')
             fetch = read_json(RUNTIME / '_debug' / 'maintenance_fetch.json')
             maintenance['maintenance_data_date'] = validate_maintenance_fetch(fetch, run)
         run.update(status="ok", marker_version="D056-3", completed_at=datetime.now().isoformat(),
@@ -443,13 +499,15 @@ def fail_run(nightly_id, reason="orchestrator failed; see daily log"):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["begin", "complete", "verify", "watchdog", "fail"])
+    ap.add_argument("action", choices=["begin", "finalize-inputs", "complete", "verify", "watchdog", "fail"])
     ap.add_argument("--stages")
     ap.add_argument("--mode", default="full")
     args = ap.parse_args()
     try:
         if args.action == "begin":
             value = begin(args.mode)
+        elif args.action == "finalize-inputs":
+            value = finalize_inputs()
         elif args.action == "complete":
             value = complete(args.stages)
         elif args.action == "fail":

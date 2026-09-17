@@ -92,12 +92,12 @@ def reset():
         _worker_last.clear()
 
 
-def _fetch_one_with_fallback(ticker: str) -> Dict:
+def _fetch_one_with_fallback(ticker: str, force: bool = False) -> Dict:
     """Fetch yfinance .info with FinMind/DB fallback per field."""
     ticker_clean = ticker.strip()
     yf_sym = _format_ticker_yf(ticker_clean)
     cached = cm.get_fresh(ticker_clean, "yfinance")
-    if cached:
+    if cached and not force:
         return cached["data"]
 
     if is_dead():
@@ -141,6 +141,7 @@ def _build_fallback(ticker: str, partial: Optional[Dict] = None) -> Dict:
     import pymysql
     import finmind_client as fm
     data: Dict = partial or {"_source": "fallback", "ticker": ticker}
+    data['_source'] = 'fallback'
 
     # 1. DB industry_type
     try:
@@ -189,7 +190,7 @@ def _build_fallback(ticker: str, partial: Optional[Dict] = None) -> Dict:
     return data
 
 
-def batch_fetch(tickers: List[str], workers: int = 2) -> Dict[str, Dict]:
+def batch_fetch(tickers: List[str], workers: int = 2, force: bool = False) -> Dict[str, Dict]:
     """Fetch yfinance .info for many tickers. workers=2 by default for safety.
 
     Returns: {ticker: data_dict}
@@ -197,7 +198,7 @@ def batch_fetch(tickers: List[str], workers: int = 2) -> Dict[str, Dict]:
     reset()
     results: Dict[str, Dict] = {}
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(_fetch_one_with_fallback, t): t for t in tickers}
+        futs = {ex.submit(_fetch_one_with_fallback, t, force=force): t for t in tickers}
         for fut in as_completed(futs):
             t = futs[fut]
             try:

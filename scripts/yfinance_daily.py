@@ -18,12 +18,12 @@ def main():
         raise ValueError("Empty valuation-refresh universe")
     yfb.reset()
     logging.info("Valuation refresh: %s tickers, two workers", len(tickers))
-    results = yfb.batch_fetch(tickers, workers=2)
+    results = yfb.batch_fetch(tickers, workers=2, force=True)
     counts = {kind: sum(item.get("_source") == kind for item in results.values()) for kind in ("yfinance", "fallback", "error")}
     logging.info("Results %s; provider_dead=%s", counts, yfb.is_dead())
     if yfb.is_dead():
         return 2
-    return 1 if counts["error"] or len(results) != len(tickers) else 0
+    return 1 if counts["error"] or counts["fallback"] or len(results) != len(tickers) else 0
 
 
 if __name__ == "__main__":

@@ -456,6 +456,8 @@ def run():
     ap.add_argument("--force", action="store_true",
                     help="skip trading-day + freshness checks (testing only)")
     ap.add_argument("--data-date", help="override data_date (YYYY-MM-DD)")
+    ap.add_argument("--refresh-existing", action="store_true",
+                    help="Recompute existing picks after final source refresh; keep normal validation gates")
     args = ap.parse_args()
 
     print(f"[runner] version={SCRIPT_VERSION}")
@@ -519,10 +521,10 @@ def run():
 
     # F7: if existing complete run, exit 0 (idempotent)
     run_id, complete, missing = has_complete_run_for_data_date(data_date)
-    if run_id is not None and complete and not args.force:
+    if run_id is not None and complete and not args.force and not args.refresh_existing:
         print(f"[runner] market_screen_runs already has complete run for {data_date} (run_id={run_id}). skip (idempotent).")
         return 0
-    if run_id is not None and not complete and not args.force:
+    if run_id is not None and not complete and not args.force and not args.refresh_existing:
         # F7: existing run but missing artifacts -> repair-only
         if all(m in ["md", "html", "dd"] for m in missing):
             print(f"[runner] existing run for {data_date} (run_id={run_id}) has missing artifacts: {missing}")
