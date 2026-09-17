@@ -22,6 +22,39 @@ def candidate(**values):
 
 
 class ReportIdentityTests(unittest.TestCase):
+    def test_income_statement_comprehensive_income_is_not_roe_equity(self):
+        result = renderer.section_finlab_roe({'fundamentals': {'rows': [
+            {'date':'2026-06-30','type':'IncomeAfterTaxes','value':2592000},
+            {'date':'2026-06-30','type':'TotalConsolidatedProfitForThePeriod','value':69452000},
+            {'date':'2026-06-30','type':'EquityAttributableToOwnersOfParent','value':2592000},
+        ]}}, [])
+        self.assertNotIn('10717.90%',result)
+        self.assertIn('| yfinance | — |',result)
+        self.assertIn('不能作為 ROE 分母',result)
+
+    def test_reported_roe_preserves_zero_negative_and_missing(self):
+        for value, expected in [(0,'0.00%'),(-0.025,'-2.50%'),(None,'—'),
+                                (float('nan'),'—'),(float('inf'),'—'),(True,'—')]:
+            with self.subTest(value=value):
+                result = renderer.section_finlab_roe({'yfinance':{'returnOnEquity':value}},[])
+                self.assertIn(f'| yfinance | {expected} |',result)
+
+    def test_quarterly_profit_uses_net_income_and_real_quarter_labels(self):
+        rows = [
+            {'date':'2026-06-30','type':'Revenue','value':1e8},
+            {'date':'2026-06-30','type':'IncomeAfterTaxes','value':-2e7},
+            {'date':'2026-06-30','type':'EPS','value':0},
+            {'date':'2026-06-30','type':'TotalConsolidatedProfitForThePeriod','value':9e8},
+            {'date':'2026-06-30','type':'IncomeFromContinuingOperationsBeforeTax','value':8e8},
+            {'date':'2026-09-30','type':'Revenue','value':float('nan')},
+            {'date':'2026-09-30','type':'EPS','value':None},
+            {'date':'2026-09-30','type':'OperatingIncome','value':0},
+        ]
+        result = renderer.section_fundamentals({'fundamentals':{'rows':rows}})
+        self.assertIn('| 2026Q2 | 1.000 | — | — | -0.200 | 0.00 |',result)
+        self.assertIn('| 2026Q3 | — | — | 0.000 | — | — |',result)
+        self.assertNotIn('Q06',result)
+
     def test_closing_snapshot_uses_shares_and_preserves_unknown_or_zero(self):
         with patch.object(db,'ticker_history',return_value=[{'Close':11},{'Close':10.85}]):
             result = renderer.section_price({'ticker':'1452'},{'Close':10.85,'Volume':27876,'Date':'2026-09-16'})

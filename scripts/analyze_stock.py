@@ -53,50 +53,13 @@ def date_or(v, default: str = "—") -> str:
 # ----- analytics helpers -----
 
 def _roe_from_finmind(stock_id: str) -> List[Dict]:
-    """Compute quarterly ROE from FinMind TaiwanStockFinancialStatements.
+    """Unavailable until a real balance-sheet equity source is connected.
 
-    ROE = NetIncome / Equity (per quarter, annualized).
-    Returns list of {date, value} dicts (same shape as FinLab roe_for_dict).
+    TaiwanStockFinancialStatements is an income statement. Its Equity fields
+    denote comprehensive income, not shareholders' equity. Preserve this
+    legacy callable without issuing an API request or fabricating ROE.
     """
-    try:
-        rows = fm.stock_financial(stock_id, start_date="2018-01-01")
-    except Exception:
-        return []
-    if not rows:
-        return []
-    # Group by quarter (date is the quarter end)
-    by_q: Dict[str, Dict[str, float]] = {}
-    name_map = {
-        "NetIncome": ["本期淨利（淨損）", "稅後淨利（淨損）", "淨利（淨損）",
-                       "IncomeFromContinuingOperations", "TotalConsolidatedProfitForThePeriod",
-                       "ProfitLoss"],
-        "Equity": ["權益總額", "權益總計", "Equity",
-                    "EquityAttributableToOwnersOfParent", "TotalEquity"],
-    }
-    for r in rows:
-        if not isinstance(r, dict):
-            continue
-        q = str(r.get("date", "")).strip()
-        name = r.get("origin_name", "")
-        try:
-            val = float(r.get("value") or 0)
-        except (TypeError, ValueError):
-            continue
-        if not q or not name:
-            continue
-        for canonical, aliases in name_map.items():
-            if any(a == name or a in name for a in aliases):
-                by_q.setdefault(q, {})[canonical] = val
-                break
-    out: List[Dict] = []
-    for q in sorted(by_q):
-        d = by_q[q]
-        ni = d.get("NetIncome", 0)
-        eq = d.get("Equity", 0)
-        if eq and eq > 0:
-            roe = ni / eq * 100  # quarterly ROE in %
-            out.append({"date": q, "value": round(roe, 2)})
-    return out
+    return []
 
 
 def _monthly_revenue_from_finmind(stock_id: str, months: int = 12) -> List[Dict]:
@@ -652,7 +615,7 @@ def section_finlab_roe(d: Dict) -> str:
     """ROE history from FinMind TaiwanStockFinancialStatements (current, quarterly)."""
     rows = d.get("finlab_roe") or []
     if not rows:
-        return "_查無 ROE 資料_"
+        return "_查無 ROE 資料：損益表不含資產負債表股東權益，不能據此計算 ROE。_"
     rows_sorted = sorted(rows, key=lambda x: x.get("date", ""), reverse=True)[:8]
     rows_sorted.reverse()
     lines = ["| 季度 | ROE 稅後 |", "|---|---|"]

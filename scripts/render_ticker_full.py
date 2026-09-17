@@ -25,6 +25,7 @@ Args:
 import sys
 import os
 import html as _html_lib
+import math
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -285,8 +286,7 @@ def section_fundamentals(data: Dict) -> str:
         "op":      ["OperatingIncome", "營業利益（損失）", "營業利益", "營業淨利"],
         "nonop":   ["TotalNonoperatingIncomeAndExpense", "營業外收入及支出"],
         "pretax":  ["PreTaxIncome", "稅前淨利（淨損）", "繼續營業單位稅前淨利"],
-        "ni":      ["TotalConsolidatedProfitForThePeriod", "本期淨利（淨損）", "淨利（淨損）",
-                    "IncomeFromContinuingOperations", "ProfitLoss"],
+        "ni":      ["IncomeAfterTaxes", "本期淨利（淨損）", "稅後淨利（淨損）", "ProfitLoss"],
         "eps":     ["EPS", "基本每股盈餘"],
     }
     pivot: Dict[str, Dict[str, float]] = {}
@@ -300,13 +300,17 @@ def section_fundamentals(data: Dict) -> str:
         type_name = r.get("type", "") or ""
         origin_name = r.get("origin_name", "") or ""
         try:
-            val = float(r.get("value") or 0)
+            if r.get("value") is None or isinstance(r.get("value"), bool):
+                continue
+            val = float(r["value"])
+            if not math.isfinite(val):
+                continue
         except (TypeError, ValueError):
             continue
         canonical = None
         for k, aliases in key_aliases.items():
             for a in aliases:
-                if a and (a == type_name or a == origin_name or a in type_name or a in origin_name):
+                if a and (a == type_name or a == origin_name):
                     canonical = k
                     break
             if canonical:
@@ -322,84 +326,31 @@ def section_fundamentals(data: Dict) -> str:
     md = "| 季度 | 營收(億) | 毛利(億) | 營業利益(億) | 稅後淨利(億) | EPS(元) |\n|---|---|---|---|---|---|\n"
     for d in sorted_dates:
         row = pivot[d]
-        rev = row.get("revenue", 0)
-        gp = row.get("gross", 0)
-        op = row.get("op", 0)
-        ni = row.get("ni", 0)
-        eps = row.get("eps", 0)
-        rev_g = rev / 1e8 if rev else 0
-        gp_g = gp / 1e8 if gp else 0
-        op_g = op / 1e8 if op else 0
-        ni_g = ni / 1e8 if ni else 0
-        eps_s = f"{eps:.2f}" if eps else "—"
-        d_short = d[2:7].replace("-", "Q")  # 25-Q4
-        md += f"| {d_short} | {rev_g:.1f} | {gp_g:.1f} | {op_g:.1f} | {ni_g:.1f} | {eps_s} |\n"
+        cells = [f"{row[key]/1e8:.3f}" if key in row else "—"
+                 for key in ("revenue", "gross", "op", "ni")]
+        eps_s = f"{row['eps']:.2f}" if "eps" in row else "—"
+        try:
+            period = datetime.fromisoformat(d[:10])
+            d_short = f"{period.year}Q{(period.month-1)//3+1}"
+        except ValueError:
+            d_short = d
+        md += f"| {d_short} | {' | '.join(cells)} | {eps_s} |\n"
     md += "\n_資料來源：FinMind TaiwanStockFinancialStatements（current）_"
     return md
 
 
 def section_finlab_roe(data: Dict, history: List[Dict]) -> str:
-    """ROE 從 yfinance (TTM) + FinMind 季報 (最近 6 季) — 杜邦式分析."""
-    yf = data.get("yfinance", {})
-    roe_yf = yf.get("returnOnEquity")
-    fins = (data.get("fundamentals") or {}).get("rows", [])
-
-    # Aggregate FinMind 季報 (equity, net income) by date
-    quarter_data = {}  # date -> {equity, ni, eps}
-    for r in fins:
-        if not isinstance(r, dict): continue
-        date = str(r.get("date", ""))[:10]
-        if not date: continue
-        t = r.get("type", "")
-        if t in ("EquityAttributableToOwnersOfParent", "Equity"):
-            quarter_data.setdefault(date, {})["equity"] = float(r.get("value", 0))
-        elif t in ("IncomeAfterTaxes", "ProfitLoss", "TotalConsolidatedProfitForThePeriod"):
-            quarter_data.setdefault(date, {})["ni"] = float(r.get("value", 0))
-        elif t == "EPS":
-            quarter_data.setdefault(date, {})["eps"] = float(r.get("value", 0))
-
-    md = "### ROE 比較\n\n"
-    md += "| 期間 | 來源 | ROE |\n|---|---|---|\n"
-    if roe_yf is not None:
-        md += f"| TTM (近 12 月) | yfinance | **{roe_yf*100:.2f}%** |\n"
-
-    # Quarterly ROE: NI / Equity × 4 (annualized)
-    sorted_dates = sorted(quarter_data.keys(), reverse=True)[:6]
-    for date in sorted_dates:
-        qd = quarter_data[date]
-        if "equity" in qd and "ni" in qd and qd["equity"] > 0:
-            roe_q = (qd["ni"] / qd["equity"]) * 4 * 100  # annualized
-            md += f"| {date} (Q) | FinMind 季報 (年化) | {roe_q:.2f}% |\n"
-    md += "\n"
-    # Add DB-derived ROE fallback: use price/book + EPS to estimate
-    if roe_yf is None and not sorted_dates:
-        # Try to compute from DB
-        ticker = data.get("ticker", "")
-        if ticker:
-            try:
-                import db_client as dbb
-                cap = dbb.market_cap_estimate(ticker)
-                pb = None
-                # Get P/B from FinMind PER
-                fm_pe = data.get("finmind_pe_latest", {}) or {}
-                pb = fm_pe.get("PBR")
-                if cap and pb and pb > 0:
-                    equity = cap / pb
-                    # Use latest EPS from quarter_data
-                    latest_eps = 0
-                    if sorted_dates and "eps" in quarter_data[sorted_dates[0]]:
-                        latest_eps = quarter_data[sorted_dates[0]]["eps"]
-                    elif sorted_dates and "ni" in quarter_data[sorted_dates[0]] and "equity" in quarter_data[sorted_dates[0]]:
-                        # Estimate from NI and shares (rough)
-                        pass
-                    if equity > 0:
-                        md += f"| 估算 (DB 市值/P/B) | tw-invest-suite | (需 EPS 計算) |\n"
-                        md += f"\n_💡 yfinance 無 ROE、FinMind 季報缺 equity 欄位。改用市值 { _fmt_num(cap) } ÷ P/B {pb:.2f} = { _fmt_num(equity) } 推算權益。EPS 從季報取得可算出真實 ROE。_\n"
-            except Exception:
-                pass
-        if roe_yf is None and not sorted_dates:
-            md += "_⚠️ 無 ROE 資料：yfinance 沒抓到（可能 404）+ FinMind 季報缺 equity/ni 欄位。_\n"
-            md += "_建議：手動從公司財報計算 ROE = 全年淨利 / 平均權益，或參考公司年報。_\n"
+    """Use reported TTM ROE; income-statement Equity is comprehensive income."""
+    raw = (data.get("yfinance") or {}).get("returnOnEquity")
+    try:
+        roe = float(raw) if raw is not None and not isinstance(raw, bool) else None
+    except (TypeError, ValueError):
+        roe = None
+    if roe is not None and not math.isfinite(roe):
+        roe = None
+    md = "### ROE\n\n| 期間 | 來源 | ROE |\n|---|---|---|\n"
+    md += f"| TTM (近 12 月) | yfinance | {f'{roe*100:.2f}%' if roe is not None else '—'} |\n"
+    md += "\n_FinMind 損益表不含資產負債表的股東權益；歸屬母公司損益不能作為 ROE 分母。缺少淨利與平均權益資料時，不計算季 ROE。_\n"
     return md
 
 

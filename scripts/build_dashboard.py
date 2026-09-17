@@ -96,7 +96,8 @@ def render_dashboard():
     lines += [f"| {t['task']} | {t['state']} | {t['last_run']} | {t['rc']} |" for t in cron]
     lines += ["", "## Scope", "- Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。",
               "- chips／sectors／concepts 為手動更新頁面，未列為每日更新成功證據。",
-              "- FinMind weekly、Weekly Shareholding 1330、cloudflared：保留 PENDING，未宣稱已修復。", ""]
+              "- Weekly Shareholding 等任務的實際結果見上方 Cron results；不沿用歷史 PENDING 狀態。",
+              "- 未登錄的 legacy FinMind 資料表不列入 canonical 新鮮度認證。", ""]
     return "\n".join(lines), status
 
 
