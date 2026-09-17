@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>籌碼歷史回看 · 坦克阿卡利</title>
-<meta name="description" content="翻查任一天的法人買賣超 — 30 天歷史資料">
+<meta name="description" content="翻查任一天的法人買賣超 — 30 個交易日歷史資料">
 <meta name="theme-color" content="#0a0e1a">
 <meta property="og:title" content="籌碼歷史回看 · 坦克阿卡利">
 <meta property="og:image" content="https://walterliu168.github.io/tw-invest-suite/data/og.png">
@@ -92,9 +92,9 @@ footer a { color: var(--acc); }
 </nav><div class="persona-row">
   <div class="persona-row-inner">
     <button class="persona-card" data-persona="streak3"><div class="icon">⚔️</div><div class="name">法人連買</div><div class="desc">連買 3 天+</div></button>
-    <button class="persona-card" data-persona="same_buy"><div class="icon">🔥</div><div class="name">土洋同買</div><div class="desc">3 法人齊買</div></button>
+    <button class="persona-card" data-persona="same_buy"><div class="icon">🔥</div><div class="name">土洋同買</div><div class="desc">外資投信同買</div></button>
     <button class="persona-card" data-persona="f_5d_1y"><div class="icon">💵</div><div class="name">外資大買</div><div class="desc">5 日 ≥ 1 億</div></button>
-    <button class="persona-card" data-persona="force_high"><div class="icon">⚡</div><div class="name">量能爆發</div><div class="desc">力道 ≥ 1.5×</div></button>
+    <button class="persona-card" data-persona="force_high"><div class="icon">⚡</div><div class="name">法人力道</div><div class="desc">力道 ≥ 1.5×</div></button>
     <button class="persona-card" data-persona="f_stay_long"><div class="icon">🚀</div><div class="name">外資停留</div><div class="desc">停留 5 天+</div></button>
     <button class="persona-card" data-persona="same_sell"><div class="icon">📉</div><div class="name">空方避雷</div><div class="desc">同賣 + 連賣</div></button>
     <button class="persona-card" data-persona="value"><div class="icon">💎</div><div class="name">金融存股</div><div class="desc">金融/食品 + 連買</div></button>
@@ -115,7 +115,7 @@ footer a { color: var(--acc); }
 
 <div class="hdr">
   <h1>🕐 籌碼歷史回看</h1>
-  <p class="sub">翻查任一天的法人買賣超 — 30 天歷史資料（每日 22:25 自動備份）</p>
+  <p class="sub">翻查任一天的法人買賣超 — 30 個交易日歷史資料（每日完整流程產生）</p>
 </div>
 
 <div class="picker">
@@ -159,7 +159,7 @@ footer a { color: var(--acc); }
 </main>
 
 <footer>
-  歷史資料：FinMind TaiwanStockInstitutionalInvestorsBuySell（每日 22:25 自動備份 30 天）<br>
+  歷史資料：canonical MySQL daily_data2_full（最近30個交易日）<br>
   <a href="https://github.com/walterLiu168/tw-invest-suite">📦 Source</a>
 </footer>
 
@@ -167,17 +167,18 @@ footer a { color: var(--acc); }
 var META = null;     // yfinance cache (sector/industry)
 var TICKERS = [];    // [{ticker, name, sector, industry}]
 var CURRENT = null;  // current date data
+var REQUESTED_DATE = null;
 var SORT_KEY = 'three';
 var SORT_DIR = -1;   // -1 = desc (買超在前)
 
 // 載入 meta
-fetch('data/tickers.json')
+fetch('data/tickers.json',{cache:'no-store'})
   .then(function (r) { return r.ok ? r.json() : []; })
-  .then(function (j) { TICKERS = j; })
+  .then(function (j) { TICKERS = j; if(CURRENT) renderRows(); })
   .catch(function () { TICKERS = []; });
 
 // 列歷史日期
-fetch('data/chips-history-index.json')
+fetch('data/chips-history-index.json',{cache:'no-store'})
   .then(function (r) { return r.ok ? r.json() : null; })
   .then(function (idx) {
     if (!idx) return;
@@ -209,20 +210,23 @@ document.querySelectorAll('.tbl th').forEach(function (th, idx) {
   th.style.cursor = 'pointer';
   th.addEventListener('click', function () {
     var keys = ['', '', '', 'f', 't', 'd', 'three'];
+    SORT_DIR = SORT_KEY === keys[idx] ? -SORT_DIR : -1;
     SORT_KEY = keys[idx];
-    SORT_DIR = SORT_KEY === SORT_KEY && SORT_DIR === -1 ? 1 : -1;
     renderRows();
   });
 });
 
 function loadDate(d) {
+  REQUESTED_DATE = d;
+  CURRENT = null;
   document.getElementById('status').textContent = '載入 ' + d + ' …';
-  fetch('data/chips-history/' + d + '.json')
+  fetch('data/chips-history/' + d + '.json',{cache:'no-store'})
     .then(function (r) {
       if (!r.ok) throw new Error('not found');
       return r.json();
     })
     .then(function (data) {
+      if(REQUESTED_DATE !== d) return;
       CURRENT = data;
       document.getElementById('date-input').value = data.date;
       document.getElementById('status').textContent = '資料日 ' + data.date + ' · ' + Object.keys(data.tickers).length + ' 檔';
@@ -233,9 +237,10 @@ function loadDate(d) {
       renderRows();
     })
     .catch(function () {
-      document.getElementById('status').textContent = '❌ ' + d + ' 無資料（週末/假日）';
+      if(REQUESTED_DATE !== d) return;
+      document.getElementById('status').textContent = '❌ ' + d + ' 資料無法載入';
       document.getElementById('summary').innerHTML = '';
-      document.getElementById('rows').innerHTML = '<tr><td colspan="7" class="empty">這天沒有交易資料</td></tr>';
+      document.getElementById('rows').innerHTML = '<tr><td colspan="7" class="empty">請確認資料範圍或連線狀態</td></tr>';
     });
 }
 
@@ -247,10 +252,10 @@ function renderSummary() {
   });
   document.getElementById('summary').innerHTML =
     '<div class="card"><div class="k">涵蓋檔數</div><div class="v">' + n + '</div></div>' +
-    '<div class="card"><div class="k">當日外資</div><div class="v ' + (f >= 0 ? 'v-pos' : 'v-neg') + '">' + fmtLots(f) + ' 張</div></div>' +
-    '<div class="card"><div class="k">當日投信</div><div class="v ' + (t >= 0 ? 'v-pos' : 'v-neg') + '">' + fmtLots(t) + ' 張</div></div>' +
-    '<div class="card"><div class="k">當日自營</div><div class="v ' + (d >= 0 ? 'v-pos' : 'v-neg') + '">' + fmtLots(d) + ' 張</div></div>' +
-    '<div class="card"><div class="k">當日 3 法人</div><div class="v ' + (f + t + d >= 0 ? 'v-pos' : 'v-neg') + '">' + fmtLots(f + t + d) + ' 張</div></div>';
+    '<div class="card"><div class="k">當日外資</div><div class="v ' + (f >= 0 ? 'v-pos' : 'v-neg') + '">' + fmtLots(f) + '</div></div>' +
+    '<div class="card"><div class="k">當日投信</div><div class="v ' + (t >= 0 ? 'v-pos' : 'v-neg') + '">' + fmtLots(t) + '</div></div>' +
+    '<div class="card"><div class="k">當日自營</div><div class="v ' + (d >= 0 ? 'v-pos' : 'v-neg') + '">' + fmtLots(d) + '</div></div>' +
+    '<div class="card"><div class="k">當日 3 法人</div><div class="v ' + (f + t + d >= 0 ? 'v-pos' : 'v-neg') + '">' + fmtLots(f + t + d) + '</div></div>';
 }
 
 function renderRows() {
@@ -266,7 +271,7 @@ function renderRows() {
     var three = (v.f || 0) + (v.t || 0) + (v.d || 0);
     rows.push({ ticker: t, name: name, industry: ind, f: v.f, t: v.t, d: v.d, three: three });
   });
-  rows.sort(function (a, b) { return (b[SORT_KEY] - a[SORT_KEY]) * SORT_DIR; });
+  rows.sort(function (a, b) { return (a[SORT_KEY] - b[SORT_KEY]) * SORT_DIR; });
   var html = rows.slice(0, 200).map(function (r) {
     return '<tr><td><a class="ticker" href="analyze/' + r.ticker + '.html" target="_blank">' + r.ticker + '</a></td>' +
       '<td>' + r.name + '</td><td class="industry">' + r.industry + '</td>' +
@@ -283,9 +288,9 @@ function fmtLots(n) {
   if (n == null) return '—';
   var lots = n / 1000;
   var sign = n > 0 ? '+' : (n < 0 ? '−' : '');
-  if (Math.abs(lots) >= 10000) return sign + (lots / 10000).toFixed(1) + '萬張';
-  if (Math.abs(lots) >= 1000) return sign + (lots / 1000).toFixed(1) + 'k張';
-  return sign + Math.round(lots) + '張';
+  if (Math.abs(lots) >= 10000) return sign + (Math.abs(lots) / 10000).toFixed(1) + '萬張';
+  if (Math.abs(lots) >= 1000) return sign + (Math.abs(lots) / 1000).toFixed(1) + 'k張';
+  return sign + Math.abs(lots).toFixed(3).replace(/\.?0+$/,'') + '張';
 }
 </script>
 <script src="assets/textsize.js"></script>
@@ -295,7 +300,7 @@ var PERSONAS_MAP = {
   streak3: { name: '法人連買', presets: ['streak3'] },
   same_buy: { name: '土洋同買', presets: ['same_buy'] },
   f_5d_1y: { name: '外資大買', presets: ['f_5d_1y'] },
-  force_high: { name: '量能爆發', presets: ['force_high'] },
+  force_high: { name: '法人力道', presets: ['force_high'] },
   f_stay_long: { name: '外資停留', presets: ['streak3', 'f_stay_long'] },
   same_sell: { name: '空方避雷', presets: ['same_sell', 'streak3_sell'] },
   value: { name: '金融存股', presets: ['streak3'] },
