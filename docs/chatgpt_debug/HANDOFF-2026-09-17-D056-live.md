@@ -6,6 +6,8 @@ Complete automatic download, every report, daily verification, both site publica
 
 ## Current status: reports certified; Windows UAC service reload pending
 
+Latest Windows outcome: UAC launch returned `操作被使用者取消。`; exec session5890 completed without running the elevated helper. No restart transcript was created and the old elevated origin still needs reload. Obtain authorization to reopen that canceled UAC action before retrying it. Report certificate/canonical publication remain valid; Groove/Telegram acceptance remains unfinished. The safe minimal takeover update is pushed; no generated pilot artifacts were staged into main.
+
 Latest verified outcome: UUID `ced12fa357764e81a2f9e5e035ef0b23`, D056-3,65 managed source hashes,2035 artifacts/all_reports50, all7 stages exit0/degraded0, actual default S4U nightly result0. Canonical85 analytical paths plus2 final status reports verified, final postflight0. Groove failed rawSHA because Cloudflare appended a Web Analytics beacon; Telegram remains unsent. Stock-only no-transform header fix is reviewed/tested and applied to server.py, but origin still needs reload. Current token cannot stop the reviewed old origin; legitimate Windows UAC helper is pending (session5890). Press Windows UAC Yes, inspect restart transcript/new service children, verify remote rawSHA, then retry actual S4U publisher. No nightly rerun is needed. See the final transport-repair section below; older remaining steps are superseded.
 
 - Morning UUID `18296982df5841218f3ec1bed1b118b9` was intentionally stopped before certification after discovering a fabricated ROE denominator. State is failed; do not publish/reuse it. No owner/renderer remains.
