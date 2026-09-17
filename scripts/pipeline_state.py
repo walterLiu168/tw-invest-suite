@@ -152,6 +152,7 @@ def source_hashes():
         result[name] = sha256(REPO / name)
     for name in REPORT_FRONTEND_FILES:
         result['public/' + name] = sha256(PUBLIC / name)
+    result['AI-Telegram/strategy_lab/finmind_batch_update.py'] = sha256(Path(r'D:\CODEX\AI-Telegram\strategy_lab\finmind_batch_update.py'))
     return result
 
 
@@ -305,6 +306,8 @@ def validate_maintenance_fetch(fetch, run):
     dd = run['data_date']
     if fetch.get('nightly_id') != run['nightly_id'] or fetch.get('requested_date') != dd or fetch.get('status') != 'ok' or not fetch.get('provider_rows') or fetch.get('api_errors') != 0:
         raise ValueError('maintenance fetch does not certify this run')
+    if fetch.get('price_refresh_date') != dd or not isinstance(fetch.get('price_refresh_rows'), int) or fetch['price_refresh_rows'] < 1900:
+        raise ValueError('maintenance price refresh does not certify this run')
     source_date = date.fromisoformat(fetch['latest_source_date'])
     previous_session = date.fromisoformat(expected_session(date.fromisoformat(dd) - timedelta(days=1)))
     if not previous_session <= source_date <= date.fromisoformat(dd):

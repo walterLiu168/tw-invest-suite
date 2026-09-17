@@ -30,7 +30,7 @@ Updated: 2026-09-17. Runtime and repository copies of scheduled files must have 
 
 | Stage | Default timeout | Required |
 |---|---:|---|
-| finmind_maint | 10 min | Yes on trading-session full runs |
+| finmind_maint | 10 min | Yes on trading-session full runs; final one-day price refresh and margin maintenance |
 | render | 90 min | Yes |
 | patterns | 30 min | Yes |
 | patterns_html | 10 min | Yes |
@@ -77,7 +77,7 @@ The same job runs final postflight and publishes the morning dashboard and daily
 
 Walter authorized source pushes, publication and necessary Scheduler updates on 2026-09-16, and authorized the final UAC retry with Sep17 `continue`. Current deployment evidence and remaining gates are recorded in `docs/chatgpt_debug/RESP-2026-09-16-deployment-acceptance.md`. The installed `publish_verified_sites.ps1` verifies canonical publication and postflight before `sync_groove_release.py` copies certified stock paths and verifies Groove remote hashes. It preserves the music application's root index and configuration. Sep17 legitimate UAC deployment returned 0; the live Scheduler action points to this wrapper with S4U and wake enabled. Actual end-to-end publication still requires a fresh certified full run.
 
-Managed provenance covers 43 runtime scripts, 14 repository report/maintenance modules and8 static report frontend files. The render universe is frozen at begin and compared with both the current metadata universe and exact artifact identities at completion. Native stage waits use fresh process lookup and creation identity; ordinary logging writes to the file before optional verbose output.
+Managed provenance covers 43 runtime scripts, 14 repository report/maintenance modules,8 static report frontend files and the canonical AI-Telegram price downloader (66 hashes). The render universe is frozen at begin and compared with both the current metadata universe and exact artifact identities at completion. Native stage waits use fresh process lookup and creation identity; ordinary logging writes to the file before optional verbose output.
 
 Cross-logon S4U monitoring falls back to bounded CIM when OpenProcess is denied. It compares process creation identity and rejects PID reuse; CIM errors remain unknown. Each stage wrapper also monitors its exact parent and kills its child tree within its heartbeat interval if Scheduler stops that parent, preventing orphan writers.
 
@@ -114,7 +114,7 @@ Start-ScheduledTask -TaskName 'tw-invest-suite-daily-report'
 Start-ScheduledTask -TaskName 'tw-invest-suite-publish'
 ```
 
-The publisher waits for the report run, then verifies GitHub Pages, Groove and the existing Telegram delivery in sequence. These commands start tasks asynchronously; acceptance still requires the same dated receipts and the final task result. This pair regenerates reports from the latest landed DB session; it does not force all independent data downloaders to run immediately. For rendering without maintenance, the existing `run_daily.ps1 -Mode render` remains available; `-Mode publish` uses the same publisher gate.
+The publisher waits for the report run, then verifies GitHub Pages, Groove and the existing Telegram delivery in sequence. These commands start tasks asynchronously; acceptance still requires the same dated receipts and the final task result. Full trading-session reports now refresh the frozen day's complete price dataset through the normal downloader before rendering; the maintenance receipt must verify at least1900 rows on that exact date. This pair uses the latest landed DB session and does not force all independent institutional/news downloaders to run immediately. For rendering without maintenance, the existing `run_daily.ps1 -Mode render` remains available; `-Mode publish` uses the same publisher gate.
 
 As of Sep17 14:33 Taipei, canonical publication has passed but Groove transport acceptance and Telegram delivery are unfinished. The stock-only response-header fix still needs the canceled Windows UAC origin reload to be explicitly reauthorized. The additional Sep16 DB/source volume discrepancies are recorded in `docs/chatgpt_debug/AUDIT-2026-09-17-DB-manual-trigger.md`; do not describe all DB data as correct before resolving them.
 

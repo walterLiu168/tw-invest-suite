@@ -17,7 +17,7 @@ import pipeline_state as ps
 class MaintenanceFetchTests(unittest.TestCase):
     def test_one_session_source_lag_is_explicit_and_older_or_future_is_rejected(self):
         run = {'nightly_id':'n1','data_date':'2026-09-16'}
-        fetch = {'nightly_id':'n1','requested_date':'2026-09-16','latest_source_date':'2026-09-15','status':'ok','provider_rows':2049,'api_errors':0}
+        fetch = {'nightly_id':'n1','requested_date':'2026-09-16','latest_source_date':'2026-09-15','status':'ok','provider_rows':2049,'api_errors':0,'price_refresh_date':'2026-09-16','price_refresh_rows':1949}
         self.assertEqual(ps.validate_maintenance_fetch(fetch,run),'2026-09-15')
         for day in ('2026-09-14','2026-09-17'):
             with self.subTest(day=day), self.assertRaisesRegex(ValueError,'stale or future'):
@@ -26,6 +26,27 @@ class MaintenanceFetchTests(unittest.TestCase):
             ps.validate_maintenance_fetch({**fetch,'nightly_id':'old'},run)
         with self.assertRaisesRegex(ValueError,'does not certify'):
             ps.validate_maintenance_fetch({**fetch,'api_errors':1},run)
+        for price in ({'price_refresh_date':'2026-09-15'}, {'price_refresh_rows':1899}, {'price_refresh_rows':None}):
+            with self.subTest(price=price), self.assertRaisesRegex(ValueError,'price refresh'):
+                ps.validate_maintenance_fetch({**fetch,**price},run)
+
+    def test_nightly_refresh_uses_normal_single_day_price_writer_without_schema_flag(self):
+        result = MagicMock(stdout='DB_VERIFY phase=price range=2026-09-16..2026-09-16 expected=1949 complete=1949 missing=0 first_missing=-\n')
+        with patch.object(maintenance.Path,'is_file',return_value=True), patch.object(maintenance.subprocess,'run',return_value=result) as run, redirect_stdout(StringIO()):
+            self.assertEqual(maintenance.refresh_price_inputs('2026-09-16'),1949)
+        command = run.call_args.args[0]
+        self.assertIn('--refresh-existing',command)
+        self.assertEqual(command[command.index('--date')+1],'2026-09-16')
+        self.assertNotIn('--ensure-state-schema',command)
+        self.assertTrue(run.call_args.kwargs['check'])
+        self.assertEqual(run.call_args.kwargs['timeout'],240)
+
+    def test_nightly_refresh_rejects_stale_or_incomplete_completion_output(self):
+        for output in ('DB_VERIFY phase=price range=2026-09-15..2026-09-15 expected=1949 complete=1949 missing=0',
+                       'DB_VERIFY phase=price range=2026-09-16..2026-09-16 expected=1949 complete=1948 missing=1',
+                       'DB_VERIFY phase=price range=2026-09-16..2026-09-16 expected=1899 complete=1899 missing=0'):
+            with patch.object(maintenance.Path,'is_file',return_value=True), patch.object(maintenance.subprocess,'run',return_value=MagicMock(stdout=output)), redirect_stdout(StringIO()), self.assertRaisesRegex(RuntimeError,'complete current market'):
+                maintenance.refresh_price_inputs('2026-09-16')
 
     def test_completion_holds_state_mutex_before_reading_run(self):
         locked = False

@@ -13,6 +13,8 @@ import os
 import sys
 import time
 import json
+import re
+import subprocess
 import requests
 import pymysql
 from pathlib import Path
@@ -178,7 +180,29 @@ def upsert_rows(rows: list):
         return n
 
 
+def refresh_price_inputs(target_date: str) -> int:
+    date.fromisoformat(target_date)
+    python = Path(os.environ.get('AI_TELEGRAM_PY', r'C:\Users\icemo\AppData\Local\Programs\Python\Python310\python.exe'))
+    entrypoint = Path(r'D:\CODEX\AI-Telegram\strategy_lab\_fetch_today.py')
+    if not python.is_file() or not entrypoint.is_file():
+        raise FileNotFoundError('Configured canonical price refresh runtime is unavailable')
+    result = subprocess.run([str(python), '-X', 'utf8', str(entrypoint), '--phase', 'price',
+                             '--date', target_date, '--refresh-existing',
+                             '--max-requests-per-minute', '57', '--no-csv'],
+                            cwd=str(entrypoint.parents[1]), stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, encoding='utf-8',
+                            errors='replace', check=True, timeout=240)
+    print(result.stdout, end='', flush=True)
+    match = re.search(r'DB_VERIFY phase=price range=' + re.escape(target_date) + r'\.\.' +
+                      re.escape(target_date) + r' expected=(\d+) complete=(\d+) missing=0\b', result.stdout)
+    if not match or int(match[1]) != int(match[2]) or int(match[1]) < 1900:
+        raise RuntimeError('Price refresh did not verify the complete current market')
+    return int(match[1])
+
+
 def main():
+    requested_date = os.environ.get('TW_DATA_DATE')
+    price_rows = refresh_price_inputs(requested_date) if requested_date else None
     days_back = int(os.environ.get("MAINT_DAYS_BACK", "7"))
     print(f"[{datetime.now():%H:%M:%S}] FinMind {DATASET} fetcher starting (days_back={days_back})", flush=True)
     print("  Ensuring table + registry...", flush=True)
@@ -195,7 +219,7 @@ def main():
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
     import pipeline_state as ps
     source_date = max(str(row['date']) for row in rows)
-    receipt = {'nightly_id': os.environ.get('TW_NIGHTLY_ID', 'manual'), 'requested_date': os.environ.get('TW_DATA_DATE'), 'latest_source_date': source_date, 'provider_rows': len(rows), 'status': 'ok', 'api_errors': 0}
+    receipt = {'nightly_id': os.environ.get('TW_NIGHTLY_ID', 'manual'), 'requested_date': requested_date, 'latest_source_date': source_date, 'provider_rows': len(rows), 'status': 'ok', 'api_errors': 0, 'price_refresh_date': requested_date, 'price_refresh_rows': price_rows}
     ps.atomic_json(ps.RUNTIME / '_debug' / 'maintenance_fetch.json', receipt)
     print(f"  requested_date={receipt['requested_date']} latest_source_date={source_date}", flush=True)
     print(f"[{datetime.now():%H:%M:%S}] Done.", flush=True)
