@@ -1,5 +1,13 @@
 # D056 takeover — 2026-09-17, all-report automation
 
+## Latest live outcome — Sep17 17:07, historical chips recovery required
+
+Runtime68 sources synchronized; actual default S4U manual run UUID `aeffe5aa0de14e1395e9edf61494f94d` completed valuation1956/1974 (18 explicit missing), canonical current1949/source differences0, price30-session differences0, refreshed24 picks and finalized240-session input digest. These four stages exited0; render assembled1974 inputs. Read-only Sep15 historical source audit then disproved inputs: institutional30 mismatches (11 net/ThreeNet), foreign ownership1948 mismatches; margin/daytrade0. Both daily-report and waiting publisher were intentionally stopped BEFORE certification. State failed with explicit source-audit reason; do not publish/reuse this run. Valuation cache remains legitimately reusable for its normal TTL.
+
+New repair extends canonical `--refresh-lookback-sessions30` to all five historical chips lanes using source validation and normal selective `run_dataset`/exact DB readback. Shareholding/shares share one actual dated provider response; missing snapshots cannot certify. Cache is invalidated before revisions so a later failure cannot leave stale simulation inputs. Required maintenance receipt now includes30-day five-lane chips proof; price-only proof is rejected. Full stage budgets231min: valuation55,maintenance20,screen4,freeze2,render60,patterns20,HTML10,margin20 optional,watchlist20,all_reports20. Actual freeze took about57sec;120sec budget provides headroom. Focused downloader26 tests, primary178 full tests (53.148sec) and nativePS5 parse passed. Real historical recovery is still pending.
+
+Next: finish focused/full tests, scoped commits/pushes and runtime sync; run real canonical30-session recovery and independent readback/source audit; recertify through default task for the actual latest session (17:35 arrival may make Sep16 invalid; respect official calendar). Same current UAC question remains unanswered after two cancelled elevations; no third retry/bypass. Both live site raw hashes and real Telegram receipt remain pending. All240 database tables/history have not been proved correct.
+
 ## Objective and authorization
 
 Complete automatic download, every report, daily verification, both site publications/source pushes and Telegram chips summary to the existing configured chat. User explicitly confirmed all reports and Telegram on Sep17. Preserve unrelated user changes. No schema migrations, experimental strategy commissioning or broker actions.

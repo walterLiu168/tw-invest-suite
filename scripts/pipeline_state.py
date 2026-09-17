@@ -360,6 +360,9 @@ def validate_maintenance_fetch(fetch, run):
         raise ValueError('maintenance canonical source values do not certify this run')
     if fetch.get('price_history_sessions') != 30 or fetch.get('price_history_mismatches') != 0:
         raise ValueError('maintenance price history does not certify this run')
+    if (fetch.get('chips_history_sessions') != 30 or fetch.get('chips_history_mismatches') != 0
+            or set(fetch.get('chips_history_datasets', [])) != {'inst','margin','daytrade','shareholding','shares'}):
+        raise ValueError('maintenance chips history does not certify this run')
     valuation = fetch.get('valuation_refresh', {})
     if valuation.get('date') != dd or valuation.get('provider_tickers', 0) < 1500 or valuation.get('mismatches') != 0:
         raise ValueError('maintenance valuation source does not certify this run')

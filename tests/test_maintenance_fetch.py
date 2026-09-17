@@ -21,6 +21,8 @@ class MaintenanceFetchTests(unittest.TestCase):
                  'canonical_refresh_date':'2026-09-16','canonical_refresh_rows':1949,
                  'canonical_datasets':['price','inst','margin','daytrade','shareholding','shares'],'source_value_mismatches':0,
                  'price_history_sessions':30,'price_history_mismatches':0,
+                 'chips_history_sessions':30,'chips_history_mismatches':0,
+                 'chips_history_datasets':['inst','margin','daytrade','shareholding','shares'],
                  'valuation_refresh':{'date':'2026-09-16','provider_tickers':1900,'mismatches':0}}
         self.assertEqual(ps.validate_maintenance_fetch(fetch,run),'2026-09-15')
         for day in ('2026-09-14','2026-09-17'):
@@ -37,11 +39,15 @@ class MaintenanceFetchTests(unittest.TestCase):
                           {'canonical_datasets':['price']}, {'source_value_mismatches':1}):
             with self.subTest(canonical=canonical), self.assertRaisesRegex(ValueError,'canonical source'):
                 ps.validate_maintenance_fetch({**fetch,**canonical},run)
+        for chips in ({'chips_history_sessions':None}, {'chips_history_mismatches':1},
+                      {'chips_history_datasets':['inst']}):
+            with self.subTest(chips=chips), self.assertRaisesRegex(ValueError,'chips history'):
+                ps.validate_maintenance_fetch({**fetch,**chips},run)
 
     def test_nightly_refresh_uses_normal_single_day_price_writer_without_schema_flag(self):
         output = ''.join(f'SOURCE_VERIFY dataset={name} date=2026-09-16 tickers=1949 mismatch=0\n'
                          for name in ('price','inst','margin','daytrade','shareholding','shares'))
-        result = MagicMock(stdout=output+'HISTORY_VERIFY date=2026-09-16 sessions=30 rows=58743 revised=0 mismatch=0\nDB_VERIFY phase=canonical range=2026-09-16..2026-09-16 expected=1949 complete=1949 missing=0 first_missing=-\n')
+        result = MagicMock(stdout=output+'HISTORY_VERIFY date=2026-09-16 sessions=30 rows=58743 revised=0 mismatch=0\nCHIPS_HISTORY_VERIFY date=2026-09-16 sessions=30 datasets=inst,margin,daytrade,shareholding,shares rows=293715 revised=0 mismatch=0\nDB_VERIFY phase=canonical range=2026-09-16..2026-09-16 expected=1949 complete=1949 missing=0 first_missing=-\n')
         with patch.object(maintenance.Path,'is_file',return_value=True), patch.object(maintenance.subprocess,'run',return_value=result) as run, redirect_stdout(StringIO()):
             self.assertEqual(maintenance.refresh_price_inputs('2026-09-16'),1949)
         command = run.call_args.args[0]
@@ -51,7 +57,15 @@ class MaintenanceFetchTests(unittest.TestCase):
         self.assertNotIn('--ensure-state-schema',command)
         self.assertTrue(run.call_args.kwargs['check'])
         self.assertEqual(command[command.index('--refresh-lookback-sessions')+1],'30')
-        self.assertEqual(run.call_args.kwargs['timeout'],420)
+        self.assertEqual(run.call_args.kwargs['timeout'],1050)
+
+    def test_price_only_history_proof_cannot_certify_chips_history(self):
+        output = ''.join(f'SOURCE_VERIFY dataset={name} date=2026-09-16 tickers=1949 mismatch=0\n'
+                         for name in ('price','inst','margin','daytrade','shareholding','shares'))
+        output += ('HISTORY_VERIFY date=2026-09-16 sessions=30 rows=58743 revised=0 mismatch=0\n'
+                   'DB_VERIFY phase=canonical range=2026-09-16..2026-09-16 expected=1949 complete=1949 missing=0\n')
+        with patch.object(maintenance.Path,'is_file',return_value=True), patch.object(maintenance.subprocess,'run',return_value=MagicMock(stdout=output)), redirect_stdout(StringIO()), self.assertRaisesRegex(RuntimeError,'chips history'):
+            maintenance.refresh_price_inputs('2026-09-16')
 
     def test_nightly_refresh_rejects_stale_or_incomplete_completion_output(self):
         for output in ('DB_VERIFY phase=canonical range=2026-09-15..2026-09-15 expected=1949 complete=1949 missing=0',

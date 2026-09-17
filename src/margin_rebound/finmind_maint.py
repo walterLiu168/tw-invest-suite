@@ -192,7 +192,7 @@ def refresh_price_inputs(target_date: str) -> int:
                              '--max-requests-per-minute', '57', '--no-csv'],
                             cwd=str(entrypoint.parents[1]), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, encoding='utf-8',
-                            errors='replace', check=True, timeout=420)
+                            errors='replace', check=True, timeout=1050)
     print(result.stdout, end='', flush=True)
     match = re.search(r'DB_VERIFY phase=canonical range=' + re.escape(target_date) + r'\.\.' +
                       re.escape(target_date) + r' expected=(\d+) complete=(\d+) missing=0\b', result.stdout)
@@ -206,6 +206,9 @@ def refresh_price_inputs(target_date: str) -> int:
     if not re.search(r'HISTORY_VERIFY date=' + re.escape(target_date) +
                      r' sessions=30 rows=\d+ revised=\d+ mismatch=0\b', result.stdout):
         raise RuntimeError('Canonical refresh is missing price history source verification')
+    if not re.search(r'CHIPS_HISTORY_VERIFY date=' + re.escape(target_date) +
+                     r' sessions=30 datasets=inst,margin,daytrade,shareholding,shares rows=\d+ revised=\d+ mismatch=0\b', result.stdout):
+        raise RuntimeError('Canonical refresh is missing chips history source verification')
     return int(match[1])
 
 
@@ -238,6 +241,8 @@ def main():
                'canonical_refresh_date': requested_date, 'canonical_refresh_rows': price_rows,
                'canonical_datasets': ['price','inst','margin','daytrade','shareholding','shares'],
                'source_value_mismatches': 0, 'price_history_sessions': 30, 'price_history_mismatches': 0,
+               'chips_history_sessions': 30, 'chips_history_mismatches': 0,
+               'chips_history_datasets': ['inst','margin','daytrade','shareholding','shares'],
                'valuation_refresh': valuation}
     ps.atomic_json(ps.RUNTIME / '_debug' / 'maintenance_fetch.json', receipt)
     print(f"  requested_date={receipt['requested_date']} latest_source_date={source_date}", flush=True)

@@ -324,9 +324,9 @@ if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipYfinance) {
     $stages += @{ N=1; Name='valuation'; Cmd='yfinance_daily.py'; To=55*60 }
 }
 if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipFinmind) {
-    $stages += @{ N=1; Name='finmind_maint'; Cmd=$maintScript; To=10*60 }
+    $stages += @{ N=1; Name='finmind_maint'; Cmd=$maintScript; To=20*60 }
     $stages += @{ N=1; Name='market_screen'; Cmd="market_screen_runner.py --data-date $($env:TW_DATA_DATE) --refresh-existing"; To=4*60 }
-    $stages += @{ N=1; Name='finalize_inputs'; Cmd='pipeline_state.py finalize-inputs'; To=60 }
+    $stages += @{ N=1; Name='finalize_inputs'; Cmd='pipeline_state.py finalize-inputs'; To=120 }
 }
 
 # Stage 2: Render (1,962 tickers)
@@ -335,7 +335,7 @@ if ($Mode -eq 'full') { $renderBudget = [Math]::Min($TimeoutMin,60) }
 $stages += @{ N=2; Name='render'; Cmd='render_only.py --no-yfinance --no-news'; To=$renderBudget*60 }
 
 # Stage 3: Pattern + build HTML
-$stages += @{ N=3; Name='patterns'; Cmd='pattern_classifier.py'; To=25*60 }
+$stages += @{ N=3; Name='patterns'; Cmd='pattern_classifier.py'; To=20*60 }
 $stages += @{ N=4; Name='patterns_html'; Cmd='build_patterns_html.py'; To=10*60 }
 
 # Stage 5: Margin rebound scan (7-dim scoring, all maint<130% candidates)
@@ -352,7 +352,7 @@ $stages += @{ N=6; Name='watchlist'; Cmd='render_full_watchlist.py'; To=20*60 }
 # Every existing market report is required in the default scheduled run.
 # IncludeAdvancedStages remains accepted for older callers; reports always run.
 $allReports = "C:\Users\icemo\Projects\tw-invest-suite\src\all_reports.py"
-$stages += @{ N=7; Name='all_reports'; Cmd=$allReports; To=25*60 }
+$stages += @{ N=7; Name='all_reports'; Cmd=$allReports; To=20*60 }
 
 # Leave five minutes for preflight/certification under the four-hour task cap.
 $stageBudgetSec = 0
