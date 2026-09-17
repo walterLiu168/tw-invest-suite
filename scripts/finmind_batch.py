@@ -67,6 +67,40 @@ def fetch_pe(ticker: str) -> Optional[Dict]:
     return None
 
 
+def refresh_market_pe(target_date: str, tickers: List[str]) -> Dict:
+    """Refresh the dated market snapshot once, rather than reusing expired PER."""
+    from datetime import date
+    import math
+    date.fromisoformat(target_date)
+    expected = set(tickers)
+    rows = _call('TaiwanStockPER', '', start_date=target_date, end_date=target_date)
+    if not rows or any('_error' in row for row in rows):
+        raise RuntimeError('Market PER provider failed or returned empty data')
+    snapshots = {}
+    for row in rows:
+        ticker = str(row.get('stock_id', '')).strip()
+        if ticker not in expected or str(row.get('date', ''))[:10] != target_date:
+            continue
+        if ticker in snapshots:
+            raise ValueError('Duplicate dated market PER source row')
+        for key in ('PER', 'PBR', 'dividend_yield'):
+            value = row.get(key)
+            if value is None or isinstance(value, bool) or not math.isfinite(float(value)):
+                raise ValueError('Invalid market PER source fields')
+        snapshots[ticker] = row
+    if len(snapshots) < len(expected) * .8:
+        raise RuntimeError('Market PER provider returned an incomplete dated market snapshot')
+    # Validate the entire response before replacing any cache entry.
+    for ticker, row in snapshots.items():
+        cm.put(ticker, 'finmind_pe', row)
+    for ticker, row in snapshots.items():
+        cached = cm.get_fresh(ticker, 'finmind_pe')
+        if not cached or cached['data'] != row:
+            raise RuntimeError('Market PER source cache readback failed')
+    return {'date':target_date,'provider_tickers':len(snapshots),
+            'source_missing':sorted(expected - set(snapshots)), 'mismatches':0}
+
+
 def fetch_dividend(ticker: str) -> List[Dict]:
     """Dividend history (3y). Cache 30d."""
     cached = cm.get_fresh(ticker, "finmind_div")

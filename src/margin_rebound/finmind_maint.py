@@ -227,11 +227,18 @@ def main():
     print(f"  Upserted {n} rows", flush=True)
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
     import pipeline_state as ps
+    import finmind_batch as fmb
+    import db_client as db
+    with db.get_cursor() as cursor:
+        cursor.execute('SELECT Ticker FROM daily_data2_full WHERE Date=%s', (requested_date,))
+        valuation_tickers = [row['Ticker'] for row in cursor.fetchall()]
+    valuation = fmb.refresh_market_pe(requested_date, valuation_tickers) if requested_date else {}
     source_date = max(str(row['date']) for row in rows)
     receipt = {'nightly_id': os.environ.get('TW_NIGHTLY_ID', 'manual'), 'requested_date': requested_date, 'latest_source_date': source_date, 'provider_rows': len(rows), 'status': 'ok', 'api_errors': 0, 'price_refresh_date': requested_date, 'price_refresh_rows': price_rows,
                'canonical_refresh_date': requested_date, 'canonical_refresh_rows': price_rows,
                'canonical_datasets': ['price','inst','margin','daytrade','shareholding','shares'],
-               'source_value_mismatches': 0, 'price_history_sessions': 30, 'price_history_mismatches': 0}
+               'source_value_mismatches': 0, 'price_history_sessions': 30, 'price_history_mismatches': 0,
+               'valuation_refresh': valuation}
     ps.atomic_json(ps.RUNTIME / '_debug' / 'maintenance_fetch.json', receipt)
     print(f"  requested_date={receipt['requested_date']} latest_source_date={source_date}", flush=True)
     print(f"[{datetime.now():%H:%M:%S}] Done.", flush=True)

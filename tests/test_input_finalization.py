@@ -43,7 +43,7 @@ class InputFinalizationTests(unittest.TestCase):
         run = {'nightly_id':'n1','status':'running','data_date':'2026-09-16','source_hashes':{'a':'sha'},
                'render_tickers':['1101'],'run_id':17,'picks':['earlier']}
         snapshot = {'data_date':'2026-09-16','render_tickers':['1101'],'run_id':17,'picks':['refreshed']}
-        with patch.object(ps,'read_json',side_effect=[copy.deepcopy(run), {}]), patch.object(ps.Path,'is_file',return_value=False), patch.dict(ps.os.environ,{'TW_NIGHTLY_ID':'n1'}), patch.object(ps,'source_hashes',return_value={'a':'sha'}), patch.object(ps,'validate_maintenance_fetch'), patch.object(ps,'db_snapshot',return_value=snapshot), patch.object(ps,'canonical_inputs_hash',return_value='canonical-sha'), patch.object(ps,'atomic_json') as write:
+        with patch.object(ps,'read_json',side_effect=[copy.deepcopy(run), {}, {}]), patch.object(ps.Path,'is_file',return_value=False), patch.dict(ps.os.environ,{'TW_NIGHTLY_ID':'n1'}), patch.object(ps,'source_hashes',return_value={'a':'sha'}), patch.object(ps,'validate_maintenance_fetch'), patch.object(ps,'validate_finance_fetch'), patch.object(ps,'db_snapshot',return_value=snapshot), patch.object(ps,'canonical_inputs_hash',return_value='canonical-sha'), patch.object(ps,'atomic_json') as write:
             finalized = ps.finalize_inputs()
         self.assertEqual(finalized['nightly_id'],'n1')
         self.assertEqual(finalized['data_date'],'2026-09-16')
@@ -53,12 +53,12 @@ class InputFinalizationTests(unittest.TestCase):
 
     def test_daily_force_fetch_ignores_previous_evening_fresh_cache(self):
         fake_yf = MagicMock()
-        fake_yf.Ticker.return_value.info = {'marketCap':1000,'returnOnEquity':.1}
-        with patch.object(yfb.cm,'get_fresh',return_value={'data':{'marketCap':1}}), patch.object(yfb,'is_dead',return_value=False), patch.object(yfb,'_jitter'), patch.object(yfb,'_mark_success'), patch.object(yfb.cm,'put') as put, patch.dict(sys.modules,{'yfinance':fake_yf}):
+        fake_yf.Ticker.return_value.info = {'symbol':'2330.TW','marketCap':1000,'returnOnEquity':.1}
+        with patch.dict(yfb._market_map,{'2330':'.TW'},clear=True), patch.object(yfb.cm,'get_fresh',return_value={'data':{'marketCap':1}}), patch.object(yfb,'is_dead',return_value=False), patch.object(yfb,'_jitter'), patch.object(yfb,'_mark_success'), patch.object(yfb.cm,'put') as put, patch.dict(sys.modules,{'yfinance':fake_yf}):
             self.assertEqual(yfb._fetch_one_with_fallback('2330')['marketCap'],1)
             self.assertEqual(yfb._fetch_one_with_fallback('2330',force=True)['marketCap'],1000)
         fake_yf.Ticker.assert_called_once()
-        put.assert_called_once()
+        self.assertEqual(put.call_count,2)
 
     def test_screener_refresh_keeps_metadata_gate(self):
         with patch.object(sys,'argv',['runner','--data-date','2026-09-16','--refresh-existing']), patch.object(msr,'is_trading_day',return_value=True), patch.object(msr,'get_verified_data_date',return_value=(date(2026,9,16),1949)), patch.object(msr,'has_metadata_marker',return_value=False), patch.object(msr.ms,'screen_market') as screen:

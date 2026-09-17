@@ -35,6 +35,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Cache TTL per data type
 TTL = {
     "yfinance":       timedelta(days=1),
+    "yfinance_roe":   timedelta(days=30),
     "finmind_pe":     timedelta(days=1),
     "finmind_div":    timedelta(days=30),
     "finmind_fin":    timedelta(days=30),

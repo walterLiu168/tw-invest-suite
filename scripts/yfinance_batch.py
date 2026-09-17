@@ -43,22 +43,63 @@ _yf_state = {
 # Per-worker last call time (jitter)
 _worker_last = {}
 _worker_lock = threading.Lock()
+_market_map = {}
+_company_map = {}
+_market_map_lock = threading.Lock()
+
+
+def refresh_market_map(rows=None):
+    """Resolve listing venue from fresh canonical provider metadata."""
+    from datetime import date, timedelta
+    if rows is None:
+        import finmind_batch as fm
+        today = date.today().isoformat()
+        rows = fm._call('TaiwanStockInfo', '', start_date=today, end_date=today)
+    if not rows or any('_error' in row for row in rows):
+        raise RuntimeError('Listing venue metadata unavailable')
+    valid = []
+    for row in rows:
+        try:
+            day = date.fromisoformat(str(row.get('date', '')))
+        except ValueError:
+            continue
+        if date.today() - timedelta(days=7) <= day <= date.today() and row.get('type') in {'twse','tpex'}:
+            valid.append((day,row))
+    if not valid:
+        raise RuntimeError('Listing venue metadata is stale or invalid')
+    latest = max(day for day, _ in valid)
+    venues = {}
+    for day, row in valid:
+        if day == latest:
+            venues.setdefault(str(row['stock_id']).strip(),set()).add(row['type'])
+    if any(len(values) != 1 for values in venues.values()):
+        raise ValueError('Conflicting current listing venues')
+    mapped = {ticker:'.TW' if next(iter(values))=='twse' else '.TWO'
+              for ticker,values in venues.items()}
+    _market_map.clear()
+    _market_map.update(mapped)
+    _company_map.clear()
+    _company_map.update({str(row['stock_id']).strip():row.get('stock_name')
+                         for day,row in valid if day==latest})
+    return {'source_date':latest.isoformat(),'mapped_tickers':len(mapped)}
 
 
 def _format_ticker_yf(ticker: str) -> str:
-    """Add .TW or .TWO suffix based on length. 4-digit → .TW, with letter → .TWO."""
+    """Preserve the security code and use its verified listing venue."""
     if "." in ticker:
         return ticker
-    if len(ticker) == 4:
-        return f"{ticker}.TW"
-    if len(ticker) == 5 and ticker[4].isalpha():
-        return f"{ticker[:4]}.TWO"
-    return ticker
+    if not _market_map:
+        with _market_map_lock:
+            if not _market_map:
+                refresh_market_map()
+    if ticker not in _market_map:
+        raise ValueError(f'No current listed venue for {ticker}')
+    return ticker + _market_map[ticker]
 
 
 def _format_ticker_back(ticker_yf: str) -> str:
     """Strip .TW / .TWO for caching."""
-    return ticker_yf.replace(".TW", "").replace(".TWO", "")
+    return ticker_yf.rsplit('.',1)[0] if ticker_yf.endswith(('.TW','.TWO')) else ticker_yf
 
 
 def _jitter():
@@ -109,6 +150,9 @@ def _fetch_one_with_fallback(ticker: str, force: bool = False) -> Dict:
         _jitter()
         t = yf.Ticker(yf_sym)
         info = t.info
+        if not info or str(info.get('symbol', '')).upper() != yf_sym.upper():
+            raise ValueError('Yahoo returned an empty or different security')
+        data['_symbol'] = yf_sym
         # Timeout via session is set per-call; yfinance doesn't expose a
         # direct timeout param for .info, but the underlying request usually
         # returns within 5-10s. We rely on the 60s default in requests.
@@ -133,6 +177,10 @@ def _fetch_one_with_fallback(ticker: str, force: bool = False) -> Dict:
         return _build_fallback(ticker_clean, data)
 
     cm.put(ticker_clean, "yfinance", data)
+    raw_roe = data.get('returnOnEquity')
+    import math
+    roe = raw_roe if isinstance(raw_roe, (int,float)) and not isinstance(raw_roe,bool) and math.isfinite(raw_roe) else None
+    cm.put(ticker_clean, 'yfinance_roe', {'returnOnEquity':roe,'_symbol':yf_sym,'_source':'yfinance'})
     return data
 
 
@@ -165,8 +213,10 @@ def _build_fallback(ticker: str, partial: Optional[Dict] = None) -> Dict:
     # 2. FinMind PER
     try:
         from datetime import timedelta
-        per_rows = fm.stock_per(ticker, start_date=(datetime.now() - timedelta(days=30))
-                                                  .strftime("%Y-%m-%d"))
+        # The market PER snapshot is maintained separately. Yahoo workers
+        # must not start parallel FinMind downloads on an error burst.
+        cached_per = cm.get_fresh(ticker, 'finmind_pe')
+        per_rows = [cached_per['data']] if cached_per else []
         if per_rows and not any("_error" in r for r in per_rows):
             latest = per_rows[-1]
             data.setdefault("trailingPE", latest.get("PER"))
@@ -177,15 +227,9 @@ def _build_fallback(ticker: str, partial: Optional[Dict] = None) -> Dict:
     except Exception:
         pass
 
-    # 3. FinMind stock_info (for company name if DB miss)
+    # 3. Already verified bulk metadata (no API calls from Yahoo workers).
     if not data.get("longName"):
-        try:
-            info_rows = fm.stock_info(ticker)
-            if info_rows and not any("_error" in r for r in info_rows):
-                data["longName"] = info_rows[0].get("stock_name")
-                data["industry"] = info_rows[0].get("industry_category")
-        except Exception:
-            pass
+        data['longName'] = _company_map.get(ticker)
 
     return data
 
@@ -196,6 +240,7 @@ def batch_fetch(tickers: List[str], workers: int = 2, force: bool = False) -> Di
     Returns: {ticker: data_dict}
     """
     reset()
+    refresh_market_map()
     results: Dict[str, Dict] = {}
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {ex.submit(_fetch_one_with_fallback, t, force=force): t for t in tickers}

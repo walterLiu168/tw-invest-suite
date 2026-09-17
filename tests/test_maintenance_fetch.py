@@ -20,7 +20,8 @@ class MaintenanceFetchTests(unittest.TestCase):
         fetch = {'nightly_id':'n1','requested_date':'2026-09-16','latest_source_date':'2026-09-15','status':'ok','provider_rows':2049,'api_errors':0,'price_refresh_date':'2026-09-16','price_refresh_rows':1949,
                  'canonical_refresh_date':'2026-09-16','canonical_refresh_rows':1949,
                  'canonical_datasets':['price','inst','margin','daytrade','shareholding','shares'],'source_value_mismatches':0,
-                 'price_history_sessions':30,'price_history_mismatches':0}
+                 'price_history_sessions':30,'price_history_mismatches':0,
+                 'valuation_refresh':{'date':'2026-09-16','provider_tickers':1900,'mismatches':0}}
         self.assertEqual(ps.validate_maintenance_fetch(fetch,run),'2026-09-15')
         for day in ('2026-09-14','2026-09-17'):
             with self.subTest(day=day), self.assertRaisesRegex(ValueError,'stale or future'):

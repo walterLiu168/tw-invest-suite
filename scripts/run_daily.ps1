@@ -5,7 +5,7 @@
 # Required: maintenance (weekday full mode), render, patterns, patterns_html, watchlist.
 # Optional: margin_scan. All market reports are required.
 # Outputs are certified by pipeline_state.py; only the scheduled publisher pushes.
-# Default stage budgets total at most 230 minutes (render budget: 90 minutes).
+# Full trading-day stage budgets total at most230 minutes, including valuation preparation.
 # -Mode render runs the rendering chain without maintenance; -Mode publish uses
 # the same completion gate as the scheduled publisher.
 
@@ -320,6 +320,9 @@ $stages = @()
 
 # Stage 1: FinMind TaiwanStockMarginMaintenance (per-stock 維持率, D020)
 $maintScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\finmind_maint.py"
+if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipYfinance) {
+    $stages += @{ N=1; Name='valuation'; Cmd='yfinance_daily.py'; To=55*60 }
+}
 if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipFinmind) {
     $stages += @{ N=1; Name='finmind_maint'; Cmd=$maintScript; To=10*60 }
     $stages += @{ N=1; Name='market_screen'; Cmd="market_screen_runner.py --data-date $($env:TW_DATA_DATE) --refresh-existing"; To=4*60 }
@@ -327,10 +330,12 @@ if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipFinmind) {
 }
 
 # Stage 2: Render (1,962 tickers)
-$stages += @{ N=2; Name='render'; Cmd='render_only.py --no-yfinance --no-news'; To=$TimeoutMin*60 }
+$renderBudget = $TimeoutMin
+if ($Mode -eq 'full') { $renderBudget = [Math]::Min($TimeoutMin,60) }
+$stages += @{ N=2; Name='render'; Cmd='render_only.py --no-yfinance --no-news'; To=$renderBudget*60 }
 
 # Stage 3: Pattern + build HTML
-$stages += @{ N=3; Name='patterns'; Cmd='pattern_classifier.py'; To=30*60 }
+$stages += @{ N=3; Name='patterns'; Cmd='pattern_classifier.py'; To=25*60 }
 $stages += @{ N=4; Name='patterns_html'; Cmd='build_patterns_html.py'; To=10*60 }
 
 # Stage 5: Margin rebound scan (7-dim scoring, all maint<130% candidates)
@@ -338,16 +343,16 @@ $stages += @{ N=4; Name='patterns_html'; Cmd='build_patterns_html.py'; To=10*60 
 $scanDate = $env:TW_DATA_DATE
 $scanOut = Join-Path $PSScriptRoot "outputs\margin_rebound\$scanDate.json"
 $scanScript = "C:\Users\icemo\Projects\tw-invest-suite\src\margin_rebound\scan.py"
-$stages += @{ N=5; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=30*60; Optional=$true }
+$stages += @{ N=5; Name='margin_scan'; Cmd="$scanScript --threshold 0 --out `"$scanOut`""; To=20*60; Optional=$true }
 
 # Stage 6: Full watchlist render
 # Supplemental fetches have per-worker and overall deadlines; all picks remain.
-$stages += @{ N=6; Name='watchlist'; Cmd='render_full_watchlist.py'; To=30*60 }
+$stages += @{ N=6; Name='watchlist'; Cmd='render_full_watchlist.py'; To=20*60 }
 
 # Every existing market report is required in the default scheduled run.
 # IncludeAdvancedStages remains accepted for older callers; reports always run.
 $allReports = "C:\Users\icemo\Projects\tw-invest-suite\src\all_reports.py"
-$stages += @{ N=7; Name='all_reports'; Cmd=$allReports; To=30*60 }
+$stages += @{ N=7; Name='all_reports'; Cmd=$allReports; To=25*60 }
 
 # Leave five minutes for preflight/certification under the four-hour task cap.
 $stageBudgetSec = 0
@@ -362,7 +367,7 @@ foreach ($s in $stages) {
     $stageResults += @{ N=$s.N; Name=$s.Name; Ok=$ok; Optional=[bool]$s.Optional }
     if (-not $ok) {
         Log-Msg "[!] Stage $($s.Name) failed — continuing to next stage"
-        if ($s.Name -in @('finmind_maint','market_screen','finalize_inputs')) {
+        if ($s.Name -in @('valuation','finmind_maint','market_screen','finalize_inputs')) {
             Log-Msg 'Required input preparation failed; stop before rendering'
             break
         }

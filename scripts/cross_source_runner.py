@@ -164,6 +164,15 @@ def assemble(ticker: str, news_tier: str = "all", use_yfinance: bool = True,
                 "beta": yf.get("beta"),
             }
 
+    # TTM ROE is quarterly data. Keep its validated30-day cache available
+    # when the daily quote cache expires during weekends/holidays.
+    if out.get('yfinance', {}).get('returnOnEquity') is None:
+        quarterly = cm.get_fresh(ticker,'yfinance_roe')
+        if quarterly:
+            roe_data, invalid = _normalize_yfinance(quarterly['data'])
+            out.setdefault('yfinance', {})['returnOnEquity'] = roe_data.get('returnOnEquity')
+            out['_meta']['sources'].append('yfinance_roe_cache')
+
     # ---- 3. FinMind PER (parallel — for cross-verify) ----
     def financial_data(key, fetcher):
         if not cache_only:

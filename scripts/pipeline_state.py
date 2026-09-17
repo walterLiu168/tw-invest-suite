@@ -49,6 +49,7 @@ SOURCE_FILES = (
     "company_refresh_daily.ps1", "company_refresh.py", "postflight_daily.ps1",
     "sync_legacy_tables_runner.ps1", "sync_legacy_tables.py",
     "yfinance_daily.py", "yfinance_batch.py", "cache_manager.py",
+    "finmind_batch.py", "finmind_client.py",
     "groove_service_watch.ps1",
 )
 
@@ -301,6 +302,7 @@ def finalize_inputs():
     if source_hashes() != run['source_hashes']:
         raise ValueError('Source changed before input finalization')
     validate_maintenance_fetch(read_json(RUNTIME / '_debug' / 'maintenance_fetch.json'), run)
+    validate_finance_fetch(read_json(RUNTIME / '_debug' / 'finance_fetch.json'), run)
     snapshot = db_snapshot()
     if snapshot['data_date'] != run['data_date'] or snapshot['render_tickers'] != run['render_tickers']:
         raise ValueError('Data date or metadata universe changed before finalization')
@@ -358,11 +360,22 @@ def validate_maintenance_fetch(fetch, run):
         raise ValueError('maintenance canonical source values do not certify this run')
     if fetch.get('price_history_sessions') != 30 or fetch.get('price_history_mismatches') != 0:
         raise ValueError('maintenance price history does not certify this run')
+    valuation = fetch.get('valuation_refresh', {})
+    if valuation.get('date') != dd or valuation.get('provider_tickers', 0) < 1500 or valuation.get('mismatches') != 0:
+        raise ValueError('maintenance valuation source does not certify this run')
     source_date = date.fromisoformat(fetch['latest_source_date'])
     previous_session = date.fromisoformat(expected_session(date.fromisoformat(dd) - timedelta(days=1)))
     if not previous_session <= source_date <= date.fromisoformat(dd):
         raise ValueError('maintenance provider data is stale or future-dated')
     return source_date.isoformat()
+
+
+def validate_finance_fetch(fetch, run):
+    if (fetch.get('nightly_id') != run['nightly_id'] or fetch.get('data_date') != run['data_date']
+            or fetch.get('status') != 'ok' or fetch.get('expected_tickers') != len(run['render_tickers'])
+            or fetch.get('fresh_tickers',0) < 1900):
+        raise ValueError('Valuation cache receipt does not certify this run')
+    return fetch
 
 
 @state_guarded
@@ -429,12 +442,13 @@ def complete(stages_path):
             artifacts.append(artifact(target, dest))
         maintenance = {}
         if any(stage['Name'] == 'finmind_maint' for stage in required):
-            if not {'market_screen','finalize_inputs'} <= {stage['Name'] for stage in required} or not run.get('inputs_finalized_at'):
+            if not {'valuation','market_screen','finalize_inputs'} <= {stage['Name'] for stage in required} or not run.get('inputs_finalized_at'):
                 raise ValueError('Canonical refresh/picks were not finalized before rendering')
             if run.get('canonical_inputs_sha256') != canonical_inputs_hash(dd):
                 raise ValueError('Canonical DB values changed during nightly')
             fetch = read_json(RUNTIME / '_debug' / 'maintenance_fetch.json')
             maintenance['maintenance_data_date'] = validate_maintenance_fetch(fetch, run)
+            maintenance['finance_refresh'] = validate_finance_fetch(read_json(RUNTIME / '_debug' / 'finance_fetch.json'), run)
         run.update(status="ok", marker_version="D056-3", completed_at=datetime.now().isoformat(),
                    all_reports=all_reports,
                    stages=stages, degraded_stages=sum(not s["Ok"] for s in stages if s.get("Optional")),
