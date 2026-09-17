@@ -1,4 +1,13 @@
-# D056 takeover — 2026-09-16 21:21 Taipei
+# D056 takeover — current update 2026-09-17 09:05 Taipei
+
+## Latest state supersedes historical observations below
+
+- No full corrected run has been certified or published yet. Sep16 21:20 UUID `a4e06a1314a843469356dfb3a0b148d6` was stopped before certification for a confirmed pattern-page alias link bug; its wrapper cleaned the owned render tree.
+- Actual Sep16 22:25 UUID `56e26013c7ee4ac483c2ff2b41fb7877` failed closed with `runtime/repo SHA mismatch: build_patterns_html.py`. The interrupted route correction had not been synchronized. It has no certificate and must not be published.
+- Pattern root and analyze-directory aliases now resolve the same stock URL in actual browser DOM. Pilot HTML uses old Sep15 data and proves routing only. Twelve pattern tests pass; the prior full suite passed 137 tests.
+- At Sep17 09:05 all 45 managed hashes match after backup/sync. Fresh SQL: Sep16 daily rows1949, missing company0, run17, picks24, render universe1974; quarantine retained13/open0. Groove origin/tunnel healthy.
+- User Sep17 `continue` authorized retry of the cancelled final publisher UAC update. Legitimate RunAs deployment returned0; live action now points to primary `publish_verified_sites.ps1`, S4U/wake enabled. Actual dual-site publication is still unverified.
+- Next: commit/push the route correction, start a fresh actual default full S4U run (morning execution/data date Sep16), freeze managed source, then actual S4U dual-site publication. Recheck live state and UUID before acting. Historical running statements below are superseded.
 
 ## Objective and authorization
 

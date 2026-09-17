@@ -229,9 +229,17 @@ def build_html(patterns_json: dict) -> str:
 <main>
   {''.join(sections)}
   <footer>
-    tw-invest-suite · {now_str} · 從 MySQL `daily_data2_full` 計算 + yfinance 補 ROE/P/E/P/B · 過去 240 日 walk-forward 回測
+    tw-invest-suite · {now_str} · 從 MySQL `daily_data2_full` 計算 + yfinance 補 ROE/P/E/P/B · 最多 240 交易日樣本回測
   </footer>
 </main>
+<script>
+// The same page is served at the site root and in the analyze directory.
+if (location.pathname.split('/').slice(-2, -1)[0] === 'analyze') {{
+  document.querySelectorAll('a[href^="analyze/"]').forEach(link => {{
+    link.setAttribute('href', '../' + link.getAttribute('href'));
+  }});
+}}
+</script>
 </body>
 </html>"""
 
