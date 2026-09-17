@@ -127,8 +127,8 @@ def enrich_from_chip_map(c: Candidate, chip_map: Dict[str, Dict]) -> None:
     if not chip:
         return
     c.chip_score = _f(chip.get("ChipScore"))
-    c.volume_burst = _i(chip.get("VolumeBurst"))
-    c.kd_golden_cross = _i(chip.get("KD_GoldenCross"))
+    c.volume_burst = _i(chip["VolumeBurst"]) if chip.get("VolumeBurst") is not None else None
+    c.kd_golden_cross = _i(chip["KD_GoldenCross"]) if chip.get("KD_GoldenCross") is not None else None
     c.inv_first_in = _i(chip.get("Inv_FirstIn"))
     c.inv_buy_percent = _f(chip.get("Inv_BuyPercent"))
     c.foreign_buy_ratio_chip = _f(chip.get("ForeignBuyRatio"))
@@ -230,8 +230,9 @@ def screen_market() -> Dict[str, Dict[str, List[Candidate]]]:
     print(f"      industries: {len(industry_map)}, shares: {len(shares_map)}", flush=True)
 
     print("[3/4] Loading chip + features (2 queries)…", flush=True)
-    chip_map = db.all_latest_chipscore()
-    feat_map = db.all_latest_features()
+    target_date = db.latest_date("daily_data2_full")
+    chip_map = db.all_latest_chipscore(target_date)
+    feat_map = db.all_latest_features(target_date)
     print(f"      chipscore: {len(chip_map)}, features: {len(feat_map)}", flush=True)
 
     # Build candidates

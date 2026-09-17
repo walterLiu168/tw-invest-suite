@@ -1,6 +1,18 @@
 # D056 live continuation — 2026-09-18
 
-## Latest state at06:43 Asia/Taipei
+## Latest evidence at07:20 Asia/Taipei
+
+Canonical recovery session49762 exited0 after31.9min. Actual Date17 universe1958: all six current source lanes exact0 differences and DB_VERIFY expected=complete1958/missing0. Thirty price sessions contain58736 checks/revised0/mismatch0. Five chips lanes across30 sessions contain293680 checks/revised95085/mismatch0. Derived1958 rows recalculated; simulation cache invalidated. Independent read-only provider rechecks Sep15/Sep17/Aug07 pass institutional/margin/daytrade/foreign ownership exact0 differences. Original Sep15 difference baseline is preserved as canonical_source_lanes_20260915_before_recovery.json.
+
+Actual S4U metadata-backfill0 for Date17/missing0, company-refresh0;1958 current rows now have0 blank names, metadata1974. Explicit normal screener Date17/bootstrap run19 created24 picks. Actual managed S4U sync-legacy0 updatedDate17 and preserved picks. Runtime source scripts/sync_legacy_tables.py is canonical; src/_sync_legacy_tables.py is older and must not be selected from stale graph hits.
+
+Additional freshness issue: chipscore_daily wasSep16 and stock_featuresFeb26. Owned current correction requires exact screen targetDate for both enrichments; unavailable current features remain unknown. Maintenance now runs the managed four-table sync with frozen targetDate/readback1958 proof before screen. Sync refuses date shift/partial cohorts, skips expensive whole-history count summaries, retains market-screen ownership, and writes NULL for uncomputed VolumeBurst/KD flags rather than false negatives. Receipt requires matching legacy_sync proof. Maintenance budget24min; full budgets235min under4hcap. Initial183-test full suite and PS5 parse passed; final suite after unknown-flag correction running. Source/runtime deployment and corrected full nightly still required.
+
+Final184-test suite passed53.201sec; nativePS5 parse and scoped diff checks pass. Source/runtime deployment precedes corrected full nightly. Focused AI31 tests remain passed on unchanged5e535d4.
+
+UAC remains pending after two cancellations. Dual current publication/postflight and real existing Telegram message_id remain UNPROVEN. Goal incomplete; do not claim all240 tables/all years correct or all features source-complete.
+
+## Historical state at06:43 Asia/Taipei
 
 Goal remains incomplete: auto download/all reports/manual rerun/wake/verify/both publications/source push/existing Telegram chips summary. User authorizes the necessary scoped implementation, production downloads, Scheduler recovery and deliveries. Preserve unrelated user changes/music; no schema migration, strategy commissioning or broker actions.
 

@@ -16,6 +16,7 @@ D052h-fixup changes from runtime:
   - SQL column lists MATCH runtime exactly (verified against information_schema).
 """
 import sys
+import os
 import logging
 import traceback
 from datetime import datetime
@@ -81,9 +82,9 @@ INSERT INTO chipscore_daily
     CASE WHEN (f.InvestmentBuy + f.InvestmentSell) > 0
          THEN f.InvestmentBuy / (f.InvestmentBuy + f.InvestmentSell) ELSE 0 END,
     CASE WHEN f.InvestmentNet > 5000000 THEN 1 ELSE 0 END,
-    0,
+    NULL,
     CASE WHEN f.Close > f.sma_27 * 1.05 THEN 1 ELSE 0 END,
-    0,
+    NULL,
     CASE WHEN (f.ForeignBuy + f.ForeignSell) > 0
          THEN f.ForeignBuy / (f.ForeignBuy + f.ForeignSell) ELSE 0 END,
     CASE WHEN (f.ForeignBuy + f.InvestmentBuy + f.DealerBuy) > 0
@@ -109,6 +110,16 @@ def sync_one(cur, target, step_name, sql):
     return inserted
 
 
+SYNC_TABLES = ('daily_data', 'daily_data2', 'chip_daily', 'chipscore_daily')
+
+
+def verify_cohort(cur, target, expected):
+    for table in SYNC_TABLES:
+        cur.execute(f'SELECT COUNT(*) FROM {table} WHERE Date = %s', (target,))
+        if cur.fetchone()[0] != expected:
+            raise RuntimeError(f'Incomplete current sync: {table}')
+
+
 def main():
     log.info('=' * 60)
     log.info(f'sync_legacy_tables.py v={SCRIPT_VERSION} daily 23:30 cron')
@@ -128,6 +139,9 @@ def main():
             log.error('daily_data2_full is empty -> abort')
             return 1
         target = row[0]
+        requested = os.environ.get('TW_DATA_DATE')
+        if requested and str(target) != requested:
+            raise RuntimeError('Canonical date changed before derived table sync')
         log.info(f'Target date: {target}')
 
         cur.execute('SELECT COUNT(*) FROM daily_data2_full WHERE Date = %s', (target,))
@@ -165,7 +179,9 @@ def main():
             log.error(f'chipscore_daily sync failed: {e}')
             return 1
 
+        verify_cohort(cur, target, n_full)
         conn.commit()
+        print(f'SYNC_VERIFY date={target} rows={n_full} tables=4 mismatch=0', flush=True)
 
         # Step 5 SKIPPED per D052h-fixup
         if __SKIP_CLOSE_PICKS:
@@ -174,10 +190,10 @@ def main():
         # Summary
         log.info('=' * 60)
         log.info('Summary:')
-        for tbl in ['daily_data2_full', 'daily_data', 'daily_data2', 'chip_daily', 'chipscore_daily']:
-            cur.execute(f'SELECT MAX(Date), COUNT(*) FROM {tbl}')
+        for tbl in ['daily_data2_full', *SYNC_TABLES]:
+            cur.execute(f'SELECT MAX(Date), COUNT(*) FROM {tbl} WHERE Date = %s', (target,))
             r = cur.fetchone()
-            log.info(f'  {tbl:25} MAX={r[0]}, total={r[1]}')
+            log.info(f'  {tbl:25} MAX={r[0]}, target_rows={r[1]}')
 
     except Exception as e:
         log.error(f'sync_legacy_tables.py FATAL: {e}')

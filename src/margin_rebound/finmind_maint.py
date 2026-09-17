@@ -212,9 +212,26 @@ def refresh_price_inputs(target_date: str) -> int:
     return int(match[1])
 
 
+def refresh_legacy_inputs(target_date: str, expected_rows: int) -> dict:
+    """Run the managed canonical-to-legacy sync before screening current inputs."""
+    script = Path(__file__).resolve().parents[2] / 'scripts/sync_legacy_tables.py'
+    result = subprocess.run([sys.executable, '-X', 'utf8', str(script)],
+                            env={**os.environ, 'TW_DATA_DATE': target_date},
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding='utf-8', errors='replace',
+                            check=True, timeout=180)
+    print(result.stdout, end='', flush=True)
+    proof = re.search(r'SYNC_VERIFY date=' + re.escape(target_date) +
+                      r' rows=(\d+) tables=4 mismatch=0\b', result.stdout)
+    if not proof or int(proof[1]) != expected_rows:
+        raise RuntimeError('Current derived table sync did not verify this market')
+    return {'date': target_date, 'rows': expected_rows, 'tables': 4, 'mismatches': 0}
+
+
 def main():
     requested_date = os.environ.get('TW_DATA_DATE')
     price_rows = refresh_price_inputs(requested_date) if requested_date else None
+    legacy_sync = refresh_legacy_inputs(requested_date, price_rows) if requested_date else {}
     days_back = int(os.environ.get("MAINT_DAYS_BACK", "7"))
     print(f"[{datetime.now():%H:%M:%S}] FinMind {DATASET} fetcher starting (days_back={days_back})", flush=True)
     print("  Ensuring table + registry...", flush=True)
@@ -243,7 +260,7 @@ def main():
                'source_value_mismatches': 0, 'price_history_sessions': 30, 'price_history_mismatches': 0,
                'chips_history_sessions': 30, 'chips_history_mismatches': 0,
                'chips_history_datasets': ['inst','margin','daytrade','shareholding','shares'],
-               'valuation_refresh': valuation}
+               'valuation_refresh': valuation, 'legacy_sync': legacy_sync}
     ps.atomic_json(ps.RUNTIME / '_debug' / 'maintenance_fetch.json', receipt)
     print(f"  requested_date={receipt['requested_date']} latest_source_date={source_date}", flush=True)
     print(f"[{datetime.now():%H:%M:%S}] Done.", flush=True)

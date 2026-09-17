@@ -363,6 +363,10 @@ def validate_maintenance_fetch(fetch, run):
     if (fetch.get('chips_history_sessions') != 30 or fetch.get('chips_history_mismatches') != 0
             or set(fetch.get('chips_history_datasets', [])) != {'inst','margin','daytrade','shareholding','shares'}):
         raise ValueError('maintenance chips history does not certify this run')
+    synced = fetch.get('legacy_sync', {})
+    if (synced.get('date') != dd or synced.get('rows') != fetch['canonical_refresh_rows']
+            or synced.get('tables') != 4 or synced.get('mismatches') != 0):
+        raise ValueError('maintenance derived table sync does not certify this run')
     valuation = fetch.get('valuation_refresh', {})
     if valuation.get('date') != dd or valuation.get('provider_tickers', 0) < 1500 or valuation.get('mismatches') != 0:
         raise ValueError('maintenance valuation source does not certify this run')

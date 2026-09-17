@@ -23,6 +23,7 @@ class MaintenanceFetchTests(unittest.TestCase):
                  'price_history_sessions':30,'price_history_mismatches':0,
                  'chips_history_sessions':30,'chips_history_mismatches':0,
                  'chips_history_datasets':['inst','margin','daytrade','shareholding','shares'],
+                 'legacy_sync':{'date':'2026-09-16','rows':1949,'tables':4,'mismatches':0},
                  'valuation_refresh':{'date':'2026-09-16','provider_tickers':1900,'mismatches':0}}
         self.assertEqual(ps.validate_maintenance_fetch(fetch,run),'2026-09-15')
         for day in ('2026-09-14','2026-09-17'):
@@ -43,6 +44,25 @@ class MaintenanceFetchTests(unittest.TestCase):
                       {'chips_history_datasets':['inst']}):
             with self.subTest(chips=chips), self.assertRaisesRegex(ValueError,'chips history'):
                 ps.validate_maintenance_fetch({**fetch,**chips},run)
+        for synced in ({}, {'date':'2026-09-15','rows':1949,'tables':4,'mismatches':0},
+                       {'date':'2026-09-16','rows':1948,'tables':4,'mismatches':0}):
+            with self.subTest(synced=synced), self.assertRaisesRegex(ValueError,'derived table sync'):
+                ps.validate_maintenance_fetch({**fetch,'legacy_sync':synced},run)
+
+    def test_derived_sync_requires_matching_date_and_complete_committed_cohort(self):
+        for output, succeeds in (('SYNC_VERIFY date=2026-09-16 rows=1949 tables=4 mismatch=0',True),
+                                 ('SYNC_VERIFY date=2026-09-15 rows=1949 tables=4 mismatch=0',False),
+                                 ('SYNC_VERIFY date=2026-09-16 rows=1948 tables=4 mismatch=0',False),
+                                 ('done exit=0',False)):
+            with self.subTest(output=output), patch.object(maintenance.subprocess,'run',return_value=MagicMock(stdout=output)) as run, redirect_stdout(StringIO()):
+                if succeeds:
+                    receipt = maintenance.refresh_legacy_inputs('2026-09-16',1949)
+                    self.assertEqual(receipt['rows'],1949)
+                    self.assertEqual(run.call_args.kwargs['env']['TW_DATA_DATE'],'2026-09-16')
+                    self.assertEqual(run.call_args.kwargs['timeout'],180)
+                else:
+                    with self.assertRaisesRegex(RuntimeError,'derived table sync'):
+                        maintenance.refresh_legacy_inputs('2026-09-16',1949)
 
     def test_nightly_refresh_uses_normal_single_day_price_writer_without_schema_flag(self):
         output = ''.join(f'SOURCE_VERIFY dataset={name} date=2026-09-16 tickers=1949 mismatch=0\n'

@@ -324,7 +324,7 @@ if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipYfinance) {
     $stages += @{ N=1; Name='valuation'; Cmd='yfinance_daily.py'; To=55*60 }
 }
 if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipFinmind) {
-    $stages += @{ N=1; Name='finmind_maint'; Cmd=$maintScript; To=20*60 }
+    $stages += @{ N=1; Name='finmind_maint'; Cmd=$maintScript; To=24*60 }
     $stages += @{ N=1; Name='market_screen'; Cmd="market_screen_runner.py --data-date $($env:TW_DATA_DATE) --refresh-existing"; To=4*60 }
     $stages += @{ N=1; Name='finalize_inputs'; Cmd='pipeline_state.py finalize-inputs'; To=120 }
 }
