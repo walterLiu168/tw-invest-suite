@@ -30,6 +30,8 @@ REPO_SOURCE_FILES = (
     'src/concept_stocks.py', 'src/render_concepts.py', 'src/render_chips_advanced.py',
     'src/industry_zh.py', 'src/generate_og.py', 'src/chip_push.py',
 )
+REPORT_FRONTEND_FILES = ('analyze.html','readme.html','chips-history.html','monitor.html',
+                         'manifest.json','sw.js','assets/textsize.css','assets/textsize.js')
 SOURCE_FILES = (
     "run_daily.ps1", "run_stage.py", "pipeline_state.py", "render_only.py",
     "render_full_watchlist.py", "pattern_classifier.py", "build_patterns_html.py",
@@ -148,6 +150,8 @@ def source_hashes():
         result[name] = digest
     for name in REPO_SOURCE_FILES:
         result[name] = sha256(REPO / name)
+    for name in REPORT_FRONTEND_FILES:
+        result['public/' + name] = sha256(PUBLIC / name)
     return result
 
 
@@ -277,6 +281,7 @@ def validate_all_reports(receipt, run):
         'data/sectors.json','data/chips.json','data/chips-advanced.json','data/concept-stocks.json',
         'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png'}
     expected.update(f'data/chips-history/{day}.json' for day in dates)
+    expected.update(REPORT_FRONTEND_FILES)
     artifacts = receipt.get('artifacts', [])
     if len(artifacts) != len(expected) or {a['gh_path'] for a in artifacts} != expected:
         raise ValueError('All-report artifact set mismatch')
@@ -284,7 +289,7 @@ def validate_all_reports(receipt, run):
         path = (PUBLIC / item['gh_path']).resolve()
         if path != Path(item['abs_path']).resolve() or not path.is_relative_to(PUBLIC.resolve()) or sha256(path) != item['sha256']:
             raise ValueError('All-report artifact changed/unsafe')
-        if path.suffix == '.json':
+        if path.suffix == '.json' and path.name != 'manifest.json':
             value = read_json(path)
             if isinstance(value,dict):
                 expected_date = path.stem if path.parent.name == 'chips-history' else run['data_date']
@@ -353,6 +358,8 @@ def complete(stages_path):
         # Publish exactly the files the generators produced, not an older public mirror.
         pairs = [(ANALYZE / "patterns.json", "data/patterns.json"),
                  (ANALYZE / "patterns.html", "patterns.html"),
+                 (ANALYZE / "patterns.html", "analyze/patterns.html"),
+                 (ANALYZE / "patterns.json", "analyze/patterns.json"),
                  (ANALYZE / "index.html", "analyze/index.html"),
                  (PUBLIC / "watchlist.html", "watchlist.html"),
                  (PUBLIC / "data" / "watchlist-full.json", "data/watchlist-full.json")]

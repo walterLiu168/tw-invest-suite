@@ -135,10 +135,16 @@ def build_features(ohlcv, inst_rows, meta):
             vwap_buy = sum_amount / sum_shares if sum_shares > 0 else None
         else:
             vwap_buy = None
+        price_discontinuity = any(abs(new['close']/old['close']-1) > 0.35
+                                  for old,new in zip(per_day_asc,per_day_asc[1:]))
+        if price_discontinuity:
+            vwap_buy = None
         # 法人 20 日均價 (所有天 — 包含負值) → 用 close 為權重
         sum_amount_all = sum(d["three"] * d["close"] for d in per_day_asc)
         sum_shares_all = sum(d["three"] for d in per_day_asc)
         vwap_all = sum_amount_all / sum_shares_all if sum_shares_all > 0 else None
+        if price_discontinuity:
+            vwap_all = None
         # 當前收盤 (今日)
         cur_close = per_day_asc[-1]["close"] if per_day_asc else 0
         # 當前 vs 法人 20 日均價
@@ -155,12 +161,7 @@ def build_features(ohlcv, inst_rows, meta):
         # 力道標 = 今日 / 5 日均日
         today_three = per_day_asc[-1]["three"] if per_day_asc else 0
         avg_5d_daily = cum_5d / 5 if len(per_day_asc) >= 5 else (cum_5d / max(1, len(per_day_asc)))
-        if avg_5d_daily > 0:
-            force = today_three / avg_5d_daily
-        elif avg_5d_daily < 0 and today_three < 0:
-            force = abs(today_three / avg_5d_daily)
-        else:
-            force = None
+        force = today_three / abs(avg_5d_daily) if avg_5d_daily != 0 else None
         # 外資停留天數 (從最近方向改變算到今天)
         f_stay = 0
         f_stay_dir = 0
@@ -186,6 +187,7 @@ def build_features(ohlcv, inst_rows, meta):
             "industry": m.get("industry", ""),
             "industry_zh": resolve(t, m.get("industry", ""), m.get("sector", "")),
             "price": cur_close,
+            "price_discontinuity": price_discontinuity,
             "vwap_buy_20d": round(vwap_buy, 2) if vwap_buy else None,
             "vwap_all_20d": round(vwap_all, 2) if vwap_all else None,
             "vs_vwap_pct": round(pct, 2) if pct is not None else None,
@@ -193,6 +195,7 @@ def build_features(ohlcv, inst_rows, meta):
             "cum_20d_f_shares": cum_20d_f,
             "cum_20d_t_shares": cum_20d_t,
             "cum_5d_shares": cum_5d,
+            "today_three_shares": today_three,
             "force_ratio": round(force, 2) if force is not None else None,
             "f_stay_days": f_stay,
             "f_stay_dir": f_stay_dir,
@@ -225,7 +228,7 @@ def write_json(features, dates, ohlcv_map=None):
     # 多條件雷達 (P2.4 雛形)：
     radar = {
         "force_strong_buy": [f for f in features if (f.get("force_ratio") or 0) >= 2.0 and f.get("cum_5d_shares", 0) > 0],
-        "force_strong_sell": [f for f in features if (f.get("force_ratio") or 0) >= 2.0 and f.get("cum_5d_shares", 0) < 0],
+        "force_strong_sell": [f for f in features if (f.get("force_ratio") or 0) <= -2.0 and f.get("cum_5d_shares", 0) < 0],
         "below_inst_cost": [f for f in features if (f.get("vs_vwap_pct") or 0) <= -3.0],
         "above_inst_cost": [f for f in features if (f.get("vs_vwap_pct") or 0) >= 3.0],
     }

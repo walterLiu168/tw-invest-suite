@@ -99,6 +99,7 @@ def main():
             'data/sectors.json','data/chips.json','data/chips-advanced.json','data/concept-stocks.json',
             'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png']
         paths += [f'data/chips-history/{day}.json' for day in dates]
+        paths += list(ps.REPORT_FRONTEND_FILES)
         artifacts = [ps.artifact(ps.PUBLIC / relative,relative) for relative in paths]
         receipt.update(status='ok',source=inputs['source'],current_rows=inputs['current_rows'],
             metadata_tickers=len(metadata),rank_tickers=len(ranked),advanced_tickers=len(features),

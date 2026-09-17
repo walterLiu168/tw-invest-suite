@@ -54,6 +54,8 @@ def load_inputs():
     metadata = {}
     prices = {r['Ticker']:finite(r['Close']) for r in latest}
     for ticker, industry in db.all_industries().items():
+        if '\ufffd' in str(industry.get('company') or ''):
+            raise ValueError(f'Corrupt canonical company name: {ticker}; run company_refresh.py')
         yf_entry = cache.get_fresh(ticker,'yfinance') or {}
         pe_entry = cache.get_fresh(ticker,'finmind_pe') or {}
         yf, pe = yf_entry.get('data') or {}, pe_entry.get('data') or {}

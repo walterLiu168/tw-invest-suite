@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>籌碼監控 · 坦克阿卡利</title>
-<meta name="description" content="不限檔數的籌碼異動監控 — 土洋同買/對作即時徽章 + 推播">
+<meta name="description" content="自選股每日籌碼監控、土洋同買與對作徽章；全市場摘要每日傳送 Telegram">
 <meta name="theme-color" content="#0a0e1a">
 <meta property="og:title" content="籌碼監控 · 坦克阿卡利">
 <meta property="og:image" content="https://walterliu168.github.io/tw-invest-suite/data/og.png">
@@ -107,9 +107,9 @@ footer a { color: var(--acc); }
 </nav><div class="persona-row">
   <div class="persona-row-inner">
     <button class="persona-card" data-persona="streak3"><div class="icon">⚔️</div><div class="name">法人連買</div><div class="desc">連買 3 天+</div></button>
-    <button class="persona-card" data-persona="same_buy"><div class="icon">🔥</div><div class="name">土洋同買</div><div class="desc">3 法人齊買</div></button>
+    <button class="persona-card" data-persona="same_buy"><div class="icon">🔥</div><div class="name">土洋同買</div><div class="desc">外資投信同買</div></button>
     <button class="persona-card" data-persona="f_5d_1y"><div class="icon">💵</div><div class="name">外資大買</div><div class="desc">5 日 ≥ 1 億</div></button>
-    <button class="persona-card" data-persona="force_high"><div class="icon">⚡</div><div class="name">量能爆發</div><div class="desc">力道 ≥ 1.5×</div></button>
+    <button class="persona-card" data-persona="force_high"><div class="icon">⚡</div><div class="name">法人力道</div><div class="desc">力道 ≥ 1.5×</div></button>
     <button class="persona-card" data-persona="f_stay_long"><div class="icon">🚀</div><div class="name">外資停留</div><div class="desc">停留 5 天+</div></button>
     <button class="persona-card" data-persona="same_sell"><div class="icon">📉</div><div class="name">空方避雷</div><div class="desc">同賣 + 連賣</div></button>
     <button class="persona-card" data-persona="value"><div class="icon">💎</div><div class="name">金融存股</div><div class="desc">金融/食品 + 連買</div></button>
@@ -130,7 +130,8 @@ footer a { color: var(--acc); }
 
 <div class="hdr">
   <h1>📲 籌碼監控</h1>
-  <p class="sub">不限檔數的籌碼異動監控 — 土洋同買/對作即時徽章 + 推播</p>
+  <p class="sub">依資料日觀察土洋同買與對作。清單保存在此瀏覽器；全市場籌碼摘要由每日流程傳送。</p>
+  <p id="report-date" class="sub">資料日期：載入中</p>
 </div>
 
 <div class="toolbar">
@@ -181,13 +182,18 @@ var META = [];        // tickers.json
 
 // 載入
 Promise.all([
-  fetch('data/chips.json').then(function (r) { return r.ok ? r.json() : null; }),
-  fetch('data/tickers.json').then(function (r) { return r.ok ? r.json() : []; })
+  fetch('data/chips.json',{cache:'no-store'}).then(function (r) { return r.ok ? r.json() : null; }),
+  fetch('data/tickers.json',{cache:'no-store'}).then(function (r) { return r.ok ? r.json() : []; })
 ]).then(function (results) {
   CHIPS = results[0];
   META = results[1];
+  if(!CHIPS || !META.length || META.some(function(m){return m.date !== CHIPS.date;})) throw new Error('Report date/metadata mismatch');
+  document.getElementById('report-date').textContent = '資料日期：' + CHIPS.date;
   renderAlerts();
   renderGrid();
+}).catch(function(){
+  CHIPS = null;
+  document.getElementById('report-date').textContent = '資料無法載入或日期不一致，請稍後重試';
 });
 
 function loadTickers() {
@@ -237,13 +243,13 @@ function getMeta(t) {
 }
 function findChip(t) {
   if (!CHIPS) return null;
-  var allBuy = (CHIPS.tabs.all_buy || []).concat(CHIPS.tabs.all_sell || []);
+  var allBuy = (CHIPS.features || (CHIPS.tabs.all_buy || []).concat(CHIPS.tabs.all_sell || []));
   return allBuy.find(function (x) { return x.ticker === t; });
 }
 // 對作 = 一邊買一邊賣
 function getAbnormal(t) {
   if (!CHIPS) return null;
-  var f = (CHIPS.tabs.all_buy.concat(CHIPS.tabs.all_sell)).find(function (x) { return x.ticker === t; });
+  var f = (CHIPS.features || CHIPS.tabs.all_buy.concat(CHIPS.tabs.all_sell)).find(function (x) { return x.ticker === t; });
   if (!f) return null;
   if (f.same_side === 'buy') return '土洋同買';
   if (f.same_side === 'sell') return '土洋同賣';
@@ -263,7 +269,7 @@ function renderAlerts() {
     });
   });
   // 對作
-  (CHIPS.tabs.all_buy.concat(CHIPS.tabs.all_sell)).forEach(function (p) {
+  (CHIPS.features || CHIPS.tabs.all_buy.concat(CHIPS.tabs.all_sell)).forEach(function (p) {
     if (p.same_side) return;
     if (p.f_5d_shares > 0 && p.t_5d_shares < 0 && Math.abs(p.f_5d_shares) > 1e6 && Math.abs(p.t_5d_shares) > 1e6)
       both.push({ t: p.ticker, n: p.name, badge: 'diverge', text: '土洋對作' });
@@ -308,8 +314,8 @@ function renderGrid() {
         if (n == null) return '—';
         var lots = n / 1000;
         var sign = n > 0 ? '+' : (n < 0 ? '−' : '');
-        if (Math.abs(lots) >= 1000) return sign + (lots / 1000).toFixed(1) + 'k張';
-        return sign + Math.round(lots) + '張';
+        if (Math.abs(lots) >= 1000) return sign + (Math.abs(lots) / 1000).toFixed(1) + 'k張';
+        return sign + Math.abs(lots).toFixed(3).replace(/\.?0+$/,'') + '張';
       }
       function cls(n) { return n >= 0 ? 'v-pos' : 'v-neg'; }
       chipsHtml =
@@ -350,7 +356,7 @@ var PERSONAS_MAP = {
   streak3: { name: '法人連買', presets: ['streak3'] },
   same_buy: { name: '土洋同買', presets: ['same_buy'] },
   f_5d_1y: { name: '外資大買', presets: ['f_5d_1y'] },
-  force_high: { name: '量能爆發', presets: ['force_high'] },
+  force_high: { name: '法人力道', presets: ['force_high'] },
   f_stay_long: { name: '外資停留', presets: ['streak3', 'f_stay_long'] },
   same_sell: { name: '空方避雷', presets: ['same_sell', 'streak3_sell'] },
   value: { name: '金融存股', presets: ['streak3'] },

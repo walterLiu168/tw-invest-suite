@@ -7,10 +7,10 @@ Complete automatic download, every report, daily verification, both site publica
 ## Current status: fresh full acceptance still required
 
 - Morning UUID `18296982df5841218f3ec1bed1b118b9` was intentionally stopped before certification after discovering a fabricated ROE denominator. State is failed; do not publish/reuse it. No owner/renderer remains.
-- Source main pushed through `ac8a32b` before this all-report change. This change adds the default required all_reports stage, D056-3 certificate/42 artifact receipt, all advanced remote SHA checks and post-verification Telegram delivery.
-- All-report local pilot generated and verified 42 artifacts from Sep16 canonical data: 1,949 latest rows, 30 history sessions, 1,974 metadata tickers, 1,949 complete institutional calendars and 1,799 complete positive-price 20-session samples. Pilot is not a nightly certificate or publication; its OG input was the previously generated watchlist.
+- Source main pushed through `123f2af`; final frontend and metadata corrections follow. This change adds the default required all_reports stage, D056-3 certificate/50 artifact receipt, all advanced remote SHA checks and post-verification Telegram delivery.
+- All-report local pilot generated and verified 50 artifacts from Sep16 canonical data: 1,949 latest rows, 30 history sessions, 1,974 metadata tickers, 1,949 complete institutional calendars and 1,799 complete positive-price 20-session samples. Pilot is not a nightly certificate or publication; its OG input was the previously generated watchlist.
 - Existing Telegram credentials were confirmed available without printing secrets. No actual send before the formal two-site certificate/publication gate.
-- Managed provenance now covers 43 runtime scripts plus14 repository modules (57 hashes). Commit before runtime sync to account for Git byte normalization; refuse sync while a current owner is live.
+- Managed provenance now covers 43 runtime scripts plus14 repository modules and8 static report frontend files (65 hashes). Commit before runtime sync to account for Git byte normalization; refuse sync while a current owner is live.
 
 ## Files and verification
 
@@ -18,17 +18,21 @@ Primary C:\Users\icemo\Projects\tw-invest-suite; runtime C:\Users\icemo\.claude\
 
 Source corrections through ac8a32b: dated financial net income/ROE, missing-data-safe institutional/margin/Minerva/consensus, actual 40/25/20/10/5 weights and calendar returns, honest historical observations, cash/risk-bounded ATR sizing, root/directory pattern routes. Existing 18 tab IDs remain.
 
-Run tests before deployment; inspect scripts/_debug/all_reports_tests_20260917.log. Observer scripts/_debug/observe_acceptance.py reads actual current UUID/owner/heartbeat/start-day log. Final acceptance requires all required stages, full exact 1,974 universe, exact committed 24 picks, 42 advanced artifacts, both remote SHA receipts, canonical final postflight0 and Telegram message ID/matching chat receipt.
+Run tests before deployment; inspect scripts/_debug/all_reports_tests_20260917.log. Observer scripts/_debug/observe_acceptance.py reads actual current UUID/owner/heartbeat/start-day log. Final acceptance requires all required stages, full exact 1,974 universe, exact committed 24 picks, 50 advanced artifacts, both remote SHA receipts, canonical final postflight0 and Telegram message ID/matching chat receipt.
 
 ## Scheduler / service
 
 All23 enabled analytics/data tasks use S4U/WakeToRun/StartWhenAvailable. Actual publish action is primary scripts/publish_verified_sites.ps1 (legitimate UAC update succeeded). Nightly2225 cap4h, publish0030 waits130min then canonical → Groove → Telegram. Disabled aliases stay disabled. GrooveLab Site Recovery supervisor has no time cap and keeps origin/tunnel healthy.
 
-Power wake timers enabled on AC, disabled on DC; lastwake empty. Physical sleep/reboot wake not proven. RSS Sep17 09:00 actual S4U task0, verified81queries/1090 fetched/55 raw/5 derived/errors0. Sep16 daily rows1949, screen run17/picks24, quarantine7768 retained13/open0. Refresh before final claims.
+Power wake timers enabled on AC and DC; OpenAlice wake timer armed; lastwake empty. Physical sleep/reboot wake not proven. RSS Sep17 09:00 actual S4U task0, verified81queries/1090 fetched/55 raw/5 derived/errors0. Sep16 daily rows1949, screen run17/picks24, quarantine7768 retained13/open0. Refresh before final claims.
 
 ## Remaining
 
-1. Finish/run meaningful tests and native PS5 syntax; scoped commit/push; synchronize57 managed hashes.
+1. Finish/run meaningful tests and native PS5 syntax; scoped commit/push; synchronize65 managed hashes.
 2. Start actual default S4U daily-report and actual S4U dual publisher; freeze managed source and artifacts until certification/publication.
 3. Observe required stages, both remote SHA results, final postflight and actual authorized Telegram send. Never treat timeout/exit0 alone as delivery.
 4. Verify live UI/report dates/protected Groove hashes; update this handoff with current UUID/results.
+
+Sep17 browser pilot caught double negative formatting, stale source footers, incomplete frontend deployment and cache-first daily JSON. These were corrected before certification. Static report routes/assets/PWA are now included in50 artifacts and65 provenance hashes; both root and directory pattern aliases are certified. A price discontinuity over35% disables the unadjusted closing-price proxy rather than producing a spurious discount. AC/DC wake timers are enabled and an OpenAlice wake timer is armed; physical sleep wake remains untested. Daily06:30 task heartbeat automation-2 is active; local app monitoring requires the app running.
+
+Sep17 10:07 preflight: stopped UUID `0fcc50e4b1884cf19583d9eae9c893c9` before certification for frontend correctness; no live writer remains. Repaired exactly13 U+FFFD-corrupt canonical company names from FinMind TaiwanStockInfo source date2026-09-17, with original values backed up in ignored company_name_repair JSON before transaction. Updated65 recent daily company fields; no schema changes or industry classification changes. Daily company_refresh now checks/repairs this condition; reports reject residual corrupted metadata. Invalid date strings and historical emerging listings cannot become repair sources. automation-2 daily06:30 prompt updated to65 sources/50 artifacts.

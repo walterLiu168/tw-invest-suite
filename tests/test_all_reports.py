@@ -12,12 +12,58 @@ sys.path[:0] = [str(ROOT/'src'),str(ROOT/'scripts')]
 import report_inputs as inputs
 import chip_rank as rank
 import chip_advanced as advanced
+import render_chips_advanced as advanced_html
 import chip_push as push
 import pipeline_state as ps
 import publish_ghpages as publisher
+import company_refresh as company
 
 
 class AllReportsTests(unittest.TestCase):
+    def test_name_repair_ignores_invalid_dates_and_old_emerging_names(self):
+        today = date.today().isoformat()
+        rows = [{'stock_id':'2353','stock_name':'wrong','type':'twse','date':'None'},
+                {'stock_id':'2353','stock_name':'old','type':'emerging','date':today},
+                {'stock_id':'2353','stock_name':'宏碁','type':'twse','date':today},
+                {'stock_id':'2353','stock_name':'宏碁','type':'twse','date':today}]
+        repairs = company.name_repairs({'2353':'宏\ufffd','2330':'台積電'},rows)
+        self.assertEqual(repairs,[{'ticker':'2353','before':'宏\ufffd','after':'宏碁','source_date':today}])
+        with self.assertRaisesRegex(ValueError,'ambiguous'):
+            company.name_repairs({'2353':'宏\ufffd'},rows+[dict(rows[-1],stock_name='different')])
+        with self.assertRaisesRegex(ValueError,'stale'):
+            company.name_repairs({'2353':'宏\ufffd'},[dict(rows[-1],date=(date.today()-timedelta(days=8)).isoformat())])
+
+    def test_negative_lot_format_has_one_sign(self):
+        self.assertEqual(advanced_html.fmt_shares(-15000000),'−1.5萬張')
+
+    def test_price_discontinuity_does_not_create_proxy_discount(self):
+        dates = [(date(2026,9,16)-timedelta(days=i)).isoformat() for i in range(20)]
+        prices = {day:{'2330':100 if i==0 else 300} for i,day in enumerate(dates)}
+        rows = [{'stock_id':'2330','date':day,'name':'Dealer','net':100} for day in dates]
+        features,used = advanced.build_features(prices,rows,{'2330':{'name':'台積電','industry':'半導體'}})
+        self.assertTrue(features[0]['price_discontinuity'])
+        self.assertIsNone(features[0]['vs_vwap_pct'])
+        self.assertIsNone(features[0]['vwap_buy_20d'])
+
+    def test_selling_force_retains_direction_and_card_uses_today_not_five_days(self):
+        dates = [(date(2026,9,16)-timedelta(days=i)).isoformat() for i in range(20)]
+        prices = {day:{'2330':100} for day in dates}
+        rows = [{'stock_id':'2330','date':day,'name':'Dealer','net':-100} for day in dates]
+        features,used = advanced.build_features(prices,rows,{'2330':{'name':'台積電','industry':'半導體'}})
+        self.assertEqual(features[0]['force_ratio'],-1)
+        self.assertEqual(features[0]['today_three_shares'],-100)
+        self.assertEqual(features[0]['cum_5d_shares'],-500)
+        body = advanced_html.card(features[0],'force')
+        self.assertIn('今日 3 法人',body)
+        self.assertNotIn('−0張',body)
+
+    def test_daily_json_worker_uses_network_and_preserves_unrelated_caches(self):
+        worker = (ROOT/'public/sw.js').read_text(encoding='utf-8')
+        self.assertIn("path.endsWith('.json')",worker)
+        self.assertIn("fetch(req,{cache:'no-store'})",worker)
+        self.assertIn("k.startsWith('tw-invest-')",worker)
+        self.assertIn('GrooveLab music app',worker)
+
     def test_advanced_receipt_rejects_wrong_run_missing_artifacts_and_short_history(self):
         run = {'nightly_id':'current','data_date':'2026-09-16','render_tickers':['2330']}
         days = [(date(2026,9,16)-timedelta(days=i)).isoformat() for i in range(30)]

@@ -20,9 +20,9 @@ def fmt_shares(n):
     if n is None: return "—"
     lots = n / 1000.0
     sign = "+" if n > 0 else ("−" if n < 0 else "")
-    if abs(lots) >= 10000: return f"{sign}{lots/10000:.1f}萬張"
-    if abs(lots) >= 1000: return f"{sign}{lots/1000:.1f}k張"
-    return f"{sign}{int(lots)}張"
+    if abs(lots) >= 10000: return f"{sign}{abs(lots)/10000:.1f}萬張"
+    if abs(lots) >= 1000: return f"{sign}{abs(lots)/1000:.1f}k張"
+    return f"{sign}{abs(lots):g}張"
 
 
 def fmt_pct(n, d=2):
@@ -45,8 +45,8 @@ def card(p, mode):
         force = p.get("force_ratio") or 0
         fdir = "v-pos" if (p.get("cum_5d_shares") or 0) > 0 else "v-neg"
         chips = f'''
-            <div class="chip"><div class="k">力道 (今/5d 均)</div><div class="v {fdir}">{force:.1f} 倍</div></div>
-            <div class="chip"><div class="k">今日 3 法人</div><div class="v {fdir}">{fmt_shares(p.get('cum_5d_shares'))}</div></div>
+            <div class="chip"><div class="k">力道（今/5d 均絕對值）</div><div class="v {fdir}">{force:.1f} 倍</div></div>
+            <div class="chip"><div class="k">今日 3 法人</div><div class="v {fdir}">{fmt_shares(p.get('today_three_shares'))}</div></div>
             <div class="chip"><div class="k">20 日累計</div><div class="v {('v-pos' if (p.get('cum_20d_shares') or 0) > 0 else 'v-neg')}">{fmt_shares(p.get('cum_20d_shares'))}</div></div>
             <div class="chip"><div class="k">現價</div><div class="v">{p.get('price', 0):.2f}</div></div>'''
     else:  # radar — show everything
@@ -86,7 +86,7 @@ def main():
     vwap_below = sorted([f for f in feats if f.get("vs_vwap_pct") is not None and f["vs_vwap_pct"] <= -3], key=lambda x: x["vs_vwap_pct"])
     vwap_above = sorted([f for f in feats if f.get("vs_vwap_pct") is not None and f["vs_vwap_pct"] >= 3], key=lambda x: -x["vs_vwap_pct"])
     force_buy = sorted([x for x in feats if (x.get("force_ratio") or 0) >= 2 and x.get("cum_5d_shares", 0) > 0], key=lambda x: -(x.get("force_ratio") or 0))
-    force_sell = sorted([x for x in feats if (x.get("force_ratio") or 0) >= 2 and x.get("cum_5d_shares", 0) < 0], key=lambda x: -(x.get("force_ratio") or 0))
+    force_sell = sorted([x for x in feats if (x.get("force_ratio") or 0) <= -2 and x.get("cum_5d_shares", 0) < 0], key=lambda x: x.get("force_ratio") or 0)
     radar_buy = radar.get("force_strong_buy", [])[:60]
     radar_sell = radar.get("force_strong_sell", [])[:60]
 
@@ -104,7 +104,7 @@ def main():
       <div class="grid">{render_grid(force_buy, "force")}</div>
     </div>
     <div class="tab-content" data-bucket="force-sell">
-      <h2 class="bucket-title">力道強 · 賣盤 <small>今日 3 法人 ≥ 5 日均日 2 倍 且 5 日合計賣超</small></h2>
+      <h2 class="bucket-title">力道強 · 賣盤 <small>今日淨賣超絕對值 ≥ 5 日均日淨賣超絕對值 2 倍 且 5 日合計賣超</small></h2>
       <div class="grid">{render_grid(force_sell, "force")}</div>
     </div>
     <div class="tab-content" data-bucket="radar-buy">
@@ -235,7 +235,8 @@ footer a {{ color: var(--acc); }}
 </main>
 
 <footer>
-  籌碼資料源：FinMind TaiwanStockInstitutionalInvestorsBuySell + TaiwanStockPrice（每日全市場下載）<br>
+  籌碼資料源：{data.get('source','FinMind TaiwanStockInstitutionalInvestorsBuySell + TaiwanStockPrice')}<br>
+  僅納入完整20交易日正值收盤資料；代理價未調整公司行動，不是成交VWAP或持倉成本。單日價格跳動超過35%時不計代理價。<br>
   報告為研究參考，非投資建議 · 過往績效不保證未來表現<br>
   <a href="https://github.com/walterLiu168/tw-invest-suite">📦 Source</a>
 </footer>
@@ -252,7 +253,7 @@ document.querySelectorAll('.tab').forEach(function (b) {{
 }});
 
 // 走勢圖：從 chips-advanced.json 載入 chart_data，渲染 Chart.js 線圖
-fetch('data/chips-advanced.json').then(function (r) {{ return r.ok ? r.json() : null; }})
+fetch('data/chips-advanced.json', {{cache:'no-store'}}).then(function (r) {{ return r.ok ? r.json() : null; }})
   .then(function (j) {{
     if (!j) return;
     var data = j.chart_data || {{}};
@@ -266,7 +267,7 @@ fetch('data/chips-advanced.json').then(function (r) {{ return r.ok ? r.json() : 
       var c = data[t];
       html += '<div class="chart-card">' +
         '<div class="chart-head"><span class="ticker">' + t + '</span><span class="name">' + (c.name || '') + '</span>' +
-        '<span class="chart-stat">收 ' + (c.price_now || 0).toFixed(1) + ' / 代理價 ' + (c.vwap || 0).toFixed(1) + '</span></div>' +
+        '<span class="chart-stat">收 ' + (c.price_now == null ? '—' : c.price_now.toFixed(1)) + ' / 代理價 ' + (c.vwap == null ? '—' : c.vwap.toFixed(1)) + '</span></div>' +
         '<canvas id="cv-' + t + '" width="380" height="120"></canvas></div>';
     }});
     document.getElementById('chart-grid').innerHTML = html;

@@ -23,11 +23,11 @@ def fmt_shares(n):
     if n > 0:
         if a >= 10000: return f"+{a/10000:.1f}萬張"
         if a >= 1000:  return f"+{a/1000:.1f}k張"
-        return f"+{int(a)}張"
+        return f"+{a:g}張"
     if n < 0:
         if a >= 10000: return f"\u2212{a/10000:.1f}萬張"
         if a >= 1000:  return f"\u2212{a/1000:.1f}k張"
-        return f"\u2212{int(a)}張"
+        return f"\u2212{a:g}張"
     return "0張"
 
 

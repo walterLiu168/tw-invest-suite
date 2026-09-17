@@ -334,11 +334,11 @@ def fmt_shares(n):
     if n > 0:
         if a >= 10000: return f"+{a/10000:.1f}萬張"
         if a >= 1000:  return f"+{a/1000:.1f}k張"
-        return f"+{int(a)}張"
+        return f"+{a:g}張"
     if n < 0:
         if a >= 10000: return f"−{a/10000:.1f}萬張"
         if a >= 1000:  return f"−{a/1000:.1f}k張"
-        return f"−{int(a)}張"
+        return f"−{a:g}張"
     return "0張"
 
 
@@ -649,7 +649,7 @@ footer a {{ color: var(--acc); }}
 </main>
 
 <footer>
-  籌碼資料源：FinMind TaiwanStockInstitutionalInvestorsBuySell（每日全市場下載）<br>
+  籌碼資料源：{data.get('source','FinMind TaiwanStockInstitutionalInvestorsBuySell')}；僅納入完整20交易日法人資料。金額為淨股數乘當日收盤價估算，股數未調整公司行動。<br>
   報告為研究參考，非投資建議 · 過往績效不保證未來表現<br>
   <a href="https://github.com/walterLiu168/tw-invest-suite">📦 Source</a>
 </footer>

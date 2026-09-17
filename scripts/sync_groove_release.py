@@ -52,7 +52,7 @@ def deploy(root, manifest):
             os.replace(temp, dest)
         finally:
             temp.unlink(missing_ok=True)
-    wanted = {"watchlist.html", "patterns.html", "analyze/index.html", "data/patterns.json", "data/watchlist-full.json", "data/dashboard.md", f"data/daily_summary_{manifest['data_date']}.md", f"data/publish_manifest_{manifest['data_date']}.json"}
+    wanted = {"watchlist.html", "patterns.html", "analyze/index.html", "analyze/patterns.html", "analyze/patterns.json", "data/patterns.json", "data/watchlist-full.json", "data/dashboard.md", f"data/daily_summary_{manifest['data_date']}.md", f"data/publish_manifest_{manifest['data_date']}.json"}
     wanted.update(f"analyze/{pick['ticker']}.html" for pick in manifest["tickers"])
     wanted.update(a['gh_path'] for a in manifest['artifacts'] if not a['gh_path'].startswith('analyze/'))
     verified = verify_paths(root, wanted, "https://groovelab.dev")

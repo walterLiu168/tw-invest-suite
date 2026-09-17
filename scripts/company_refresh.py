@@ -16,12 +16,66 @@ Usage:
 import argparse
 import sys
 import time
+import json
+from pathlib import Path
 from datetime import date, timedelta
 
 import pymysql
 
 DB = dict(host="localhost", user="root", password="1234", database="tw_elec",
           connect_timeout=10, charset="utf8mb4")
+
+
+def name_repairs(current, rows):
+    """Only repair replacement-character names from a fresh, unique listed name."""
+    valid = []
+    for row in rows:
+        try:
+            source_date = date.fromisoformat(str(row.get('date')))
+        except ValueError:
+            continue
+        if source_date <= date.today():
+            valid.append((source_date, row))
+    if not valid:
+        raise ValueError('No dated company-name source')
+    latest = max(day for day, _ in valid)
+    if (date.today() - latest).days > 7:
+        raise ValueError('Company-name source is stale')
+    repairs = []
+    for ticker, old in sorted(current.items()):
+        if '\ufffd' not in (old or ''):
+            continue
+        names = {str(r.get('stock_name') or '').strip() for day, r in valid
+                 if day == latest and r.get('stock_id') == ticker
+                 and r.get('type') in ('twse', 'tpex')}
+        if len(names) != 1 or not next(iter(names)) or '\ufffd' in next(iter(names)):
+            raise ValueError(f'Company-name source unavailable/ambiguous: {ticker}')
+        repairs.append({'ticker':ticker,'before':old,'after':next(iter(names)),
+                        'source_date':latest.isoformat()})
+    return repairs
+
+
+def repair_names(cur, dry_run=False, rows=None):
+    cur.execute('SELECT ticker, company FROM industry_type')
+    current = dict(cur.fetchall())
+    if not any('\ufffd' in (name or '') for name in current.values()):
+        return []
+    if rows is None:
+        from metadata_backfill import fetch_finmind
+        rows = fetch_finmind()
+    repairs = name_repairs(current, rows)
+    if not dry_run:
+        # Persist original values before any mutation; no schema changes.
+        audit = Path(__file__).parent / '_debug' / ('company_name_repair_' + str(time.time_ns()) + '.json')
+        audit.parent.mkdir(exist_ok=True)
+        audit.write_text(json.dumps({'source':'FinMind TaiwanStockInfo','repairs':repairs},
+                                   ensure_ascii=False,indent=2),encoding='utf-8')
+        for item in repairs:
+            cur.execute('UPDATE industry_type SET company=%s WHERE ticker=%s AND company=%s',
+                        (item['after'],item['ticker'],item['before']))
+            if cur.rowcount != 1:
+                raise ValueError('Company-name source changed during repair')
+    return repairs
 
 
 def main():
@@ -51,6 +105,14 @@ def main():
 
     conn = pymysql.connect(**DB)
     cur = conn.cursor()
+    try:
+        repairs = repair_names(cur, args.dry_run)
+    except Exception as exc:
+        conn.rollback()
+        conn.close()
+        print(f'[company-refresh] company-name repair failed: {type(exc).__name__}',file=sys.stderr)
+        return 1
+    print(f'[company-refresh] canonical encoding repairs: {len(repairs)}')
 
     # Build WHERE clause for date filter
     if args.date:
@@ -94,6 +156,7 @@ def main():
         return 0
 
     if would_update == 0:
+        conn.commit()
         print("[company-refresh] nothing to do")
         conn.close()
         return 0

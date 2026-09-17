@@ -237,7 +237,7 @@ class PublicationTests(unittest.TestCase):
             root = Path(folder)
             served, staged = root / "served", root / "staged"
             manifest = {"nightly_id": "fixture", "data_date": "2026-09-15", "artifacts": [], "tickers": [{"ticker": "2330"}, {"ticker": "2317"}]}
-            paths = ["watchlist.html", "patterns.html", "data/patterns.json", "data/watchlist-full.json", "data/publish_manifest_2026-09-15.json", "analyze/2330.html", "analyze/2317.html"]
+            paths = ["watchlist.html", "patterns.html", "analyze/patterns.html", "analyze/patterns.json", "data/patterns.json", "data/watchlist-full.json", "data/publish_manifest_2026-09-15.json", "analyze/2330.html", "analyze/2317.html"]
             for base in (served, staged):
                 for relative in paths:
                     f = base / relative

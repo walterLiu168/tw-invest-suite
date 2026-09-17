@@ -72,7 +72,7 @@ def prepare_site(marker):
 
 
 def remote_verify(root, manifest):
-    wanted = {"watchlist.html", "patterns.html", "data/patterns.json", "data/watchlist-full.json"}
+    wanted = {"watchlist.html", "patterns.html", "analyze/patterns.html", "analyze/patterns.json", "data/patterns.json", "data/watchlist-full.json"}
     wanted.update(f"analyze/{p['ticker']}.html" for p in manifest["tickers"])
     wanted.update(a['gh_path'] for a in manifest['artifacts'] if not a['gh_path'].startswith('analyze/'))
     wanted.add(f"data/publish_manifest_{manifest['data_date']}.json")

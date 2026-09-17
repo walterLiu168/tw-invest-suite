@@ -57,7 +57,7 @@ The default worst-case stage budget is 230 minutes. Configurations exceeding 235
 5. Patterns for this nightly and data date, and watchlist HTML containing the exact committed pick identities.
 6. Runtime/repo source hashes unchanged during execution.
 7. All published artifacts have recorded SHA-256 values.
-8. The all-report receipt matches UUID/date, the metadata universe, canonical current rows, 30 history dates and the exact 42 advanced artifacts.
+8. The all-report receipt matches UUID/date, the metadata universe, canonical current rows, 30 history dates and the exact 50 advanced artifacts.
 
 It atomically writes `last_completed.json` (version `D056-3`) only after these checks. Failed or interrupted runs cannot reuse a previous marker.
 
@@ -77,7 +77,7 @@ The same job runs final postflight and publishes the morning dashboard and daily
 
 Walter authorized source pushes, publication and necessary Scheduler updates on 2026-09-16, and authorized the final UAC retry with Sep17 `continue`. Current deployment evidence and remaining gates are recorded in `docs/chatgpt_debug/RESP-2026-09-16-deployment-acceptance.md`. The installed `publish_verified_sites.ps1` verifies canonical publication and postflight before `sync_groove_release.py` copies certified stock paths and verifies Groove remote hashes. It preserves the music application's root index and configuration. Sep17 legitimate UAC deployment returned 0; the live Scheduler action points to this wrapper with S4U and wake enabled. Actual end-to-end publication still requires a fresh certified full run.
 
-Managed provenance covers 43 runtime scripts and 14 repository report/maintenance modules. The render universe is frozen at begin and compared with both the current metadata universe and exact artifact identities at completion. Native stage waits use fresh process lookup and creation identity; ordinary logging writes to the file before optional verbose output.
+Managed provenance covers 43 runtime scripts, 14 repository report/maintenance modules and8 static report frontend files. The render universe is frozen at begin and compared with both the current metadata universe and exact artifact identities at completion. Native stage waits use fresh process lookup and creation identity; ordinary logging writes to the file before optional verbose output.
 
 Cross-logon S4U monitoring falls back to bounded CIM when OpenProcess is denied. It compares process creation identity and rejects PID reuse; CIM errors remain unknown. Each stage wrapper also monitors its exact parent and kills its child tree within its heartbeat interval if Scheduler stops that parent, preventing orphan writers.
 
@@ -133,3 +133,5 @@ The required `src/all_reports.py` stage reads one canonical `daily_data2_full` s
 Both sites verify all advanced HTML, JSON, history, OG and dated market reports by SHA. The publisher then invokes `src/chip_push.py`, loading the existing backend AI-Telegram shared/local/environment config. User explicitly authorized the existing bot/chat send on Sep17. A delivery ledger keyed by data date and chat hash prevents duplicate successful daily sends. API `ok`, a message ID and matching response chat are required. Missing credentials fail rather than silently skip. An uncertain response blocks automatic re-send and requires receipt review, because Telegram does not provide an idempotency key.
 
 Physical wake from sleep/reboot remains distinct from enabled WakeToRun/S4U settings; acceptance must state which evidence was actually obtained.
+
+Sep17 browser pilot caught double negative formatting, stale source footers, incomplete frontend deployment and cache-first daily JSON. These were corrected before certification. Static report routes/assets/PWA are now included in50 artifacts and65 provenance hashes; both root and directory pattern aliases are certified. A price discontinuity over35% disables the unadjusted closing-price proxy rather than producing a spurious discount. AC/DC wake timers are enabled and an OpenAlice wake timer is armed; physical sleep wake remains untested. Daily06:30 task heartbeat automation-2 is active; local app monitoring requires the app running.

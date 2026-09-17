@@ -448,7 +448,7 @@ footer a {{ color: var(--acc); }}
 </div>
 
 <footer>
-  板塊輪動資料源：yfinance（產業分類）＋ FinMind（月營收、PE、法人買賣超）<br>
+  板塊輪動資料源：canonical MySQL industry_type / daily_data2_full；月營收、PE、市值使用有效快取，缺值顯示—，市值僅加總已知樣本。<br>
   報告為研究參考，非投資建議 · 過往績效不保證未來表現<br>
   <a href="https://github.com/walterLiu168/tw-invest-suite">📦 Source</a>
 </footer>
