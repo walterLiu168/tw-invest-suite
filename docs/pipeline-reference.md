@@ -1,6 +1,6 @@
-# Daily pipeline reference — D056-2 hardening
+# Daily pipeline reference — D056-3 all reports
 
-Updated: 2026-09-16. Runtime and repository copies of scheduled files must have identical SHA-256.
+Updated: 2026-09-17. Runtime and repository copies of scheduled files must have identical SHA-256.
 
 ## Source boundaries
 
@@ -103,7 +103,20 @@ Margin maintenance requests use the frozen nightly date. The dated fetch receipt
 - `_debug/stage_logs/*_<nightly_id>_stage*.heartbeat.json`: active stage deadlines and exit evidence; unrelated old attempts are ignored.
 - `public/data/dashboard.md`: current operational status; no green without this nightly's certified completion and remote publication evidence.
 
-`chips`, `sectors` and `concepts` are opt-in/manual pages. Their HTTP availability is not evidence of daily freshness.
+`chips`, `sectors` and `concepts` run daily in the required `all_reports` stage. Their HTTP availability alone is not evidence of daily freshness; require the matching certified date, UUID and artifact hashes.
+
+## Manual trigger
+
+Use the installed tasks to keep the same S4U identity and default actions as the daily schedule:
+
+```powershell
+Start-ScheduledTask -TaskName 'tw-invest-suite-daily-report'
+Start-ScheduledTask -TaskName 'tw-invest-suite-publish'
+```
+
+The publisher waits for the report run, then verifies GitHub Pages, Groove and the existing Telegram delivery in sequence. These commands start tasks asynchronously; acceptance still requires the same dated receipts and the final task result. This pair regenerates reports from the latest landed DB session; it does not force all independent data downloaders to run immediately. For rendering without maintenance, the existing `run_daily.ps1 -Mode render` remains available; `-Mode publish` uses the same publisher gate.
+
+As of Sep17 14:33 Taipei, canonical publication has passed but Groove transport acceptance and Telegram delivery are unfinished. The stock-only response-header fix still needs the canceled Windows UAC origin reload to be explicitly reauthorized. The additional Sep16 DB/source volume discrepancies are recorded in `docs/chatgpt_debug/AUDIT-2026-09-17-DB-manual-trigger.md`; do not describe all DB data as correct before resolving them.
 
 ## Verification
 
