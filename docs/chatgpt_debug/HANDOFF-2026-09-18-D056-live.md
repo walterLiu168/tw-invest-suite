@@ -1,5 +1,17 @@
 # D056 live continuation — 2026-09-18
 
+## Latest continuation at09:16 Asia/Taipei
+
+Actual full nightly fea0fb95673c496e8827c5ba2b3f60cf completed at08:37 with matching68 source hashes and2035 certified artifacts, Date17/run19/24 picks,1974 rendered pages (1936 fresh;38 explicit data issues), all50 report artifacts. All ten observed stage wrappers exited0. Watchlist records16 supplementary-source errors and six pages have invalid numeric inputs explicitly marked missing; do not describe source coverage as complete.
+
+Canonical publisher genuinely pushed a06824f and226e5f3, verified85 analytical paths plus two status reports by remote raw SHA, but exited1: dashboard treats independent market-screen Scheduler rc1 as CRITICAL. All named postflight data/publication checks passed; dashboard return2 subsequently changed overall_pass tofalse. No current Groove receipt or actual Telegram message_id exists.
+
+Actual default independent market-screen S4U rerun at09:11 exited1 before writes because it demanded todayDate18 in the morning despite correct latest closed Date17. Scoped fix makes its default expected date use the nightly's existing18:00 operational-day boundary and verified calendar; explicit --data-date guards remain unchanged. Six new regressions cover morning/evening, Monday/holiday, unknown year and real default-run rejection of stale/future cohorts with no screening writes. Tests now import repo before runtime so standalone execution tests the owned source. Full192 tests passed54.116sec. Deploy/push/runtime sync, actual default independent task and a NEW full nightly/certificate/publication are required after source change; never relabel fea's certificate with the new source hash.
+
+AI-Telegram Daily Report22-47 is separately enabled but Interactive/WakeToRun=false. Medium-principal repair was denied by Windows. Concrete reviewed combined administrator helper scripts/_debug/complete_reviewed_automation_admin.ps1 preserves task execution contents, sets S4U/wake/catchup, verifies the reviewed Groove server hash, then invokes the already reviewed origin reload. Helpers parse successfully; UAC was cancelled twice earlier and explicit cooperation is still pending before a third launch.
+
+Independent AI evening-brief --dry-run --with-requires onDate17 blocked on six missing/stale dated reports; it is not actual generation or delivery. Its existing required-stage plan also uses98 requests/min and5880 five-minute calls/hour, above this session's57/min limit; do not execute that whole DAG unchanged or parallel it with normal canonical maintenance. The dry-run failure path writes a failed stage record; do not call it completely read-only. This AI report recovery remains pending. All240 tables/all years and physical wake remain unproved.
+
 ## Latest correction at07:37 Asia/Taipei
 
 At07:41: primary41bb66b pushed;68 runtime hashes synchronized07:38:12 (backup runtime_source_backup_20260918_073812). Actual whole-market corrected bootstrap screen EXIT0 in141.29sec (<240sec stage budget),1936 candidates/current1958 chipscore/0 current legacy features,24 picks/four buckets/both horizons, targetDate17/run19/picks24 active. Existing weights preserved; dated return inputs now participate before selection and expert horizon tags remain independent. No healthy full owner; next action actual default daily-report plus waiting publisher. UAC still awaits explicit answer.

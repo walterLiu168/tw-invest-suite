@@ -83,6 +83,7 @@ import watchlist as wl
 import market_report as mr
 import market_report_html as mrh
 import deep_dive_prompts as ddp
+from market_calendar import expected_session
 
 DB = dict(host="localhost", user="root", password="1234", database="tw_elec",
           connect_timeout=10, charset="utf8mb4")
@@ -94,6 +95,13 @@ MIN_TICKERS_FOR_RUN = 1900
 TOTAL_UNIVERSE = 1927
 
 SCRIPT_VERSION = "D052h-fixup4"
+
+
+def expected_data_date(day, hour=None):
+    """Use the nightly's 18:00 operational-day boundary for manual reruns."""
+    hour = datetime.now().hour if hour is None else hour
+    operational_day = day if hour >= 18 else day - timedelta(days=1)
+    return date.fromisoformat(expected_session(operational_day))
 
 
 def has_metadata_marker(data_date):
@@ -500,9 +508,11 @@ def run():
         if n_tickers < MIN_TICKERS_FOR_RUN:
             print(f"[runner] ERROR: data_date {data_date} has only {n_tickers} tickers on latest day. exit 1.")
             return 1
-        if not args.force and data_date != today:
-            print(f"[runner] ERROR: data_date {data_date} != today {today}. stale (age={(today-data_date).days} days). exit 1.")
-            return 1
+        if not args.force:
+            expected_date = expected_data_date(today)
+            if data_date != expected_date:
+                print(f"[runner] ERROR: data_date {data_date} != expected session {expected_date} (today={today}). exit 1.")
+                return 1
 
     print(f"[runner] data_date={data_date} today={today} force={args.force}")
 

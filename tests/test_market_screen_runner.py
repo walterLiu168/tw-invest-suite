@@ -19,11 +19,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
 REPO_SCRIPTS = Path(r"C:\Users\icemo\Projects\tw-invest-suite\scripts")
-sys.path.insert(0, str(REPO_SCRIPTS))
 
 # The runner pulls in market_screen/watchlist/etc. which require the runtime path
 RUNTIME = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts")
 sys.path.insert(0, str(RUNTIME))
+sys.path.insert(0, str(REPO_SCRIPTS))
 
 import market_screen_runner as msr  # noqa: E402
 
@@ -54,7 +54,51 @@ def _patch_today(msr_module, d):
     not through `date(...)`).
     """
     _FixedDate._FAKE_TODAY = d
-    return patch.object(msr_module, "date", _FixedDate)
+    return patch.multiple(msr_module, date=_FixedDate,
+                          expected_data_date=lambda day: d)
+
+
+class TestOperationalDate(unittest.TestCase):
+    def test_morning_default_validates_completed_run_without_writes(self):
+        _FixedDate._FAKE_TODAY = date(2026, 9, 18)
+        with patch.object(msr, 'date', _FixedDate), \
+             patch.object(msr, 'datetime') as clock, \
+             patch.object(msr, 'get_verified_data_date', return_value=(date(2026, 9, 17), 1958)), \
+             patch.object(msr, 'has_metadata_marker', return_value=True), \
+             patch.object(msr, 'has_complete_run_for_data_date', return_value=(19, True, [])), \
+             patch.object(msr.ms, 'screen_market') as screen, \
+             patch.object(sys, 'argv', ['market_screen_runner.py']):
+            clock.now.return_value.hour = 9
+            self.assertEqual(msr.run(), 0)
+            screen.assert_not_called()
+
+    def test_morning_default_rejects_stale_and_future_cohorts(self):
+        _FixedDate._FAKE_TODAY = date(2026, 9, 18)
+        for cohort in (date(2026, 9, 16), date(2026, 9, 18)):
+            with self.subTest(cohort=cohort), \
+                 patch.object(msr, 'date', _FixedDate), \
+                 patch.object(msr, 'datetime') as clock, \
+                 patch.object(msr, 'get_verified_data_date', return_value=(cohort, 1958)), \
+                 patch.object(msr.ms, 'screen_market') as screen, \
+                 patch.object(sys, 'argv', ['market_screen_runner.py']):
+                clock.now.return_value.hour = 9
+                self.assertEqual(msr.run(), 1)
+                screen.assert_not_called()
+
+    def test_manual_morning_uses_previous_completed_session(self):
+        self.assertEqual(msr.expected_data_date(date(2026, 9, 18), 9), date(2026, 9, 17))
+        self.assertEqual(msr.expected_data_date(date(2026, 9, 18), 17), date(2026, 9, 17))
+
+    def test_evening_requires_same_session(self):
+        self.assertEqual(msr.expected_data_date(date(2026, 9, 18), 18), date(2026, 9, 18))
+
+    def test_monday_and_holiday_follow_verified_calendar(self):
+        self.assertEqual(msr.expected_data_date(date(2026, 9, 21), 9), date(2026, 9, 18))
+        self.assertEqual(msr.expected_data_date(date(2026, 9, 29), 9), date(2026, 9, 24))
+
+    def test_unknown_calendar_year_fails_closed(self):
+        with self.assertRaises(ValueError):
+            msr.expected_data_date(date(2027, 1, 4), 18)
 
 
 # ===========================================================================
