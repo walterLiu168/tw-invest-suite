@@ -17,9 +17,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +14.7% (60d), +39.6% (240d)
 **Volume (data date)**: 43,769.0 張
 **Latest News (last 5 days)**:
+  - 2891 中信金- 認知真的決定你的財富🏦開始學做高價股（零股😎昨天有調節中信🤭 - 股市爆料同學會 - cmoney.tw
+  - 2891 中信金 - 股票資產1億7475.3萬，今年淨賺7068.2萬，今年投資... - 股市爆料同學會 - CMoney
   - 2891 中信金- ETF 每日持股變動摘要(2026-09-17) - 股市爆料同學會 - CMoney
-  - 《證交所》今日單一證券鉅額成交股票：國巨*、台積電、中信金 - 富聯網
-  - 中信金推自然資本治理 首創金融自然風險評估方法學 - CMoney
 
 ## Your Task
 
@@ -236,9 +236,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +1.7% (60d), +29.7% (240d)
 **Volume (data date)**: 3,775.6 張
 **Latest News (last 5 days)**:
+  - 【13:14 即時新聞】佰鴻(3031)盤中走強，買盤聚焦PCBA與工程專案動能 - CMoney投資網誌
   - 3031 佰鴻 - 恭喜漲停了💕🌸💕🌸💕🌸💕 - 股市爆料同學會 - CMoney
   - 3031 佰鴻 - 終於等到你 - 股市爆料同學會 - CMoney
-  - 【10:42 即時新聞】佰鴻(3031)股價走強，盤面聚焦PCBA與工程專案動能 - CMoney投資網誌
 
 ## Your Task
 
@@ -309,9 +309,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +30.7% (60d), +78.2% (240d)
 **Volume (data date)**: 8,496.6 張
 **Latest News (last 5 days)**:
+  - 【10:39 即時新聞】光鋐(4956) 亮燈漲停，主力與外資買盤推升股價急攻 - CMoney投資網誌
   - 光電漲不停！「這檔」衝第4根創高領光鋐、誠美材等7檔漲停 友達、富采、瑞軒都走高 - FTNN 新聞
   - 4956 光鋐- 大盤不震下，挑戰42 - 股市爆料同學會 - CMoney
-  - 【09:13 即時新聞】光鋐(4956)攻上漲停，買盤集中光電族群題材 - CMoney投資網誌
 
 ## Your Task
 
@@ -455,9 +455,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +7.1% (60d), +12.1% (240d)
 **Volume (data date)**: 26,522.4 張
 **Latest News (last 5 days)**:
+  - 2317 鴻海 - 年創6.8兆經濟產值桃企聯新任理事長張育美出身醫療帶領企業行銷全球- 股市爆料同學會 - CMoney
   - 2317 鴻海 - 九月2600點獲利😇月月千點入袋💕避險作帳買超跌股🌟 - 股市爆料同學會 - CMoney
   - 2317 鴻海 - 新聞都在講升息機會變大!還有人在買炒高的鴻海? - 股市爆料同學會 - CMoney
-  - 2317 鴻海 - 【美股巨頭】iPhone 18 Pro預購反應溫吞，外資喊「持有」、目標價369美元 - 股市爆料同學會 - CMoney
 
 ## Your Task
 
@@ -601,9 +601,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +18.6% (60d), +208.9% (240d)
 **Volume (data date)**: 92,909.7 張
 **Latest News (last 5 days)**:
-  - 熱門股》投信連9買 南亞挑戰前高 - 自由財經
-  - 南亞、鴻海基本面佳權證唱旺- 日報 - ctee.com.tw
-  - 三大法人買賣超 – 外資買超(2330)台積電、(6770)力積電，投信買超(1303)南亞、(2303)聯電，法人合計買超214.77億元
+  - 南亞、台塑、台化、台塑化…台塑四寶只買1檔選誰？杜金龍點名南亞有望翻倍、目標價曝光「這2檔便宜到離譜」 - businesstoday.com.tw
+  - 1303 南亞 - 📝 高階 CCL 競爭 ｜ 砷化鎵營收調整- 股市爆料同學會 - CMoney
+  - 0918台股盤前｜台積電狂飆、台塑四寶暴衝，加權指數大漲439.10 點強登月線！塑膠原料與貨櫃航運強勢領攻，CCL 銅箔基板重挫回檔，法人目標價鎖定禾榮科、南亞、昇達科 - Yahoo股市
 
 ## Your Task
 
@@ -747,9 +747,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +14.3% (60d), +48.2% (240d)
 **Volume (data date)**: 21,408.1 張
 **Latest News (last 5 days)**:
+  - 【11:47 即時新聞】欣銓(3264) 走強逼近高檔，AI測試題材續成盤中焦點 - CMoney投資網誌
+  - 【09/18券商評等報告彙整】欣銓(3264) 今日僅1家券商發布績效評等報告，評價為看多，目標價為400元。 - CMoney
   - 熱門股》矽光子測試量產 欣銓一度亮燈 - 自由財經
-  - 熱門股》矽光子測試量產 欣銓一度亮燈 - 自由時報
-  - 全民權證／欣銓 選價內外10% - UDN
 
 ## Your Task
 
@@ -820,9 +820,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +3.7% (60d), +61.2% (240d)
 **Volume (data date)**: 19,035.5 張
 **Latest News (last 5 days)**:
-  - 矽格(6257) - 富聯網
-  - 【11:53 即時新聞】矽格(6257)股價勁揚，市場聚焦AI高階測試與營收創高 - CMoney投資網誌
-  - Lesson3：先買公司補能力 再自己砸錢擴產 矽格20年併購 拚出AI測試版圖 - 今周刊
+  - 【11:23 即時新聞】矽格(6257)盤中強漲近9% 續衝封測族群焦點 - CMoney投資網誌
+  - 封測測試鏈全面點火 華東、精測、汎銓亮燈 京元電、頎邦、矽格齊揚 - 經濟日報
+  - 封測測試鏈全面點火 華東、精測、汎銓亮燈 京元電、頎邦、矽格齊揚 - udn.com
 
 ## Your Task
 
@@ -895,9 +895,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +0.0% (60d), +107.4% (240d)
 **Volume (data date)**: 11,193.9 張
 **Latest News (last 5 days)**:
+  - 日月光投控 代子公司ASE Singapore Pte. Ltd.公告向 Teradyne (Asia) Pte. Ltd.取得供營業用之機器設備 - cmoney.tw
+  - 3711 日月光投控 - 慢慢墊高的趨勢 - 股市爆料同學會 - cmoney.tw
   - 討論牆 | 日月光投控(3711) 2026 Q2財報法說：Q3指引大爆發，AI封裝與載板供應鏈迎來強心針 - LINE TODAY
-  - 《半導體》日月光投控子公司 砸十億元取得營業用機器設備 - 富聯網
-  - 3711 日月光投控- 日月光一直在擴展產線- 股市爆料同學會 - CMoney
 
 ## Your Task
 
@@ -968,9 +968,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +18.4% (60d), +205.2% (240d)
 **Volume (data date)**: 16,743.2 張
 **Latest News (last 5 days)**:
+  - 不只聯電！台股47K衝鋒隊曝光！南亞科、華邦電、台光電、欣興、南電…一堆漲逾半根停板能搶？目標價曝光 - 今周刊
   - 欣興砸逾17億元添購設備 - 聚財網
   - 欣興砸逾17億元添購設備 - 經濟日報
-  - 砸逾17億元 欣興公告添購設備 - UDN
 
 ## Your Task
 
@@ -1041,9 +1041,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +23.4% (60d), +79.4% (240d)
 **Volume (data date)**: 44,996.0 張
 **Latest News (last 5 days)**:
-  - 三大法人買賣超 – 外資買超(2454)聯發科、(2408)南亞科，投信買超(3081)聯亞、(2382)廣達，法人合計賣超213.81億元
-  - FOMC前夕！「誰在買、買什麼」曝光 南亞科、聯發科為何被加碼？ - tw.news.yahoo.com
-  - FOMC前夕！「誰在買、買什麼」曝光 南亞科、聯發科為何被加碼？ - Newtalk新聞
+  - 2408 南亞科- 央行「連十凍」不升息、信用管制再鬆綁，台股重返47K，資金主流仍在AI - 股市爆料同學會 - CMoney
+  - 🥰強哥說了反彈會比上波高機會大，華邦電，南亞科軋爆空方，在 - CMoney
+  - 【Hot台股】南亞科獨領風騷大漲逾6%！網封「卡蛙的最後希望」」分析師：569元還不是頂 - Yahoo股市
 
 ## Your Task
 
@@ -1335,9 +1335,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +5.9% (60d), +36.6% (240d)
 **Volume (data date)**: 18,117.0 張
 **Latest News (last 5 days)**:
-  - 三大法人買賣超 – 外資買超(2330)台積電、(6770)力積電，投信買超(1303)南亞、(2303)聯電，法人合計買超214.77億元
-  - 2330 台積電 - 這檔個股華麗轉型「AI 測試強權」！外資估股價還有近四成上漲空間- 股市爆料同學會 - CMoney
-  - 2330 台積電 - 一場持續數十年國家級竊案：中國「竊取即創新」策略如何改寫全球地緣政治- 股市爆料同學會 - CMoney
+  - 2330 台積電 - 《DJ在線》營造業喜迎AI建廠潮能見度看2028年後- 股市爆料同學會 - cmoney.tw
+  - 2330 台積電 - 上市認購(售)權證9/21彙總表- 股市爆料同學會 - cmoney.tw
+  - 台股價量齊揚「重返4萬7」！終場大漲892點 台積電收2460元 - Yahoo股市
 
 ## Your Task
 
@@ -1408,9 +1408,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +33.5% (60d), +203.0% (240d)
 **Volume (data date)**: 6,495.8 張
 **Latest News (last 5 days)**:
+  - 台股狂拉834點重返47K！台積電釋A14最快明年Q1試產捷報 聯發科、日月光同步大漲 - FTNN 新聞
   - 天璣9600 Pro攻2奈米！聯發科對決蘋果、三星、高通四強戰局｜股市話題｜豐雲學堂2026 年 09 月 - sinotrade.com.tw
   - 三大法人買賣超 – 外資買超(2454)聯發科、(2408)南亞科，投信買超(3081)聯亞、(2382)廣達，法人合計賣超213.81億元
-  - 全球首例！愛立信攜聯發科突破5G 定位精準度 加速自駕車、無人機應用 - 經濟日報
 
 ## Your Task
 
@@ -1481,9 +1481,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: -3.2% (60d), +49.1% (240d)
 **Volume (data date)**: 10,796.3 張
 **Latest News (last 5 days)**:
+  - 台積電開盤漲20元！台股大漲逾600點　台達電、鴻海齊走高 - NOWnews今日新聞
+  - 台達電對手Vicor喜簽AI供電授權、股價飆近18% - MoneyDJ
   - 輝達衝AI能源管理台鏈補…台達電、光寶新商機來了| 科技產業| 產經 - UDN
-  - 輝達、Google 攜手攻 AI 能源管理 台達電、光寶、東元、大同迎新商機 - 經濟日報
-  - 輝達、Google攜手攻AI能源管理 台達電、光寶、東元、大同迎新商機 - udn.com
 
 ## Your Task
 
@@ -1554,9 +1554,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +5.9% (60d), +36.6% (240d)
 **Volume (data date)**: 18,117.0 張
 **Latest News (last 5 days)**:
-  - 三大法人買賣超 – 外資買超(2330)台積電、(6770)力積電，投信買超(1303)南亞、(2303)聯電，法人合計買超214.77億元
-  - 2330 台積電 - 這檔個股華麗轉型「AI 測試強權」！外資估股價還有近四成上漲空間- 股市爆料同學會 - CMoney
-  - 2330 台積電 - 一場持續數十年國家級竊案：中國「竊取即創新」策略如何改寫全球地緣政治- 股市爆料同學會 - CMoney
+  - 2330 台積電 - 《DJ在線》營造業喜迎AI建廠潮能見度看2028年後- 股市爆料同學會 - cmoney.tw
+  - 2330 台積電 - 上市認購(售)權證9/21彙總表- 股市爆料同學會 - cmoney.tw
+  - 台股價量齊揚「重返4萬7」！終場大漲892點 台積電收2460元 - Yahoo股市
 
 ## Your Task
 
@@ -1627,9 +1627,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +69.5% (60d), +140.7% (240d)
 **Volume (data date)**: 2,334.1 張
 **Latest News (last 5 days)**:
-  - 2026/9/17 創意 報酬率 1295% 謝謝創意🫡 - CMoney
-  - 創意飆新天價登台股第三高價股！獲台積電奧援、握CSP大單 2026年營收拚翻倍 - Yahoo新聞
-  - 創意飆新天價登台股第三高價股！獲台積電奧援、握CSP大單 2026年營收拚翻倍 - 鏡報
+  - 《半導體》7000元大關攻下！創意漲停寫新天價 投信連8買 - 富聯網
+  - AI點火客製化晶片！創意飆天價7150元 法人點6檔受惠名單 - TVBS新聞網
+  - 股王信驊再闖2萬元天險！6檔千金股奔漲停　創意刷歷史新高 - ETtoday財經雲
 
 ## Your Task
 
@@ -1700,9 +1700,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +51.7% (60d), +49.2% (240d)
 **Volume (data date)**: 6,498.0 張
 **Latest News (last 5 days)**:
-  - AI水冷需求燒不停！雙鴻前8月營收年增81% Vera Rubin進量產準備獲法人上喊1600元目標價 - FTNN 新聞
-  - 雙鴻AI液冷進入放量期 目標價1600元 - 台灣好新聞
-  - 〈焦點股〉雙鴻Q3營收可望成長雙位數 股價回神漲逾半根停板 - news.cnyes.com
+  - 3324 雙鴻- 🥰AI股除了雙鴻奇鋐被市場主力拉抬大漲，緯創，廣達，英業達- 股市爆料同學會 - cmoney.tw
+  - 【13:24 即時新聞】雙鴻(3324) 盤中走強站上1480，市場聚焦液冷業績成長動能 - CMoney投資網誌
+  - 3324 雙鴻- 雙鴻ASIC液冷將貢獻，下半年營收逐季衝高- 股市爆料同學會 - cmoney.tw
 
 ## Your Task
 
