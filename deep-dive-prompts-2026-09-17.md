@@ -17,9 +17,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +14.7% (60d), +39.6% (240d)
 **Volume (data date)**: 43,769.0 張
 **Latest News (last 5 days)**:
+  - 2891 中信金- ETF 每日持股變動摘要(2026-09-17) - 股市爆料同學會 - CMoney
   - 《證交所》今日單一證券鉅額成交股票：國巨*、台積電、中信金 - 富聯網
   - 中信金推自然資本治理 首創金融自然風險評估方法學 - CMoney
-  - 中信金推自然資本治理首創金融自然風險評估方法學- 新聞 - MoneyDJ
 
 ## Your Task
 
@@ -601,9 +601,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +18.6% (60d), +208.9% (240d)
 **Volume (data date)**: 92,909.7 張
 **Latest News (last 5 days)**:
+  - 熱門股》投信連9買 南亞挑戰前高 - 自由財經
   - 南亞、鴻海基本面佳權證唱旺- 日報 - ctee.com.tw
   - 三大法人買賣超 – 外資買超(2330)台積電、(6770)力積電，投信買超(1303)南亞、(2303)聯電，法人合計買超214.77億元
-  - 全民權證／南亞 鎖定逾150天 - UDN
 
 ## Your Task
 
@@ -747,9 +747,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +14.3% (60d), +48.2% (240d)
 **Volume (data date)**: 21,408.1 張
 **Latest News (last 5 days)**:
+  - 熱門股》矽光子測試量產 欣銓一度亮燈 - 自由財經
+  - 熱門股》矽光子測試量產 欣銓一度亮燈 - 自由時報
   - 全民權證／欣銓 選價內外10% - UDN
-  - 東捷第2支漲停！欣銓漲停！聯一光、頎邦又創新高！ - 聚財網
-  - 欣銓、矽格搶進矽光子 TIA 測試，美國客戶搶租廠房鎖定台灣產能 - 鏈新聞 ABMedia
 
 ## Your Task
 
@@ -1408,9 +1408,9 @@ publicly documented investment framework. Apply this to:
 **Price Return (calendar days)**: +33.5% (60d), +203.0% (240d)
 **Volume (data date)**: 6,495.8 張
 **Latest News (last 5 days)**:
+  - 天璣9600 Pro攻2奈米！聯發科對決蘋果、三星、高通四強戰局｜股市話題｜豐雲學堂2026 年 09 月 - sinotrade.com.tw
   - 三大法人買賣超 – 外資買超(2454)聯發科、(2408)南亞科，投信買超(3081)聯亞、(2382)廣達，法人合計賣超213.81億元
   - 全球首例！愛立信攜聯發科突破5G 定位精準度 加速自駕車、無人機應用 - 經濟日報
-  - 聯發科(2454)獲美林看多，68.09元EPS撐得起預期嗎？-柏宇 KD 獲利模式 - CMoney投資網誌
 
 ## Your Task
 
