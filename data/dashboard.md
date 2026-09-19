@@ -1,5 +1,5 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-09-19T08:45:14
+**Generated**: 2026-09-19T08:51:08
 **OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-09-18
@@ -8,14 +8,14 @@
 **Nightly**: 51fa87e75ca748b28f3bc4921901bae4
 **Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-09-18
-**Verified at**: 2026-09-19T08:38:27.679053
-**Published commit**: eca9fb03dcd2fea58f5d6f58903567f799ef800b
+**Verified at**: 2026-09-19T08:50:45.090739
+**Published commit**: 0197949612b440713abe9fd2b88e25c5cee61a34
 
 ## Action items
 - 🟡 37 個股資料不完整，頁面已標示；fresh=1937 ／ rendered=1974
 - 🟡 12 個 watchlist ticker 補充資料不完整；各卡片列出失敗來源
 - 🟡 6 個股的估值／基本面來源含無效數值，已標為缺漏並在頁面警示
-- 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
+- 🟡 tw-invest-suite-publish: rc=267014; 請見當次檢查明細
 
 ## Cron results
 | Task | State | LastRun | RC |
@@ -27,8 +27,8 @@
 | tw-invest-suite-company-refresh | Ready | 2026-09-18T23:25:25.0000000+08:00 | 0 |
 | tw-invest-suite-sync-legacy | Ready | 2026-09-18T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-09-19T08:43:43.0000000+08:00 | 0 |
-| tw-invest-suite-publish | Ready | 2026-09-19T08:39:39.0000000+08:00 | 1 |
-| tw-invest-suite-postflight | Running | 2026-09-19T08:44:44.0000000+08:00 | 267009 |
+| tw-invest-suite-publish | Ready | 2026-09-19T08:47:47.0000000+08:00 | 267014 |
+| tw-invest-suite-postflight | Ready | 2026-09-19T08:44:44.0000000+08:00 | 0 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
