@@ -1,6 +1,6 @@
 # tw-invest-suite 公開使用與發布手冊
 
-版本：2026-09-19
+版本：2026-09-21
 產品：Taiwan stock daily research and report site
 公開輸出：GitHub Pages、Groove site、Telegram daily brief
 

@@ -1,6 +1,6 @@
 # tw-invest-suite 文件中心
 
-文件版本：2026-09-19
+文件版本：2026-09-21
 文件責任人：Project Manager / Release Owner
 適用範圍：`C:\Users\icemo\Projects\tw-invest-suite` 的 canonical 原始碼、Windows Scheduler、公開報告與 Telegram 發布鏈。
 

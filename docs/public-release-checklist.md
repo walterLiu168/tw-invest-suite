@@ -1,6 +1,6 @@
 # Public Release Checklist
 
-版本：2026-09-19
+版本：2026-09-21
 Release owner：Project Manager
 目前判定：**Operationally certified；source release ready after final verification**
 

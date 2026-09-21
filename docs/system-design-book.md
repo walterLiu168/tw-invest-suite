@@ -1,6 +1,6 @@
 # tw-invest-suite System Design Book
 
-版本：2026-09-19
+版本：2026-09-21
 狀態：Operationally certified for the 2026-09-18 report window; public release remains conditional on security/configuration gates.
 
 ## 1. 設計目標

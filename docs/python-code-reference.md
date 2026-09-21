@@ -1,6 +1,6 @@
 # Python Code Reference
 
-版本：2026-09-19
+版本：2026-09-21
 範圍：`scripts/*.py` 54 個 production-facing modules、`src/**/*.py` 20 個 non-underscore modules。底線開頭的 patch/debug modules 不在 production inventory，另列於最後。
 
 ## 1. 入口與編排
