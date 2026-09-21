@@ -26,9 +26,9 @@ import sys
 from pathlib import Path
 
 import pymysql
+import db_client as db
 
-DB = dict(host="localhost", user="root", password="1234", database="tw_elec",
-          connect_timeout=10, charset="utf8mb4")
+DB = {"connect_timeout": 10, "charset": "utf8mb4"}
 
 REPO = Path(r"C:\Users\icemo\Projects\tw-invest-suite")
 PUBLIC_DIR = REPO / "public"
@@ -91,7 +91,7 @@ def git_head_committed():
 
 def fetch_picks(data_date):
     """Returns (run_id, picks_count, bucket_counts dict, tickers list of dict)."""
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute(
@@ -240,7 +240,7 @@ def verify_manifest_against_local(manifest):
 
     # Re-check DB matches manifest
     try:
-        conn = pymysql.connect(**DB)
+        conn = db.connect(**DB)
         cur = conn.cursor()
         cur.execute(
             "SELECT picks_count FROM market_screen_runs WHERE id = %s AND run_date = %s",

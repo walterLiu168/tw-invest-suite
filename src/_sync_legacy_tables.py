@@ -21,7 +21,7 @@ import pymysql
 # ============================================================
 # Config
 # ============================================================
-DB = dict(host='localhost', user='root', password='1234', database='tw_elec')
+DB = dict(host='localhost', user='root', password='<TW_DB_PASSWORD>', database='tw_elec')
 LOG_DIR = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug")
 LOG_FILE = LOG_DIR / f"sync_legacy_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 

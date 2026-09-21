@@ -159,7 +159,7 @@ If ChatGPT wants full project context: `docs/handoff_chatgpt.md` (13.9KB, 15 sec
 - Output filenames: 「／」 not `/`
 - Volume: 1 張 = 1,000 股, use `Math.ceil(shares/1000)` when displaying
 - FinMind sponsor token at `~/.finmind_token`, ~0.4s/call
-- DB: localhost / root / 1234 / tw_elec
+- DB: localhost / root / <TW_DB_PASSWORD> / tw_elec
 - MySQL convention: NULL → None in Python; 0/負值 → None for ratios
 - Color convention: 紅=漲, 綠=跌 (Taiwan, opposite of US)
 - Coding preflight: REUSE — only modify existing patterns, don't invent

@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).parent))
 import cache_manager as cm
+import db_client as db
 
 
 # Yfinance state (shared across workers)
@@ -193,8 +194,7 @@ def _build_fallback(ticker: str, partial: Optional[Dict] = None) -> Dict:
 
     # 1. DB industry_type
     try:
-        conn = pymysql.connect(host='localhost', user='root', password='1234',
-                                database='tw_elec', connect_timeout=5)
+        conn = db.connect(connect_timeout=5)
         cur = conn.cursor(pymysql.cursors.DictCursor)
         cur.execute("SELECT company, industry FROM industry_type WHERE ticker=%s", (ticker,))
         row = cur.fetchone()

@@ -21,11 +21,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 import pymysql
 import finmind_batch as fmb
 import cache_manager as cm
+import db_client as db
 
 
 def get_all_tickers() -> list:
-    conn = pymysql.connect(host='localhost', user='root', password='1234',
-                            database='tw_elec', connect_timeout=10)
+    conn = db.connect(connect_timeout=10)
     cur = conn.cursor()
     cur.execute("SELECT ticker FROM industry_type "
                 "WHERE ticker REGEXP '^[0-9]{4}$|^[0-9]{4}[A-Z]$'")

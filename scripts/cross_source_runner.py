@@ -86,8 +86,7 @@ def _db_basic(ticker: str) -> Dict:
     out = {"ticker": ticker, "company_name": None, "industry": None,
            "latest_close": None, "latest_date": None}
     try:
-        conn = pymysql.connect(host='localhost', user='root', password='1234',
-                                database='tw_elec', connect_timeout=5)
+        conn = db.connect(connect_timeout=5)
         cur = conn.cursor(pymysql.cursors.DictCursor)
         cur.execute("SELECT company, industry FROM industry_type WHERE ticker=%s", (ticker,))
         row = cur.fetchone()

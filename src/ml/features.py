@@ -7,14 +7,18 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+import db_client as db
 import pymysql
 import pandas as pd
 import numpy as np
 
 
 def get_conn():
-    return pymysql.connect(host='localhost', user='root', password='1234',
-                            database='tw_elec', connect_timeout=10)
+    return db.connect(connect_timeout=10)
 
 
 def fetch_ohlcv(ticker: str, days: int = 500) -> pd.DataFrame:

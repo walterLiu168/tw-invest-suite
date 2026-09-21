@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import pymysql
-conn = pymysql.connect(host='localhost', user='root', password='1234', database='tw_elec')
+conn = pymysql.connect(host='localhost', user='root', password='<TW_DB_PASSWORD>', database='tw_elec')
 cur = conn.cursor()
 print('=== Final Sanity Check ===')
 print('Today: 2026-09-01 (need 8/31 data)')

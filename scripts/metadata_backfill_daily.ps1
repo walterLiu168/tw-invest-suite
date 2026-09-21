@@ -52,8 +52,8 @@ New-Item -ItemType Directory -Force -Path $MarkerDir | Out-Null
 #      line 1: <target_date ISO>
 #      line 2: <comma-joined missing tickers>  (empty string if none)
 $Snapshot = & $Python -c "
-import pymysql
-c = pymysql.connect(host='localhost', user='root', password='1234', database='tw_elec', connect_timeout=10, charset='utf8mb4')
+import db_client
+c = db_client.connect(connect_timeout=10)
 cur = c.cursor()
 cur.execute('SELECT MAX(Date) FROM daily_data2_full')
 r = cur.fetchone()

@@ -79,7 +79,7 @@ schtasks /Query /TN '\tw-invest-suite-metadata-backfill'
 C:\Users\icemo\Projects\tw-invest-suite\scripts\metadata_backfill_daily.ps1
 
 # 3. state check
-python -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='1234',database='tw_elec'); cur=c.cursor(); cur.execute('SELECT COUNT(*) FROM industry_type'); print('industry_type:', cur.fetchone()[0]); cur.execute('SELECT COUNT(*) FROM metadata_quarantine WHERE resolved_at IS NULL'); print('open quarantine:', cur.fetchone()[0])"
+python -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='<TW_DB_PASSWORD>',database='tw_elec'); cur=c.cursor(); cur.execute('SELECT COUNT(*) FROM industry_type'); print('industry_type:', cur.fetchone()[0]); cur.execute('SELECT COUNT(*) FROM metadata_quarantine WHERE resolved_at IS NULL'); print('open quarantine:', cur.fetchone()[0])"
 ```
 
 ## Status

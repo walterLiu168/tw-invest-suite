@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import pymysql
-conn = pymysql.connect(host='localhost', user='root', password='1234', database='tw_elec')
+conn = pymysql.connect(host='localhost', user='root', password='<TW_DB_PASSWORD>', database='tw_elec')
 cur = conn.cursor()
 cur.execute("SELECT run_id, COUNT(*), SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) FROM market_screen_picks GROUP BY run_id ORDER BY run_id")
 for r in cur.fetchall():

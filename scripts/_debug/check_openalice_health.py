@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 import pymysql
 
 TZ = ZoneInfo("Asia/Taipei")
-DB = dict(host="localhost", user="root", password="1234", database="tw_elec", connect_timeout=5)
+DB = dict(host="localhost", user="root", password="<TW_DB_PASSWORD>", database="tw_elec", connect_timeout=5)
 
 TASKS = [
     # OpenAlice aux (12)

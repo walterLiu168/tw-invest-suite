@@ -28,9 +28,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pymysql
+import db_client as db
 
-DB = dict(host="localhost", user="root", password="1234", database="tw_elec",
-          connect_timeout=10, charset="utf8mb4")
+DB = {"connect_timeout": 10, "charset": "utf8mb4"}
 
 REPORTS_DIR = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\reports")
 PUBLIC_DATA = Path(r"C:\Users\icemo\Projects\tw-invest-suite\public\data")
@@ -55,7 +55,7 @@ def get_git_head():
 
 def get_latest_picks(data_date):
     """Returns (run_id, picks_count, bucket_counts dict, picks list) for data_date."""
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute(
@@ -83,7 +83,7 @@ def get_latest_picks(data_date):
 
 def get_integrity_counts(data_date):
     """Returns (null_count, open_quarantine, null_n_tickers)."""
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute(

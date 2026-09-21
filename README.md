@@ -7,6 +7,18 @@
 [![Daily Update](https://img.shields.io/badge/daily-22:25_TW-brightgreen.svg)](docs/schedule.md)
 [![Live Site](https://img.shields.io/badge/live-groovelab.dev-blueviolet.svg)](https://groovelab.dev/analyze.html)
 
+> **研究用途聲明**：本專案提供市場資料整理與研究報告，不是投資建議，也不含券商下單或交易授權。資料可能延遲、缺漏或被供應商修訂，使用前請自行核對來源與日期。
+
+## 公開發布文件
+
+- [文件中心](docs/README.md)：使用手冊、維運手冊、系統設計書與 Python 程式索引
+- [公開使用與發布手冊](docs/public-release-manual.md)
+- [維運與維護手冊](docs/operations-maintenance.md)
+- [系統設計書](docs/system-design-book.md)
+- [公開發布檢查表](docs/public-release-checklist.md)
+
+公開執行需要受保護的 MySQL 密碼 `TW_DB_PASSWORD`；請先複製 `.env.example`，再以 Windows 使用者環境變數、Credential Manager 或部署平台的 secret 注入，不要把密碼寫入 repo。
+
 每日 22:25 自動跑完全市場 1,962 檔台股的 cross-source 數據蒐集 → 渲染 → 發佈，產出
 - 全市場個股分析頁（17 個 tab + Chart.js + 18 大師解讀）
 - Watchlist 24 檔精選（含每日 4h 新聞）
@@ -108,9 +120,15 @@ tw-invest-suite/
 ```powershell
 git clone https://github.com/walterLiu168/tw-invest-suite
 cd tw-invest-suite
-pip install pymysql yfinance requests pandas
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+# Optional ML / LLM / browser tooling:
+# python -m pip install -r requirements-optional.txt
 # 設定 FinMind token
 echo "YOUR_TOKEN" > ~\.finmind_token
+# 設定 MySQL 連線密碼（只存在受保護的使用者環境）
+[Environment]::SetEnvironmentVariable('TW_DB_PASSWORD','YOUR_LOCAL_SECRET','User')
 ```
 
 ### 每日 batch

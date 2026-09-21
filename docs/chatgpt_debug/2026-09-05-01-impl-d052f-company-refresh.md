@@ -85,7 +85,7 @@ python scripts/company_refresh.py --days=7
 schtasks /Query /TN '\tw-invest-suite-company-refresh'
 
 # 5. state check
-python -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='1234',database='tw_elec'); cur=c.cursor(); cur.execute(\"SELECT COUNT(*), SUM(CASE WHEN company IS NULL OR TRIM(company)='' THEN 1 ELSE 0 END) FROM daily_data2_full WHERE Date='2026-09-04'\"); r=cur.fetchone(); print(f'9/4 total: {r[0]}  null: {r[1]}')"
+python -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='<TW_DB_PASSWORD>',database='tw_elec'); cur=c.cursor(); cur.execute(\"SELECT COUNT(*), SUM(CASE WHEN company IS NULL OR TRIM(company)='' THEN 1 ELSE 0 END) FROM daily_data2_full WHERE Date='2026-09-04'\"); r=cur.fetchone(); print(f'9/4 total: {r[0]}  null: {r[1]}')"
 ```
 
 ## Status

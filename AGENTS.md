@@ -24,7 +24,7 @@
 
 - OS: Windows 11 + PowerShell 5.1
 - Python: 3.11（建議）/ 3.10/3.13/3.14 都有
-- MySQL: 8.0 at `localhost:3306` / `root` / `1234` / `tw_elec`
+- MySQL: 8.0 at `localhost:3306` / `root` / `TW_DB_PASSWORD` / `tw_elec`; the password must come from a protected environment.
 - GPU: NVIDIA RTX 3060 Ti 8GB（目前未用，未來 ML 用）
 
 ---

@@ -43,9 +43,9 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pymysql
+import db_client as db
 
-DB = dict(host="localhost", user="root", password="1234", database="tw_elec",
-          connect_timeout=10, charset="utf8mb4")
+DB = {"connect_timeout": 10, "charset": "utf8mb4"}
 
 # D052h-fixup2 F3: actual publish log is written by publish_ghpages_daily.ps1
 # to C:\Users\icemo\Projects\tw-invest-suite\scripts\_debug (it does
@@ -143,7 +143,7 @@ def latest_trading_data_date():
 
     Returns: date or None if DB is empty
     """
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute("SELECT MAX(Date) FROM daily_data2_full")
@@ -207,7 +207,7 @@ def check_tasks(operational_date):
 
 def check_market_screen(operational_date):
     """Exact 24 active picks for operational_date's data."""
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         # Find the run for operational_date
@@ -239,7 +239,7 @@ def check_market_screen(operational_date):
 
 
 def check_company_null(operational_date):
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute(
@@ -260,7 +260,7 @@ def check_company_null(operational_date):
 
 
 def check_industry_count():
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM industry_type")
@@ -271,7 +271,7 @@ def check_industry_count():
 
 
 def check_quarantine():
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM metadata_quarantine WHERE resolved_at IS NULL")

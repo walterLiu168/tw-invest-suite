@@ -92,7 +92,8 @@ def main():
     if not tickers:
         raise ValueError("Empty valuation-refresh universe")
     from market_calendar import is_session
-    if not is_session(date.today()):
+    weekend_catchup = os.environ.get('TW_WEEKEND_CATCHUP') == '1'
+    if not is_session(date.today()) and not weekend_catchup:
         logging.info('Non-trading session: preserve periodic financial cache; skip downloads')
         return 0
     target_date = os.environ.get('TW_DATA_DATE') or date.today().isoformat()

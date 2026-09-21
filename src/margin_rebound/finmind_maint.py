@@ -20,16 +20,18 @@ import pymysql
 from pathlib import Path
 from datetime import datetime, date, timedelta
 
+SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+import db_client as db
+
 # === Config ===
 TOKEN_PATH = Path.home() / ".finmind_token"
 API_URL = "https://api.finmindtrade.com/api/v4/data"
 DATASET = "TaiwanStockMarginMaintenance"
 TARGET_TABLE = "finmind_taiwan_margin_maintenance"
 
-DB_HOST = "localhost"
-DB_USER = "root"
-DB_PASS = "1234"
-DB_NAME = "tw_elec"
+DB_OPTIONS = {"connect_timeout": 10}
 
 
 def get_token() -> str:
@@ -39,8 +41,7 @@ def get_token() -> str:
 
 
 def get_conn():
-    return pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASS,
-                            database=DB_NAME, connect_timeout=10)
+    return db.connect(**DB_OPTIONS)
 
 
 def ensure_table():

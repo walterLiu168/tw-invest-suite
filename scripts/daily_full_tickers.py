@@ -35,6 +35,7 @@ import pymysql
 import cross_source_runner as csr
 import yfinance_batch as yfb
 import render_ticker_html as rth
+import db_client as db
 
 
 HTML_DIR = Path(r"C:\Groove-Lab\analyze")
@@ -44,8 +45,7 @@ LOG_DIR = Path(r"C:\Users\icemo\.claude\skills\tw-invest-suite\scripts\_debug")
 
 def get_all_tickers() -> List[str]:
     """Get all listed tickers (TWSE + TPEx) from DB industry_type."""
-    conn = pymysql.connect(host='localhost', user='root', password='1234',
-                            database='tw_elec', connect_timeout=10)
+    conn = db.connect(connect_timeout=10)
     cur = conn.cursor()
     cur.execute("SELECT ticker FROM industry_type "
                 "WHERE ticker REGEXP '^[0-9]{4}$|^[0-9]{4}[A-Z]$'")
@@ -56,8 +56,7 @@ def get_all_tickers() -> List[str]:
 
 def get_watchlist() -> List[str]:
     """Get the 24 watchlist tickers."""
-    conn = pymysql.connect(host='localhost', user='root', password='1234',
-                            database='tw_elec', connect_timeout=10)
+    conn = db.connect(connect_timeout=10)
     cur = conn.cursor()
     cur.execute("SELECT ticker FROM market_screen_picks "
                 "WHERE run_id = (SELECT MAX(id) FROM market_screen_runs)")
@@ -70,8 +69,7 @@ def _build_index_html(tickers: List[str], output_dir: str) -> None:
     """Build A-Z index.html of all ticker reports."""
     rows_html = []
     # Group by first digit
-    conn = pymysql.connect(host='localhost', user='root', password='1234',
-                            database='tw_elec', connect_timeout=5)
+    conn = db.connect(connect_timeout=5)
     cur = conn.cursor(pymysql.cursors.DictCursor)
     cur.execute("SELECT ticker, company, industry FROM industry_type "
                 "WHERE ticker REGEXP '^[0-9]{4}$|^[0-9]{4}[A-Z]$'")

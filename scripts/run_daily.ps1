@@ -81,7 +81,7 @@ function Test-Health {
     try {
         $conn = New-Object System.Data.Odbc.OdbcConnection
         # Use Python for DB check since pymysql is the standard
-        $r = C:\Python314\python.exe -X utf8 -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='1234',database='tw_elec',connect_timeout=5); c.close(); print('OK')" 2>&1
+        $r = C:\Python314\python.exe -X utf8 -c "import db_client; c=db_client.connect(connect_timeout=5); c.close(); print('OK')" 2>&1
         if ($LASTEXITCODE -ne 0) { $issues += "DB connect failed: $r" }
     } catch { $issues += "DB check exception: $_" }
 
@@ -278,14 +278,23 @@ if (-not (Test-Health)) {
 # Avoid the legacy unbounded debug script (full-table counts and API probes).
 Log-Msg "[db] data_date=$($run.data_date) run_id=$($run.run_id) tickers=$($run.ohlcv_tickers) active_picks=$($run.picks_count)"
 
-# Weekend auto-skip download stages (unless -Force or explicit -Skip flags override)
+# Weekend handling: normal weekends skip downloads, but a landed trading session
+# missed on Friday must still complete its canonical refresh before certification.
 $weekend = Is-Weekend
-if ($weekend -and -not $Force) {
+$weekendCatchUp = $weekend -and $run.trading_session -and ($run.execution_date -eq $run.data_date)
+if ($weekendCatchUp) {
+    $env:TW_WEEKEND_CATCHUP = '1'
+} else {
+    Remove-Item Env:TW_WEEKEND_CATCHUP -ErrorAction SilentlyContinue
+}
+if ($weekend -and -not $Force -and -not $weekendCatchUp) {
     Log-Msg "[weekend] Today is $dow — auto-skipping all data download stages"
     Log-Msg "          (only render + patterns + publish will run)"
     if (-not $SkipYfinance) { $SkipYfinance = $true }
     if (-not $SkipFinmind) { $SkipFinmind = $true }
     # news stage: skip too on weekend (DB news table will be used as fallback in render)
+} elseif ($weekendCatchUp) {
+    Log-Msg "[weekend-catchup] $($run.execution_date) is a landed trading session; keeping canonical refresh stages"
 }
 
 $startTime = Get-Date
@@ -325,7 +334,9 @@ if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipYfinance) {
 }
 if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipFinmind) {
     $stages += @{ N=1; Name='finmind_maint'; Cmd=$maintScript; To=24*60 }
-    $stages += @{ N=1; Name='market_screen'; Cmd="market_screen_runner.py --data-date $($env:TW_DATA_DATE) --refresh-existing"; To=4*60 }
+    $marketScreenCmd = "market_screen_runner.py --data-date $($env:TW_DATA_DATE) --refresh-existing"
+    if ($weekendCatchUp) { $marketScreenCmd += " --force" }
+    $stages += @{ N=1; Name='market_screen'; Cmd=$marketScreenCmd; To=4*60 }
     $stages += @{ N=1; Name='finalize_inputs'; Cmd='pipeline_state.py finalize-inputs'; To=120 }
 }
 

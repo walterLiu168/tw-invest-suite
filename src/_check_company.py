@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import pymysql
-conn = pymysql.connect(host='localhost', user='root', password='1234', database='tw_elec')
+conn = pymysql.connect(host='localhost', user='root', password='<TW_DB_PASSWORD>', database='tw_elec')
 cur = conn.cursor()
 cur.execute('SELECT COUNT(*), SUM(CASE WHEN company IS NULL THEN 1 ELSE 0 END) FROM daily_data2 WHERE Date = %s', ('2026-06-15',))
 r = cur.fetchone()

@@ -2,10 +2,15 @@
 
 ## MySQL — `tw_elec`
 
-主要倉儲在 `localhost:3306`，連線設定：
+主要倉儲在 `localhost:3306`。公開文件只描述非秘密設定；實際密碼必須從環境變數、Windows Credential Manager 或受保護的本機設定載入：
 ```
-host=localhost user=root password=1234 database=tw_elec
+TW_DB_HOST=localhost
+TW_DB_USER=<local database user>
+TW_DB_PASSWORD=<local secret, never commit>
+TW_DB_NAME=tw_elec
 ```
+
+生產 Python scripts 已移除本機密碼預設值；沒有 `TW_DB_PASSWORD` 時會 fail closed。歷史 scratch 檔案只保留經過遮罩的範例，不是部署入口。
 
 ### 表 1: `daily_data2_full`
 個股每日 OHLCV + 三大法人 + 融資融券

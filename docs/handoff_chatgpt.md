@@ -50,7 +50,7 @@
 ```
 host:     localhost
 user:     root
-password: 1234
+password: <TW_DB_PASSWORD>
 database: tw_elec
 ```
 
@@ -227,7 +227,7 @@ Then read these MDs in order:
 5. C:\Users\icemo\.claude\skills\tw-invest-suite\TODO.md
 
 Then sanity check:
-- python -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='1234',database='tw_elec'); cur=c.cursor(); cur.execute('SELECT MAX(Date), COUNT(*) FROM daily_data2_full'); print(cur.fetchone())"
+- python -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='<TW_DB_PASSWORD>',database='tw_elec'); cur=c.cursor(); cur.execute('SELECT MAX(Date), COUNT(*) FROM daily_data2_full'); print(cur.fetchone())"
   → Should be (today's date or yesterday, ~3600000)
 - schtasks /query /fo csv | Select-String "tw.invest|OpenAlice"
   → Should list: 22:25 daily-report, 22:30 yfinance, 23:00 health, 23:30 sync-legacy, 23:50 publish
@@ -262,7 +262,7 @@ cd C:\Users\icemo\Projects\tw-invest-suite\src
 python _morning_check.py
 
 # Sanity check 5 個關鍵 tables
-python -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='1234',database='tw_elec'); cur=c.cursor(); [print(t, cur.execute(f'SELECT MAX(Date), COUNT(*) FROM {t}')) or print('  ', cur.fetchone()) for t in ['daily_data2_full','daily_data','daily_data2','chip_daily','chipscore_daily']]"
+python -c "import pymysql; c=pymysql.connect(host='localhost',user='root',password='<TW_DB_PASSWORD>',database='tw_elec'); cur=c.cursor(); [print(t, cur.execute(f'SELECT MAX(Date), COUNT(*) FROM {t}')) or print('  ', cur.fetchone()) for t in ['daily_data2_full','daily_data','daily_data2','chip_daily','chipscore_daily']]"
 
 # List all tw-invest-suite crons
 schtasks /query /fo csv | Select-String "tw.invest"

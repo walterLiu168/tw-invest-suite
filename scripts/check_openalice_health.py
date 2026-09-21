@@ -33,9 +33,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pymysql
+import db_client as db
 
 TZ = ZoneInfo("Asia/Taipei")
-DB = dict(host="localhost", user="root", password="1234", database="tw_elec", connect_timeout=5)
+DB = {"connect_timeout": 5, "charset": "utf8mb4"}
 
 TASKS = [
     # OpenAlice aux (12)
@@ -53,6 +54,8 @@ TASKS = [
     ("OpenAlice RSS Refresh Every 2h",      "every2h",  None),
     # tw-invest-suite 22:25
     ("tw-invest-suite-daily-report",        "weekday",  "22:25"),
+    # AI-Telegram owns the dated four-part report and its Telegram delivery.
+    ("AI-Telegram Daily Report 22-47",       "weekday",  "22:47"),
 ]
 
 # Tasks that are intentionally Disabled (legacy/obsolete, kept for audit).
@@ -63,6 +66,17 @@ KNOWN_DISABLED = {
     "OpenAlice Intraday 5m 1600",             # obsolete phase
     "OpenAlice Intraday 5m 1555",             # D024: moved to 18:00 (was failing on empty universe)
     "OpenAlice Intraday 5m Retry 1620",       # D024: moved to 18:30
+    # Superseded by AI-Telegram run_pipeline_scheduled.py's canonical gate.
+    # Keeping these legacy tasks disabled prevents duplicate writes and stale
+    # LastTaskResult failures from making the health check look red.
+    "OpenAlice Weekly Shareholding 1330",
+    "OpenAlice Intraday 5m 1800",
+    "OpenAlice Intraday 5m Retry 1830",
+    "OpenAlice Daily OHLCV 1735",
+    "OpenAlice Daily OHLCV Retry 1755",
+    "OpenAlice Daily Institutional 2015",
+    "OpenAlice Daily Margin Short 2115",
+    "OpenAlice Daily DayTrade 2145",
 }
 
 # Trigger time lists for every2h tasks (must match install_openalice_aux_schedule.ps1)
@@ -171,7 +185,7 @@ def every2h_past_triggers(at_list: list[str], check_date: date, now: datetime) -
 
 
 def get_conn():
-    return pymysql.connect(**DB)
+    return db.connect(**DB)
 
 
 def db_max_date(table: str, col: str = "Date") -> str | None:

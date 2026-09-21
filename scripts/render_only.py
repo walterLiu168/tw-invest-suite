@@ -18,6 +18,7 @@ import pymysql
 import cross_source_runner as csr
 import render_ticker_full as rtf
 import pipeline_state as ps
+import db_client as db
 
 
 HTML_DIR = Path(r"C:\Groove-Lab\analyze")
@@ -45,8 +46,7 @@ def _render_one(t, data, output_dir, data_date, data_issue=False, numeric_warnin
 
 
 def get_all_tickers():
-    conn = pymysql.connect(host='localhost', user='root', password='1234',
-                            database='tw_elec', connect_timeout=10)
+    conn = db.connect(connect_timeout=10)
     cur = conn.cursor()
     cur.execute("SELECT ticker FROM industry_type "
                 "WHERE ticker REGEXP '^[0-9]{4}$|^[0-9]{4}[A-Z]$' ORDER BY ticker")
@@ -56,8 +56,7 @@ def get_all_tickers():
 
 
 def get_watchlist():
-    conn = pymysql.connect(host='localhost', user='root', password='1234',
-                            database='tw_elec', connect_timeout=10)
+    conn = db.connect(connect_timeout=10)
     cur = conn.cursor()
     cur.execute("SELECT ticker FROM market_screen_picks "
                 "WHERE run_id = (SELECT MAX(id) FROM market_screen_runs)")

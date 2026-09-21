@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
 
 try:
+    import db_client as db
     import pymysql
     HAS_DB = True
 except ImportError:
@@ -46,8 +47,7 @@ DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "outputs" /
 def get_conn():
     if not HAS_DB:
         raise RuntimeError("pymysql not installed")
-    return pymysql.connect(host='localhost', user='root', password='1234',
-                            database='tw_elec', connect_timeout=10)
+    return db.connect(connect_timeout=10)
 
 
 def fetch_watchlist(run_id: Optional[int] = None) -> List[Dict]:

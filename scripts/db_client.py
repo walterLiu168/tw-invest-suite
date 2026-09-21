@@ -24,15 +24,31 @@ import pymysql.cursors
 DB_CONFIG = {
     "host": os.environ.get("TW_DB_HOST", "localhost"),
     "user": os.environ.get("TW_DB_USER", "root"),
-    "password": os.environ.get("TW_DB_PASSWORD", "1234"),
     "database": os.environ.get("TW_DB_NAME", "tw_elec"),
     "charset": "utf8mb4",
 }
 
 
+def get_db_config(**overrides):
+    """Return a connection config without embedding a credential in source."""
+    password = os.environ.get("TW_DB_PASSWORD", "").strip()
+    if not password:
+        raise RuntimeError(
+            "TW_DB_PASSWORD is required; set it in the protected runtime environment"
+        )
+    config = {**DB_CONFIG, "password": password}
+    config.update(overrides)
+    return config
+
+
+def connect(**overrides):
+    """Open a MySQL connection using the protected runtime configuration."""
+    return pymysql.connect(**get_db_config(**overrides))
+
+
 @contextmanager
 def get_conn():
-    conn = pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
+    conn = connect(cursorclass=pymysql.cursors.DictCursor)
     try:
         yield conn
     finally:

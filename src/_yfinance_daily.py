@@ -41,7 +41,7 @@ import cache_manager as cm
 
 def get_all_tickers():
     """Read all 4-digit tickers from industry_type (1962)."""
-    conn = pymysql.connect(host='localhost', user='root', password='1234',
+    conn = pymysql.connect(host='localhost', user='root', password='<TW_DB_PASSWORD>',
                             database='tw_elec', connect_timeout=10)
     cur = conn.cursor()
     cur.execute("SELECT ticker FROM industry_type "

@@ -5,7 +5,7 @@ import pymysql
 import sys
 from datetime import date, datetime
 
-DB = dict(host='localhost', user='root', password='1234', database='tw_elec')
+DB = dict(host='localhost', user='root', password='<TW_DB_PASSWORD>', database='tw_elec')
 
 # Get latest date
 _conn = pymysql.connect(**DB)

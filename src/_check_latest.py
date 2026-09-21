@@ -5,7 +5,7 @@ from datetime import date
 import json
 import re
 
-conn = pymysql.connect(host='localhost', user='root', password='1234', database='tw_elec')
+conn = pymysql.connect(host='localhost', user='root', password='<TW_DB_PASSWORD>', database='tw_elec')
 cur = conn.cursor()
 print('Today:', date.today())
 print()

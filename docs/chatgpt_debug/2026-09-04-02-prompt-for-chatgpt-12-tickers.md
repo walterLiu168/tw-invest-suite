@@ -110,7 +110,7 @@ Key facts from that file:
 - Output filenames: 「／」 not `/`
 - Volume: 1 張 = 1,000 股, use `Math.ceil(shares/1000)` when displaying
 - FinMind sponsor token at `~/.finmind_token`, ~0.4s/call
-- DB: localhost / root / 1234 / tw_elec
+- DB: localhost / root / <TW_DB_PASSWORD> / tw_elec
 - MySQL convention: NULL → None in Python; 0/負值 → None for ratios
 - Color convention: 紅=漲, 綠=跌 (Taiwan, opposite of US)
 - Daily run uses `--no-yfinance --no-news` for batch speed; yfinance filled by separate 22:30 cron

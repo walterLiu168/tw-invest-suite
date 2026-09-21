@@ -21,9 +21,9 @@ from pathlib import Path
 from datetime import date, timedelta
 
 import pymysql
+import db_client as db
 
-DB = dict(host="localhost", user="root", password="1234", database="tw_elec",
-          connect_timeout=10, charset="utf8mb4")
+DB = {"connect_timeout": 10, "charset": "utf8mb4"}
 
 
 def name_repairs(current, rows):
@@ -103,7 +103,7 @@ def main():
             print(f"ERROR: --date must be YYYY-MM-DD (got {args.date!r})", file=sys.stderr)
             sys.exit(2)
 
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     cur = conn.cursor()
     try:
         repairs = repair_names(cur, args.dry_run)

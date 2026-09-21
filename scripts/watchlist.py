@@ -21,9 +21,7 @@ import market_screen as ms  # noqa: E402
 
 
 def _conn():
-    return pymysql.connect(host="localhost", user="root", password="1234",
-                           database="tw_elec", charset="utf8mb4",
-                           cursorclass=pymysql.cursors.DictCursor)
+    return db.connect(charset="utf8mb4", cursorclass=pymysql.cursors.DictCursor)
 
 
 def save_run(total_tickers: int, picks_count: int, notes: str = "") -> int:

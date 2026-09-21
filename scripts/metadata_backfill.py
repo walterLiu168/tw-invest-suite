@@ -35,6 +35,7 @@ from datetime import date
 from pathlib import Path
 
 import pymysql
+import db_client as db
 
 try:
     import certifi
@@ -43,8 +44,7 @@ except ImportError:
     _CA_FILE = None  # fall back to system trust store
 
 # ----- config -----
-DB = dict(host="localhost", user="root", password="1234", database="tw_elec",
-          connect_timeout=10, charset="utf8mb4")
+DB = {"connect_timeout": 10, "charset": "utf8mb4"}
 TOKEN_FILE = Path.home() / ".finmind_token"
 API = "https://api.finmindtrade.com/api/v4/data"
 DATASET = "TaiwanStockInfo"
@@ -157,7 +157,7 @@ def main():
     # 3. New event fingerprints (e.g. reason text changed, or new FinMind
     #    industry_category on a new source_date) WILL create a new row — this
     #    is intentional so the audit trail captures changes over time.
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     cur = conn.cursor()
     ensure_tables(cur)
     conn.commit()
@@ -291,7 +291,7 @@ def main():
         return 0
 
     # DB write
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     cur = conn.cursor()
     try:
         # ensure_tables already called in preflight; this is a no-op

@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -19,7 +20,16 @@ RESULT = ps.RUNTIME / "_debug" / "publication_result.json"
 
 
 def run(args, cwd):
-    r = subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
+    env = os.environ.copy()
+    # Scheduled sessions may omit the interactive user's Git config.  Make
+    # the credential helper explicit and fail fast instead of waiting on a
+    # hidden prompt when no credential is available.
+    profile = env.get("USERPROFILE")
+    if profile:
+        env.setdefault("HOME", profile)
+        env.setdefault("GIT_CONFIG_GLOBAL", str(Path(profile) / ".gitconfig"))
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    r = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
     if r.returncode:
         raise RuntimeError(f"{args[0:2]} exit {r.returncode}: {(r.stderr or r.stdout)[-700:]}")
     return r.stdout.strip()
@@ -47,7 +57,10 @@ def initialize_release_git(root):
 
 def prepare_site(marker):
     manifest = pm.build_certified_manifest(marker)
-    root = Path(tempfile.mkdtemp(prefix="tw-invest-release-", dir=ps.REPO.parent))
+    # S4U Scheduler runs can create children under the repository parent with
+    # unusable ACLs.  Keep ephemeral staging in the user's temp directory so
+    # both scheduled and interactive retries can read and clean it up.
+    root = Path(tempfile.mkdtemp(prefix="tw-invest-release-"))
     # Fresh staging directory, never a mutable or partially overwritten deployed tree.
     for src in ps.PUBLIC.iterdir():
         if src.name == "analyze":
@@ -171,4 +184,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # The scheduled wrapper must observe process termination after the
+    # verified result is written; do not let inherited helper threads keep the
+    # Task Scheduler instance in 267009 (Running) indefinitely.
+    code = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)

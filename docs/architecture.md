@@ -1,4 +1,6 @@
-# Architecture — tw-invest-suite
+# Architecture — tw-invest-suite (historical reference)
+
+> Current public-release documentation is maintained in [System Design Book](system-design-book.md), [Operations and Maintenance Guide](operations-maintenance.md), and [Python Code Reference](python-code-reference.md). This file preserves the earlier architecture narrative and should not be used as the only deployment instruction.
 
 > Current operational contract: [pipeline-reference.md](pipeline-reference.md). The diagrams below describe the earlier pipeline. As of 2026-09-16 the default has six stages, 18 ticker tabs and four render processes; canonical Pages is https://walterliu168.github.io/tw-invest-suite/. Publication is a separately gated task.
 

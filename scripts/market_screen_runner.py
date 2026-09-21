@@ -78,6 +78,7 @@ sys.path.insert(0, str(RUNTIME_DIR))
 sys.path.insert(0, str(REPO_SCRIPTS))
 
 import pymysql
+import db_client as db
 import market_screen as ms
 import watchlist as wl
 import market_report as mr
@@ -85,8 +86,7 @@ import market_report_html as mrh
 import deep_dive_prompts as ddp
 from market_calendar import expected_session
 
-DB = dict(host="localhost", user="root", password="1234", database="tw_elec",
-          connect_timeout=10, charset="utf8mb4")
+DB = {"connect_timeout": 10, "charset": "utf8mb4"}
 
 REPORT_DIR = Path.home() / ".claude" / "skills" / "tw-invest-suite" / "reports"
 # D052h-fixup2 F4: metadata-backfill writes target-date success marker here.
@@ -155,7 +155,7 @@ def get_verified_data_date():
     """F1 (D052h-fixup2): Returns (data_date, n_tickers) where n_tickers is
     the count for MAX(Date) ONLY, not all history.
     """
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute("""
@@ -172,7 +172,7 @@ def get_verified_data_date():
 
 def has_existing_run_for_data_date(data_date):
     """Returns the run_id (int) if market_screen_runs has a row for data_date, else None."""
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute("SELECT id FROM market_screen_runs WHERE run_date = %s", (data_date,))
@@ -187,7 +187,7 @@ def has_complete_run_for_data_date(data_date):
     data_date: run metadata + 24 total picks + 24 active picks + 3 artifacts.
     Returns (run_id, complete, missing_artifacts).
     """
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute("SELECT id, picks_count FROM market_screen_runs WHERE run_date = %s", (data_date,))
@@ -248,7 +248,7 @@ def persist_atomic(data_date, picks_count, notes, result):
     """Single MySQL transaction: UPSERT run + DELETE/INSERT picks + CLOSE older.
     Returns (run_id, closed_count). Raises on any failure (rolled back).
     """
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         try:
@@ -423,7 +423,7 @@ def repair_only_artifacts(data_date, run_id):
     Returns (success, error_list).
     """
     print(f"[runner] repair-only for data_date={data_date} run_id={run_id}")
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute("""
@@ -593,7 +593,7 @@ def run():
         return 1
 
     # === Post-state verify ===
-    conn = pymysql.connect(**DB)
+    conn = db.connect(**DB)
     try:
         cur = conn.cursor()
         cur.execute(
