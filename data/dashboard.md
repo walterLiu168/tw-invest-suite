@@ -1,25 +1,27 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-09-22T00:05:15
+**Generated**: 2026-09-22T08:22:39
 **OVERALL**: 🔴 CRITICAL
 
-**Data date**: UNKNOWN
-**DB picks**: ? active; run_id=?
-**OHLCV coverage**: ? rows ／ ? tickers
-**Nightly**: UNVERIFIED
-**Optional degraded**: ?
-**Publication**: verified ／ data_date=2026-09-18
-**Verified at**: 2026-09-21T00:37:23.417237
-**Published commit**: 5a905346c37379a4fd6c7ee172e7e176a0e5ff77
+**Data date**: 2026-09-21
+**DB picks**: 24 active; run_id=28
+**OHLCV coverage**: 1964 rows ／ 1964 tickers
+**Nightly**: 486ad0d0d69b41ec9da2434a9c9f0bd8
+**Optional degraded**: 0
+**Publication**: verified ／ data_date=2026-09-21
+**Verified at**: 2026-09-22T08:22:17.191057
+**Published commit**: 8e1aaf65b341ef581b39abd3e112a3bff10eb8c3
 
 ## Action items
-- 🔴 nightly is incomplete/failed or marker belongs to another run
-- 🔴 DB integrity: no screen run for 2026-09-21
+- 🟡 26 個股資料不完整，頁面已標示；fresh=1948 ／ rendered=1974
+- 🟡 10 個 watchlist ticker 補充資料不完整；各卡片列出失敗來源
+- 🟡 6 個股的估值／基本面來源含無效數值，已標為缺漏並在頁面警示
 - 🔴 tw-invest-suite-daily-report: rc=1; 請見當次檢查明細
 - 🔴 tw-invest-suite-market-screen: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-health-check: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-marker-watchdog: rc=1; 請見當次檢查明細
-- 🔴 本次 nightly 尚無有效完成證據
-- 🟡 本次 GitHub Pages 發布尚未驗證；HTTP 200 不等於資料已更新
+- 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
+- 🟡 tw-invest-suite-postflight: rc=1; 請見當次檢查明細
+- 🔴 本次 postflight 未通過
 
 ## Cron results
 | Task | State | LastRun | RC |
@@ -31,8 +33,8 @@
 | tw-invest-suite-company-refresh | Ready | 2026-09-21T23:25:25.0000000+08:00 | 0 |
 | tw-invest-suite-sync-legacy | Ready | 2026-09-21T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-09-21T23:55:55.0000000+08:00 | 1 |
-| tw-invest-suite-publish | Ready | 2026-09-21T00:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-postflight | Running | 2026-09-22T00:05:05.0000000+08:00 | 267009 |
+| tw-invest-suite-publish | Ready | 2026-09-22T00:30:30.0000000+08:00 | 1 |
+| tw-invest-suite-postflight | Ready | 2026-09-22T00:05:05.0000000+08:00 | 1 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
