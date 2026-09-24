@@ -1,24 +1,25 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-09-24T00:05:14
+**Generated**: 2026-09-24T11:52:04
 **OVERALL**: 🔴 CRITICAL
 
-**Data date**: 2026-09-22
-**DB picks**: 24 active; run_id=33
-**OHLCV coverage**: 1964 rows ／ 1964 tickers
-**Nightly**: UNVERIFIED
-**Optional degraded**: ?
-**Publication**: verified ／ data_date=2026-09-22
-**Verified at**: 2026-09-23T00:38:24.585661
-**Published commit**: 07d4c8290c16596967e49d023709a50ad2ada161
+**Data date**: 2026-09-23
+**DB picks**: 24 active; run_id=35
+**OHLCV coverage**: 1961 rows ／ 1961 tickers
+**Nightly**: 75b2451c9a2949b6a8304a47003faf9a
+**Optional degraded**: 0
+**Publication**: verified ／ data_date=2026-09-23
+**Verified at**: 2026-09-24T11:51:42.319010
+**Published commit**: 253bfa8c5fe91545684a342f45eccec47d56903a
 
 ## Action items
-- 🔴 nightly is incomplete/failed or marker belongs to another run
+- 🟡 38 個股資料不完整，頁面已標示；fresh=1936 ／ rendered=1974
+- 🟡 6 個股的估值／基本面來源含無效數值，已標為缺漏並在頁面警示
 - 🔴 tw-invest-suite-daily-report: rc=1; 請見當次檢查明細
 - 🔴 tw-invest-suite-market-screen: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-health-check: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-marker-watchdog: rc=1; 請見當次檢查明細
-- 🔴 本次 nightly 尚無有效完成證據
-- 🟡 本次 GitHub Pages 發布尚未驗證；HTTP 200 不等於資料已更新
+- 🟡 tw-invest-suite-postflight: rc=1; 請見當次檢查明細
+- 🔴 本次 postflight 未通過
 
 ## Cron results
 | Task | State | LastRun | RC |
@@ -30,8 +31,8 @@
 | tw-invest-suite-company-refresh | Ready | 2026-09-23T23:25:25.0000000+08:00 | 0 |
 | tw-invest-suite-sync-legacy | Ready | 2026-09-23T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-09-23T23:55:55.0000000+08:00 | 1 |
-| tw-invest-suite-publish | Ready | 2026-09-23T00:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-postflight | Running | 2026-09-24T00:05:05.0000000+08:00 | 267009 |
+| tw-invest-suite-publish | Running | 2026-09-24T11:44:44.0000000+08:00 | 267009 |
+| tw-invest-suite-postflight | Ready | 2026-09-24T00:05:05.0000000+08:00 | 1 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
