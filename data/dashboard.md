@@ -1,5 +1,5 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-09-24T11:52:04
+**Generated**: 2026-09-24T12:02:41
 **OVERALL**: 🔴 CRITICAL
 
 **Data date**: 2026-09-23
@@ -8,8 +8,8 @@
 **Nightly**: 75b2451c9a2949b6a8304a47003faf9a
 **Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-09-23
-**Verified at**: 2026-09-24T11:51:42.319010
-**Published commit**: 253bfa8c5fe91545684a342f45eccec47d56903a
+**Verified at**: 2026-09-24T12:02:19.898722
+**Published commit**: 4195c79e27bcbeac2f7f4b533bd64738251d94e7
 
 ## Action items
 - 🟡 38 個股資料不完整，頁面已標示；fresh=1936 ／ rendered=1974
@@ -28,10 +28,10 @@
 | tw-invest-suite-market-screen | Ready | 2026-09-23T18:20:20.0000000+08:00 | 1 |
 | tw-invest-suite-yfinance | Ready | 2026-09-23T22:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-health-check | Ready | 2026-09-23T23:00:00.0000000+08:00 | 1 |
-| tw-invest-suite-company-refresh | Ready | 2026-09-23T23:25:25.0000000+08:00 | 0 |
+| tw-invest-suite-company-refresh | Ready | 2026-09-24T11:53:53.0000000+08:00 | 0 |
 | tw-invest-suite-sync-legacy | Ready | 2026-09-23T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-09-23T23:55:55.0000000+08:00 | 1 |
-| tw-invest-suite-publish | Running | 2026-09-24T11:44:44.0000000+08:00 | 267009 |
+| tw-invest-suite-publish | Running | 2026-09-24T11:55:55.0000000+08:00 | 267009 |
 | tw-invest-suite-postflight | Ready | 2026-09-24T00:05:05.0000000+08:00 | 1 |
 
 ## Scope
