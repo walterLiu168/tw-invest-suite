@@ -1,5 +1,5 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-10-04T00:05:12
+**Generated**: 2026-10-04T01:10:09
 **OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-10-02
@@ -8,13 +8,12 @@
 **Nightly**: UNVERIFIED
 **Optional degraded**: ?
 **Publication**: verified ／ data_date=2026-10-02
-**Verified at**: 2026-10-03T02:18:05.300680
-**Published commit**: 059309b7e5f672c2c2ade67c3989b70f5e80d39f
+**Verified at**: 2026-10-04T01:06:38.599424
+**Published commit**: 10046389f806fd62c1d5f3bcab726f67208ea1ca
 
 ## Action items
 - 🟡 nightly 執行中，等待完成
 - 🟡 tw-invest-suite-yfinance: rc=2; 請見當次檢查明細
-- 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
 - 🟡 本次 GitHub Pages 發布尚未驗證；HTTP 200 不等於資料已更新
 
 ## Cron results
@@ -27,8 +26,8 @@
 | tw-invest-suite-company-refresh | Ready | 2026-10-03T23:25:25.0000000+08:00 | 0 |
 | tw-invest-suite-sync-legacy | Ready | 2026-10-03T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-10-03T23:55:55.0000000+08:00 | 0 |
-| tw-invest-suite-publish | Ready | 2026-10-03T00:30:30.0000000+08:00 | 1 |
-| tw-invest-suite-postflight | Running | 2026-10-04T00:05:05.0000000+08:00 | 267009 |
+| tw-invest-suite-publish | Running | 2026-10-04T00:30:30.0000000+08:00 | 267009 |
+| tw-invest-suite-postflight | Ready | 2026-10-04T00:05:05.0000000+08:00 | 0 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
