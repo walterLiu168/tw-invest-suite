@@ -1,20 +1,20 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-10-04T01:10:09
+**Generated**: 2026-10-04T02:21:14
 **OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-10-02
 **DB picks**: 24 active; run_id=49
 **OHLCV coverage**: 1960 rows ／ 1960 tickers
-**Nightly**: UNVERIFIED
-**Optional degraded**: ?
+**Nightly**: 3e2c461bd9c44651b9813c850dda0a7f
+**Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-10-02
-**Verified at**: 2026-10-04T01:06:38.599424
-**Published commit**: 10046389f806fd62c1d5f3bcab726f67208ea1ca
+**Verified at**: 2026-10-04T02:17:57.806332
+**Published commit**: ed8e3d61a672f089fa855d95aa9386a22670f381
 
 ## Action items
-- 🟡 nightly 執行中，等待完成
+- 🟡 34 個股資料不完整，頁面已標示；fresh=1940 ／ rendered=1974
 - 🟡 tw-invest-suite-yfinance: rc=2; 請見當次檢查明細
-- 🟡 本次 GitHub Pages 發布尚未驗證；HTTP 200 不等於資料已更新
+- 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
 
 ## Cron results
 | Task | State | LastRun | RC |
@@ -26,7 +26,7 @@
 | tw-invest-suite-company-refresh | Ready | 2026-10-03T23:25:25.0000000+08:00 | 0 |
 | tw-invest-suite-sync-legacy | Ready | 2026-10-03T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-10-03T23:55:55.0000000+08:00 | 0 |
-| tw-invest-suite-publish | Running | 2026-10-04T00:30:30.0000000+08:00 | 267009 |
+| tw-invest-suite-publish | Ready | 2026-10-04T00:30:30.0000000+08:00 | 1 |
 | tw-invest-suite-postflight | Ready | 2026-10-04T00:05:05.0000000+08:00 | 0 |
 
 ## Scope
