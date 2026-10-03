@@ -1,35 +1,34 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-10-03T02:18:25
+**Generated**: 2026-10-04T00:05:12
 **OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-10-02
 **DB picks**: 24 active; run_id=49
 **OHLCV coverage**: 1960 rows ／ 1960 tickers
-**Nightly**: 5695896679fa479a8c6147e56e5dbfa5
-**Optional degraded**: 0
+**Nightly**: UNVERIFIED
+**Optional degraded**: ?
 **Publication**: verified ／ data_date=2026-10-02
 **Verified at**: 2026-10-03T02:18:05.300680
 **Published commit**: 059309b7e5f672c2c2ade67c3989b70f5e80d39f
 
 ## Action items
-- 🟡 34 個股資料不完整，頁面已標示；fresh=1940 ／ rendered=1974
-- 🟡 1 個 watchlist ticker 補充資料不完整；各卡片列出失敗來源
-- 🟡 6 個股的估值／基本面來源含無效數值，已標為缺漏並在頁面警示
+- 🟡 nightly 執行中，等待完成
+- 🟡 tw-invest-suite-yfinance: rc=2; 請見當次檢查明細
 - 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-postflight: rc=1; 請見當次檢查明細
+- 🟡 本次 GitHub Pages 發布尚未驗證；HTTP 200 不等於資料已更新
 
 ## Cron results
 | Task | State | LastRun | RC |
 |---|---|---|---|
-| tw-invest-suite-daily-report | Ready | 2026-10-02T22:25:25.0000000+08:00 | 0 |
-| tw-invest-suite-market-screen | Ready | 2026-10-02T18:20:20.0000000+08:00 | 0 |
-| tw-invest-suite-yfinance | Ready | 2026-10-02T22:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-health-check | Ready | 2026-10-02T23:00:00.0000000+08:00 | 0 |
-| tw-invest-suite-company-refresh | Ready | 2026-10-02T23:25:25.0000000+08:00 | 0 |
-| tw-invest-suite-sync-legacy | Ready | 2026-10-02T23:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-marker-watchdog | Ready | 2026-10-02T23:55:55.0000000+08:00 | 0 |
+| tw-invest-suite-daily-report | Ready | 2026-10-03T22:25:25.0000000+08:00 | 0 |
+| tw-invest-suite-market-screen | Ready | 2026-10-03T18:20:20.0000000+08:00 | 0 |
+| tw-invest-suite-yfinance | Ready | 2026-10-03T22:30:30.0000000+08:00 | 2 |
+| tw-invest-suite-health-check | Ready | 2026-10-03T23:00:00.0000000+08:00 | 0 |
+| tw-invest-suite-company-refresh | Ready | 2026-10-03T23:25:25.0000000+08:00 | 0 |
+| tw-invest-suite-sync-legacy | Ready | 2026-10-03T23:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-marker-watchdog | Ready | 2026-10-03T23:55:55.0000000+08:00 | 0 |
 | tw-invest-suite-publish | Ready | 2026-10-03T00:30:30.0000000+08:00 | 1 |
-| tw-invest-suite-postflight | Ready | 2026-10-03T00:05:05.0000000+08:00 | 1 |
+| tw-invest-suite-postflight | Running | 2026-10-04T00:05:05.0000000+08:00 | 267009 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
