@@ -1,6 +1,6 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-10-09T13:24:46
-**OVERALL**: 🔴 CRITICAL
+**Generated**: 2026-10-09T13:45:51
+**OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-10-08
 **DB picks**: 24 active; run_id=58
@@ -8,23 +8,21 @@
 **Nightly**: 9a504ec9b9914d8691c38ba5216adbab
 **Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-10-08
-**Verified at**: 2026-10-09T13:24:26.467022
-**Published commit**: 73241bb01c0083d4c5c947d334f156cb8c0a5c2a
+**Verified at**: 2026-10-09T13:45:30.212737
+**Published commit**: eb4d5050f81a1947bda316edc2a66e68c3086e46
 
 ## Action items
 - 🟡 39 個股資料不完整，頁面已標示；fresh=1935 ／ rendered=1974
-- 🔴 tw-invest-suite-market-screen: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-health-check: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-marker-watchdog: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-postflight: rc=1; 請見當次檢查明細
-- 🔴 本次 postflight 未通過
 
 ## Cron results
 | Task | State | LastRun | RC |
 |---|---|---|---|
 | tw-invest-suite-daily-report | Ready | 2026-10-09T09:57:57.0000000+08:00 | 0 |
-| tw-invest-suite-market-screen | Ready | 2026-10-08T18:20:20.0000000+08:00 | 1 |
+| tw-invest-suite-market-screen | Ready | 2026-10-09T13:26:26.0000000+08:00 | 0 |
 | tw-invest-suite-yfinance | Ready | 2026-10-08T22:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-health-check | Ready | 2026-10-08T23:00:00.0000000+08:00 | 1 |
 | tw-invest-suite-company-refresh | Ready | 2026-10-08T23:25:25.0000000+08:00 | 0 |

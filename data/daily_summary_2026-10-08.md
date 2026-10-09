@@ -4,7 +4,7 @@
 **Execution date**: 2026-10-08  
 **Data date**: 2026-10-08  
 **Phase**: after_publish  
-**Generated at**: 2026-10-09T13:24:29.056172  
+**Generated at**: 2026-10-09T13:45:32.994128  
 **Source commit**: `3cca0eaac5a7d2639bfa4828c61513435dc971fc`  
 
 ## DB integrity
@@ -58,7 +58,7 @@
 | tw-invest-suite-sync-legacy | `0` | ✓ | ✓ |
 | tw-invest-suite-company-refresh | `0` | ✓ | ✓ |
 | tw-invest-suite-metadata-backfill | `0` | ✓ | ✓ |
-| tw-invest-suite-market-screen | `1` | ✓ | ✗ |
+| tw-invest-suite-market-screen | `0` | ✓ | ✓ |
 
 ## Other checks
 
@@ -66,7 +66,7 @@
 - ✓ **market_screen**: run_id=58, picks_count=24, picks_total=24, picks_active=24
 - ✓ **company_null**: total=1957, null=0
 - ✓ **industry_count**: count=1974
-- ✓ **publication**: receipt={'nightly_id': '9a504ec9b9914d8691c38ba5216adbab', 'data_date': '2026-10-08', 'run_id': 58, 'status': 'verified', 'published_commit': '73241bb01c0083d4c5c947d334f156cb8c0a5c2a', 'verified_paths': ['analyze.html', 'analyze/1301.html', 'analyze/1303.html', 'analyze/1326.html', 'analyze/2303.html', 'analyze/2409.html', 'analyze/2439.html', 'analyze/2454.html', 'analyze/2540.html', 'analyze/2851.html', 'analyze/3026.html', 'analyze/3037.html', 'analyze/3131.html', 'analyze/3147.html', 'analyze/3211.html', 'analyze/3443.html', 'analyze/4736.html', 'analyze/4958.html', 'analyze/5209.html', 'analyze/6182.html', 'analyze/6213.html', 'analyze/6223.html', 'analyze/6505.html', 'analyze/6811.html', 'analyze/8996.html', 'analyze/patterns.html', 'analyze/patterns.json', 'assets/textsize.css', 'assets/textsize.js', 'chips-advanced.html', 'chips-history.html', 'chips.html', 'concepts.html', 'data/chips-advanced.json', 'data/chips-history-index.json', 'data/chips-history/2026-08-25.json', 'data/chips-history/2026-08-26.json', 'data/chips-history/2026-08-27.json', 'data/chips-history/2026-08-28.json', 'data/chips-history/2026-08-31.json', 'data/chips-history/2026-09-01.json', 'data/chips-history/2026-09-02.json', 'data/chips-history/2026-09-03.json', 'data/chips-history/2026-09-04.json', 'data/chips-history/2026-09-07.json', 'data/chips-history/2026-09-08.json', 'data/chips-history/2026-09-09.json', 'data/chips-history/2026-09-10.json', 'data/chips-history/2026-09-11.json', 'data/chips-history/2026-09-14.json', 'data/chips-history/2026-09-15.json', 'data/chips-history/2026-09-16.json', 'data/chips-history/2026-09-17.json', 'data/chips-history/2026-09-18.json', 'data/chips-history/2026-09-21.json', 'data/chips-history/2026-09-22.json', 'data/chips-history/2026-09-23.json', 'data/chips-history/2026-09-24.json', 'data/chips-history/2026-09-29.json', 'data/chips-history/2026-09-30.json', 'data/chips-history/2026-10-01.json', 'data/chips-history/2026-10-02.json', 'data/chips-history/2026-10-05.json', 'data/chips-history/2026-10-06.json', 'data/chips-history/2026-10-08.json', 'data/chips.json', 'data/concept-stocks.json', 'data/og.png', 'data/patterns.json', 'data/publish_manifest_2026-10-08.json', 'data/sectors.json', 'data/tickers.json', 'data/tw-industry.json', 'data/watchlist-full.json', 'deep-dive-prompts-2026-10-08.md', 'manifest.json', 'market-screen-2026-10-08.html', 'market-screen-2026-10-08.md', 'monitor.html', 'patterns.html', 'readme.html', 'sectors.html', 'sw.js', 'watchlist-full-2026-10-08.html', 'watchlist.html'], 'analytical_verified': True, 'report_status': 'pending', 'verified_at': '2026-10-09T13:24:26.467022'}
+- ✓ **publication**: receipt={'nightly_id': '9a504ec9b9914d8691c38ba5216adbab', 'data_date': '2026-10-08', 'run_id': 58, 'status': 'verified', 'published_commit': 'eb4d5050f81a1947bda316edc2a66e68c3086e46', 'verified_paths': ['analyze.html', 'analyze/1301.html', 'analyze/1303.html', 'analyze/1326.html', 'analyze/2303.html', 'analyze/2409.html', 'analyze/2439.html', 'analyze/2454.html', 'analyze/2540.html', 'analyze/2851.html', 'analyze/3026.html', 'analyze/3037.html', 'analyze/3131.html', 'analyze/3147.html', 'analyze/3211.html', 'analyze/3443.html', 'analyze/4736.html', 'analyze/4958.html', 'analyze/5209.html', 'analyze/6182.html', 'analyze/6213.html', 'analyze/6223.html', 'analyze/6505.html', 'analyze/6811.html', 'analyze/8996.html', 'analyze/patterns.html', 'analyze/patterns.json', 'assets/textsize.css', 'assets/textsize.js', 'chips-advanced.html', 'chips-history.html', 'chips.html', 'concepts.html', 'data/chips-advanced.json', 'data/chips-history-index.json', 'data/chips-history/2026-08-25.json', 'data/chips-history/2026-08-26.json', 'data/chips-history/2026-08-27.json', 'data/chips-history/2026-08-28.json', 'data/chips-history/2026-08-31.json', 'data/chips-history/2026-09-01.json', 'data/chips-history/2026-09-02.json', 'data/chips-history/2026-09-03.json', 'data/chips-history/2026-09-04.json', 'data/chips-history/2026-09-07.json', 'data/chips-history/2026-09-08.json', 'data/chips-history/2026-09-09.json', 'data/chips-history/2026-09-10.json', 'data/chips-history/2026-09-11.json', 'data/chips-history/2026-09-14.json', 'data/chips-history/2026-09-15.json', 'data/chips-history/2026-09-16.json', 'data/chips-history/2026-09-17.json', 'data/chips-history/2026-09-18.json', 'data/chips-history/2026-09-21.json', 'data/chips-history/2026-09-22.json', 'data/chips-history/2026-09-23.json', 'data/chips-history/2026-09-24.json', 'data/chips-history/2026-09-29.json', 'data/chips-history/2026-09-30.json', 'data/chips-history/2026-10-01.json', 'data/chips-history/2026-10-02.json', 'data/chips-history/2026-10-05.json', 'data/chips-history/2026-10-06.json', 'data/chips-history/2026-10-08.json', 'data/chips.json', 'data/concept-stocks.json', 'data/og.png', 'data/patterns.json', 'data/publish_manifest_2026-10-08.json', 'data/sectors.json', 'data/tickers.json', 'data/tw-industry.json', 'data/watchlist-full.json', 'deep-dive-prompts-2026-10-08.md', 'manifest.json', 'market-screen-2026-10-08.html', 'market-screen-2026-10-08.md', 'monitor.html', 'patterns.html', 'readme.html', 'sectors.html', 'sw.js', 'watchlist-full-2026-10-08.html', 'watchlist.html'], 'analytical_verified': True, 'report_status': 'pending', 'verified_at': '2026-10-09T13:45:30.212737'}
 
 ## Artifacts
 
@@ -2125,4 +2125,4 @@
 
 ---
 
-_Generated by daily_summary.py (D054) on 2026-10-09T13:24:29.056172_
+_Generated by daily_summary.py (D054) on 2026-10-09T13:45:32.994128_
