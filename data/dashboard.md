@@ -1,6 +1,6 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-10-22T23:15:07
-**OVERALL**: 🔴 CRITICAL
+**Generated**: 2026-10-23T00:08:11
+**OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-10-22
 **DB picks**: 24 active; run_id=76
@@ -8,15 +8,13 @@
 **Nightly**: 15df4e60368d40428b69302930639da8
 **Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-10-22
-**Verified at**: 2026-10-22T23:14:41.755109
-**Published commit**: 39f73ae80f2da5dc39e81ef60a49c92f5ee2d7b6
+**Verified at**: 2026-10-23T00:07:49.123087
+**Published commit**: e677d47451a8b8a7887690ee5ab30961416b88e5
 
 ## Action items
 - 🟡 44 個股資料不完整，頁面已標示；fresh=1930 ／ rendered=1974
 - 🟡 1 個 watchlist ticker 補充資料不完整；各卡片列出失敗來源
-- 🟡 tw-invest-suite-marker-watchdog: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-postflight: rc=1; 請見當次檢查明細
-- 🔴 本次 postflight 未通過
+- 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
 
 ## Cron results
 | Task | State | LastRun | RC |
@@ -25,11 +23,11 @@
 | tw-invest-suite-market-screen | Ready | 2026-10-22T18:20:20.0000000+08:00 | 0 |
 | tw-invest-suite-yfinance | Ready | 2026-10-22T22:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-health-check | Ready | 2026-10-22T23:00:00.0000000+08:00 | 0 |
-| tw-invest-suite-company-refresh | Ready | 2026-10-21T23:25:25.0000000+08:00 | 0 |
-| tw-invest-suite-sync-legacy | Ready | 2026-10-21T23:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-marker-watchdog | Ready | 2026-10-21T23:55:55.0000000+08:00 | 1 |
-| tw-invest-suite-publish | Running | 2026-10-22T22:50:50.0000000+08:00 | 267009 |
-| tw-invest-suite-postflight | Ready | 2026-10-22T00:05:05.0000000+08:00 | 1 |
+| tw-invest-suite-company-refresh | Ready | 2026-10-22T23:25:25.0000000+08:00 | 0 |
+| tw-invest-suite-sync-legacy | Ready | 2026-10-22T23:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-marker-watchdog | Ready | 2026-10-22T23:55:55.0000000+08:00 | 0 |
+| tw-invest-suite-publish | Ready | 2026-10-22T22:50:50.0000000+08:00 | 1 |
+| tw-invest-suite-postflight | Ready | 2026-10-23T00:05:05.0000000+08:00 | 0 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
