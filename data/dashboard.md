@@ -1,15 +1,15 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-10-22T05:08:02
+**Generated**: 2026-10-22T08:08:37
 **OVERALL**: 🔴 CRITICAL
 
 **Data date**: 2026-10-21
 **DB picks**: 24 active; run_id=73
 **OHLCV coverage**: 1961 rows ／ 1961 tickers
-**Nightly**: 7cb7ac7e0999408db3d9524233e8d98a
+**Nightly**: d6a26cdde7ae4c9cb5cf0606d90e3cb5
 **Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-10-21
-**Verified at**: 2026-10-22T05:07:40.288359
-**Published commit**: 2eff88d9053c20ce9e10879cf7bce7f2fa20364e
+**Verified at**: 2026-10-22T08:08:13.702224
+**Published commit**: 7522bc77ee130d084459f3da1c95250fa098ff3a
 
 ## Action items
 - 🟡 36 個股資料不完整，頁面已標示；fresh=1938 ／ rendered=1974
