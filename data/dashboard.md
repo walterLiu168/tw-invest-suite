@@ -1,36 +1,33 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-04T17:07:33
+**Generated**: 2026-11-04T23:09:48
 **OVERALL**: 🔴 CRITICAL
 
-**Data date**: 2026-11-03
-**DB picks**: 24 active; run_id=88
+**Data date**: 2026-11-04
+**DB picks**: 24 active; run_id=91
 **OHLCV coverage**: 1962 rows ／ 1962 tickers
-**Nightly**: ec05f7175a794718bf19bc506039b497
+**Nightly**: a17736071b0049e681ee8a3391cfee56
 **Optional degraded**: 0
-**Publication**: verified ／ data_date=2026-11-03
-**Verified at**: 2026-11-04T17:07:12.231394
-**Published commit**: 7f01f86cfa1785ba635718036fc071ee40057164
+**Publication**: verified ／ data_date=2026-11-04
+**Verified at**: 2026-11-04T23:09:26.246654
+**Published commit**: b4889e99414d8395c2d615ad72a41dc9be35de13
 
 ## Action items
-- 🟡 38 個股資料不完整，頁面已標示；fresh=1936 ／ rendered=1974
-- 🔴 tw-invest-suite-daily-report: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-health-check: rc=1; 請見當次檢查明細
+- 🟡 24 個股資料不完整，頁面已標示；fresh=1950 ／ rendered=1974
 - 🟡 tw-invest-suite-marker-watchdog: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-postflight: rc=1; 請見當次檢查明細
 - 🔴 本次 postflight 未通過
 
 ## Cron results
 | Task | State | LastRun | RC |
 |---|---|---|---|
-| tw-invest-suite-daily-report | Ready | 2026-11-03T21:30:30.0000000+08:00 | 1 |
-| tw-invest-suite-market-screen | Ready | 2026-11-03T18:20:20.0000000+08:00 | 0 |
-| tw-invest-suite-yfinance | Ready | 2026-11-03T22:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-health-check | Ready | 2026-11-03T23:00:00.0000000+08:00 | 1 |
+| tw-invest-suite-daily-report | Ready | 2026-11-04T21:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-market-screen | Ready | 2026-11-04T18:20:20.0000000+08:00 | 0 |
+| tw-invest-suite-yfinance | Ready | 2026-11-04T22:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-health-check | Ready | 2026-11-04T23:00:00.0000000+08:00 | 0 |
 | tw-invest-suite-company-refresh | Ready | 2026-11-03T23:25:25.0000000+08:00 | 0 |
 | tw-invest-suite-sync-legacy | Ready | 2026-11-03T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-11-03T23:55:55.0000000+08:00 | 1 |
-| tw-invest-suite-publish | Ready | 2026-11-03T22:50:50.0000000+08:00 | 1 |
+| tw-invest-suite-publish | Running | 2026-11-04T22:50:50.0000000+08:00 | 267009 |
 | tw-invest-suite-postflight | Ready | 2026-11-04T00:05:05.0000000+08:00 | 1 |
 
 ## Scope
