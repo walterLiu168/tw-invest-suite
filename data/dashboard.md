@@ -1,5 +1,5 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-06T00:05:14
+**Generated**: 2026-11-06T01:07:27
 **OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-11-05
@@ -7,15 +7,14 @@
 **OHLCV coverage**: 1960 rows ／ 1960 tickers
 **Nightly**: 5848fa998acd45a790159c04dffa259a
 **Optional degraded**: 0
-**Publication**: publishing ／ data_date=2026-11-05
-**Verified at**: not yet
-**Published commit**: not yet
+**Publication**: verified ／ data_date=2026-11-05
+**Verified at**: 2026-11-06T01:07:08.582931
+**Published commit**: 62b9784709496aad1dd3f103d9121441c65a3485
 
 ## Action items
 - 🟡 26 個股資料不完整，頁面已標示；fresh=1948 ／ rendered=1974
 - 🟡 tw-invest-suite-health-check: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
-- 🟡 本次 GitHub Pages 發布尚未驗證；HTTP 200 不等於資料已更新
 
 ## Cron results
 | Task | State | LastRun | RC |
@@ -28,7 +27,7 @@
 | tw-invest-suite-sync-legacy | Ready | 2026-11-05T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-11-05T23:55:55.0000000+08:00 | 0 |
 | tw-invest-suite-publish | Ready | 2026-11-05T22:50:50.0000000+08:00 | 1 |
-| tw-invest-suite-postflight | Running | 2026-11-06T00:05:05.0000000+08:00 | 267009 |
+| tw-invest-suite-postflight | Ready | 2026-11-06T00:05:05.0000000+08:00 | 0 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
