@@ -1,6 +1,6 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-09T23:16:37
-**OVERALL**: 🔴 CRITICAL
+**Generated**: 2026-11-10T00:11:35
+**OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-11-09
 **DB picks**: 24 active; run_id=97
@@ -8,14 +8,12 @@
 **Nightly**: 16e61b48e02e4a32abdae020f142c571
 **Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-11-09
-**Verified at**: 2026-11-09T23:16:13.333696
-**Published commit**: c1be1015554af513f27ed924a0551af3ff371be0
+**Verified at**: 2026-11-10T00:11:13.410790
+**Published commit**: 942a0be060b13283554cf1d3edcd99ef5032cf31
 
 ## Action items
 - 🟡 23 個股資料不完整，頁面已標示；fresh=1951 ／ rendered=1974
-- 🟡 tw-invest-suite-marker-watchdog: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-postflight: rc=1; 請見當次檢查明細
-- 🔴 本次 postflight 未通過
+- 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
 
 ## Cron results
 | Task | State | LastRun | RC |
@@ -24,11 +22,11 @@
 | tw-invest-suite-market-screen | Ready | 2026-11-09T18:20:20.0000000+08:00 | 0 |
 | tw-invest-suite-yfinance | Ready | 2026-11-09T22:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-health-check | Ready | 2026-11-09T23:00:00.0000000+08:00 | 0 |
-| tw-invest-suite-company-refresh | Ready | 2026-11-08T23:25:25.0000000+08:00 | 0 |
-| tw-invest-suite-sync-legacy | Ready | 2026-11-08T23:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-marker-watchdog | Ready | 2026-11-08T23:55:55.0000000+08:00 | 1 |
-| tw-invest-suite-publish | Running | 2026-11-09T22:50:50.0000000+08:00 | 267009 |
-| tw-invest-suite-postflight | Ready | 2026-11-09T00:05:05.0000000+08:00 | 1 |
+| tw-invest-suite-company-refresh | Ready | 2026-11-09T23:25:25.0000000+08:00 | 0 |
+| tw-invest-suite-sync-legacy | Ready | 2026-11-09T23:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-marker-watchdog | Ready | 2026-11-09T23:55:55.0000000+08:00 | 0 |
+| tw-invest-suite-publish | Ready | 2026-11-09T22:50:50.0000000+08:00 | 1 |
+| tw-invest-suite-postflight | Ready | 2026-11-10T00:05:05.0000000+08:00 | 0 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
