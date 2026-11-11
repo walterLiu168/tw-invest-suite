@@ -1,5 +1,16 @@
 # tw-invest-suite — Handoff Doc (for ChatGPT)
 
+> ## ⚠️ RETIRED — 2026-11-12
+>
+> **本文件已停用，不要再拿來做工作交接。**
+>
+> - 使用者已明確表示不再使用 ChatGPT。**不要**再產出給 ChatGPT 的 prompt，
+>   不要期待 ChatGPT 回覆，也不要引用本文的「Prompt for ChatGPT」段落。
+> - 本文保留作為 2026-09 前後除錯與交接的**歷史紀錄**；其中的發現已經實作並驗證。
+> - 未來的交接、改進建議與審查，由 Mavis 直接完成。
+
+---
+
 > **Last updated**: 2026-09-03 (handoff from Mavis session to ChatGPT for debugging)
 > **Goal**: Help the next AI session pick up where we left off and continue debugging/improving.
 

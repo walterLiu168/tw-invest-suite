@@ -1,5 +1,18 @@
 # ChatGPT Debug → Mavis (Coder) Workflow
 
+> ## ⚠️ RETIRED — 2026-11-12
+>
+> **這條工作流程已停用，不要再使用。**
+>
+> - 使用者已明確表示不再使用 ChatGPT。**不要**再產出給 ChatGPT 的 prompt、
+>   不要期待 ChatGPT 回覆、不要再引用「ChatGPT 3 步工作流」。
+> - 本目錄與 `scripts/chatgpt_browser_reviewer.py` 僅作為**歷史紀錄**保留：
+>   裡面的審查發現已經實作並驗證過，刪掉會遺失決策依據。
+> - 未來的第二意見、改進建議與審查，直接由 Mavis（也就是本 agent）完成。
+> - 舊的 `docs/PROMPT-*.md`、`docs/handoff_chatgpt.md` 同樣視為歷史紀錄，不要當成待辦流程。
+
+---
+
 > **Roles**:
 > - **ChatGPT = manager / debugger / advisor** — 看完 code 找問題、給建議
 > - **Mavis = coder / implementer** — 讀 MD 建議，動手 implement
