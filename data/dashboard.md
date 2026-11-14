@@ -1,5 +1,5 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-14T15:07:38
+**Generated**: 2026-11-14T17:08:12
 **OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-11-13
@@ -8,8 +8,8 @@
 **Nightly**: f6cc159362ee4fcebfe25507496b344f
 **Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-11-13
-**Verified at**: 2026-11-14T15:07:16.007233
-**Published commit**: 943c54b087ac4e7458e429e069fa32a5c2e0b8db
+**Verified at**: 2026-11-14T17:07:50.314708
+**Published commit**: 8dad9cdef5b9daf08532f7d242ec1198dbd46a6f
 
 ## Action items
 - 🟡 32 個股資料不完整，頁面已標示；fresh=1942 ／ rendered=1974
