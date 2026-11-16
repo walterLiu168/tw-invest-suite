@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>選股清單歷史回看 · 坦克阿卡利</title>
+<meta name="description" content="翻查選股清單每一檔的完整歷史：上榜時間、每次入選的分級與分數、收盤價與後續報酬">
+<meta name="theme-color" content="#0a0e1a">
+<meta property="og:title" content="選股清單歷史回看 · 坦克阿卡利">
+<meta property="og:image" content="https://walterliu168.github.io/tw-invest-suite/data/og.png">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="assets/textsize.css">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='28'>📜</text></svg>">
+<style>
+:root { --bg:#0a0e1a; --panel:#131b2e; --panel2:#1a2440; --ink:#e6ecf5; --muted:#8aa0c0; --acc:#5fb1ff; --cyan:#39c5cf; --border:#1f2942; --red:#ec7063; --green:#58d68d; --amber:#f5b041; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif; line-height: 1.5; }
+a { color: inherit; text-decoration: none; }
+.hdr { max-width: 1200px; margin: 0 auto; padding: 28px 20px 10px; }
+.hdr h1 { margin: 0 0 6px; font-size: 1.55rem; }
+.hdr .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 4px; }
+.cards { max-width: 1200px; margin: 0 auto; padding: 4px 20px 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.card .k { color: var(--muted); font-size: 0.72rem; letter-spacing: .5px; }
+.card .v { font-size: 1.28rem; font-weight: 600; margin-top: 3px; }
+.picker { max-width: 1200px; margin: 0 auto; padding: 0 20px 10px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.picker input, .picker select { background: var(--panel); color: var(--ink); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 0.92rem; font-family: inherit; }
+.picker input { flex: 1 1 220px; min-width: 160px; }
+.picker .count { color: var(--muted); font-size: 0.85rem; margin-left: auto; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 20px 60px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+thead th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.74rem; padding: 8px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg); white-space: nowrap; }
+tbody td { padding: 9px 8px; border-bottom: 1px solid rgba(31,41,66,.6); vertical-align: top; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--panel2); }
+.num { font-family: Consolas, "SFMono-Regular", monospace; }
+.up { color: var(--red); }
+.down { color: var(--green); }
+.flat { color: var(--muted); }
+.tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; background: var(--panel2); color: var(--muted); white-space: nowrap; }
+.tag.long { background: rgba(236,112,99,.18); color: var(--red); }
+.tag.short { background: rgba(245,176,65,.18); color: var(--amber); }
+.tag.on { background: rgba(95,177,255,.18); color: var(--acc); }
+.tag.off { background: rgba(88,214,141,.12); color: var(--green); }
+.name { font-weight: 600; }
+.ind { color: var(--muted); font-size: 0.78rem; }
+.drawer { position: fixed; inset: 0; background: rgba(4,7,14,.72); display: none; z-index: 200; }
+.drawer.open { display: block; }
+.sheet { position: absolute; right: 0; top: 0; bottom: 0; width: min(880px, 100%); background: var(--bg); border-left: 1px solid var(--border); overflow-y: auto; padding: 18px 20px 60px; }
+.sheet h2 { margin: 0; font-size: 1.3rem; }
+.sheet .meta { color: var(--muted); font-size: 0.88rem; margin: 4px 0 14px; }
+.close { position: absolute; right: 16px; top: 14px; background: var(--panel); border: 1px solid var(--border); color: var(--ink); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem; }
+.statrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 16px; }
+.chart { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 16px; }
+.chart svg { width: 100%; height: 190px; display: block; }
+.chart .cap { color: var(--muted); font-size: 0.76rem; margin-top: 6px; }
+.sect { color: var(--muted); font-size: 0.8rem; margin: 18px 0 8px; }
+.rationale { color: var(--muted); font-size: 0.82rem; line-height: 1.45; margin-top: 4px; }
+.rationale .rk { color: var(--acc); margin-right: 6px; }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+.load { color: var(--muted); padding: 60px 0; text-align: center; }
+@media (max-width: 720px) {
+  .hide-sm { display: none; }
+  .hdr h1 { font-size: 1.25rem; }
+  table { font-size: 0.84rem; }
+  thead th, tbody td { padding: 8px 5px; }
+  .sheet { width: 100%; border-left: none; }
+}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <h1>📜 選股清單歷史回看</h1>
+  <p class="sub" id="sub">載入中…</p>
+</div>
+<div class="cards" id="cards"></div>
+<div class="picker">
+  <input id="q" type="search" placeholder="搜尋代號／名稱／產業" autocomplete="off">
+  <select id="flt">
+    <option value="all">全部</option>
+    <option value="on">仍在榜</option>
+    <option value="off">已離榜</option>
+  </select>
+  <select id="sort">
+    <option value="appearances">依上榜次數</option>
+    <option value="recent">依最後在榜日</option>
+    <option value="first">依首次進榜日</option>
+    <option value="ret">依自首次報酬</option>
+    <option value="ticker">依代號</option>
+  </select>
+  <span class="count" id="count"></span>
+</div>
+<div class="wrap">
+  <div class="load" id="load">載入歷史資料中…</div>
+  <table id="tbl" style="display:none">
+    <thead>
+      <tr>
+        <th>代號</th><th>名稱</th><th class="hide-sm">產業</th>
+        <th>首次進榜</th><th class="hide-sm">最後在榜</th>
+        <th>上榜次數</th><th>目前分級</th>
+        <th class="hide-sm">首次收盤</th><th class="hide-sm">最後收盤</th>
+        <th>自首次報酬</th><th>狀態</th>
+      </tr>
+    </thead>
+    <tbody id="tb"></tbody>
+  </table>
+  <div class="empty" id="empty" style="display:none">沒有符合條件的標的</div>
+</div>
+<div class="drawer" id="drawer">
+  <div class="sheet">
+    <button class="close" id="close" aria-label="關閉">✕</button>
+    <h2 id="dTitle">—</h2>
+    <p class="meta" id="dMeta"></p>
+    <div class="statrow" id="dStats"></div>
+    <div class="chart" id="dChart"></div>
+    <div class="sect" id="dSect">入選紀錄</div>
+    <table id="dTbl">
+      <thead><tr>
+        <th>日期</th><th>分級</th><th class="hide-sm">方向</th><th>分數</th>
+        <th>收盤</th><th class="hide-sm">當日</th><th class="hide-sm">超額60日</th>
+        <th class="hide-sm">超額240日</th><th class="hide-sm">狀態</th>
+      </tr></thead>
+      <tbody id="dTb"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+  var DATA = null, ORDER = [], SHOW = [];
+
+  function esc(v) {
+    if (v === null || v === undefined) return "";
+    return String(v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function pct(v, digits) {
+    if (v === null || v === undefined || isNaN(v)) return "—";
+    var n = Number(v) * 100;
+    return (n > 0 ? "+" : "") + n.toFixed(digits === undefined ? 2 : digits) + "%";
+  }
+  function cls(v) {
+    if (v === null || v === undefined || isNaN(v)) return "flat";
+    return Number(v) > 0 ? "up" : Number(v) < 0 ? "down" : "flat";
+  }
+  function sign(v, digits) {
+    if (v === null || v === undefined || isNaN(v)) return "—";
+    var n = Number(v) * 100;
+    return (n > 0 ? "+" : "") + n.toFixed(digits === undefined ? 2 : digits) + "%";
+  }
+  function num(v) {
+    if (v === null || v === undefined || v === "" || isNaN(v)) return "—";
+    return Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function lastReturn(t) {
+    if (!t.path || !t.path.length) return null;
+    var last = t.path[t.path.length - 1];
+    return last && last.length > 2 ? last[2] : null;
+  }
+  function firstClose(t) {
+    if (!t.path || !t.path.length) return null;
+    return t.path[0][1];
+  }
+  function lastClose(t) {
+    if (!t.path || !t.path.length) return null;
+    return t.path[t.path.length - 1][1];
+  }
+  function horizonTag(h) {
+    if (!h) return "";
+    var label = h === "long" ? "長期" : h === "short" ? "短中期" : h;
+    return '<span class="tag ' + esc(h) + '">' + esc(label) + "</span>";
+  }
+
+  function renderCards() {
+    var dates = DATA.dates || [];
+    var cur = DATA.current || {};
+    var onCount = ORDER.filter(function (t) { return t.in_current; }).length;
+    var dups = Object.keys(DATA.duplicate_pick_rows || {});
+    var html = "";
+    html += card("歷史區間", (dates[0] || "—") + " → " + (dates[dates.length - 1] || "—"));
+    html += card("篩選次數", DATA.runs + " 次");
+    html += card("曾進榜檔數", ORDER.length + " 檔");
+    html += card("目前榜上", onCount + " / " + (cur.picks_count || onCount) + " 檔");
+    if (dups.length) {
+      html += card("同日重複入選", dups.length + " 天");
+    }
+    document.getElementById("cards").innerHTML = html;
+    var sub = "資料日 " + esc(DATA.date || "") + " · 共 " + (DATA.runs || 0) + " 次每日篩選 · " +
+      ORDER.length + " 檔曾進榜 · 點任何一列看該檔完整時間軸";
+    if (dups.length) {
+      sub += "<br>⚠ " + dups.length + " 天有同一檔重複入選，該日不重複計次";
+    }
+    document.getElementById("sub").innerHTML = sub;
+  }
+  function card(k, v) {
+    return '<div class="card"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + "</div></div>";
+  }
+
+  function apply() {
+    var q = document.getElementById("q").value.trim().toLowerCase();
+    var flt = document.getElementById("flt").value;
+    var sort = document.getElementById("sort").value;
+    SHOW = ORDER.filter(function (t) {
+      if (flt === "on" && !t.in_current) return false;
+      if (flt === "off" && t.in_current) return false;
+      if (!q) return true;
+      return (t.ticker + " " + t.name + " " + (t.industry || "")).toLowerCase().indexOf(q) >= 0;
+    });
+    SHOW.sort(function (a, b) {
+      if (sort === "appearances") return b.appearances - a.appearances || a.ticker.localeCompare(b.ticker);
+      if (sort === "recent") return a.last_seen < b.last_seen ? 1 : a.last_seen > b.last_seen ? -1 : 0;
+      if (sort === "first") return a.first_seen < b.first_seen ? -1 : a.first_seen > b.first_seen ? 1 : 0;
+      if (sort === "ticker") return a.ticker.localeCompare(b.ticker);
+      var ra = lastReturn(a), rb = lastReturn(b);
+      if (ra === null) return 1;
+      if (rb === null) return -1;
+      return rb - ra;
+    });
+    draw();
+  }
+
+  function draw() {
+    var rows = "";
+    for (var i = 0; i < SHOW.length; i++) {
+      var t = SHOW[i];
+      var ret = lastReturn(t);
+      rows += "<tr data-t=\"" + esc(t.ticker) + "\">";
+      rows += "<td class=\"num\">" + esc(t.ticker) + "</td>";
+      rows += "<td class=\"name\">" + esc(t.name) + "</td>";
+      rows += "<td class=\"ind hide-sm\">" + esc(t.industry || "—") + "</td>";
+      rows += "<td class=\"num\">" + esc(t.first_seen) + "</td>";
+      rows += "<td class=\"num hide-sm\">" + esc(t.last_seen) + "</td>";
+      rows += "<td class=\"num\">" + t.appearances + "</td>";
+      rows += "<td>" + (t.current_bucket ? '<span class="tag">' + esc(t.current_bucket) + "</span>" : "—") + "</td>";
+      rows += "<td class=\"num hide-sm\">" + num(firstClose(t)) + "</td>";
+      rows += "<td class=\"num hide-sm\">" + num(lastClose(t)) + "</td>";
+      rows += "<td class=\"num " + cls(ret) + "\">" + pct(ret) + "</td>";
+      rows += "<td>" + (t.in_current ? '<span class="tag on">榜上</span>' : '<span class="tag off">已離榜</span>') + "</td>";
+      rows += "</tr>";
+    }
+    document.getElementById("tb").innerHTML = rows;
+    document.getElementById("count").textContent = SHOW.length + " / " + ORDER.length + " 檔";
+    document.getElementById("tbl").style.display = SHOW.length ? "" : "none";
+    document.getElementById("empty").style.display = SHOW.length ? "none" : "";
+    var trs = document.getElementById("tb").querySelectorAll("tr");
+    for (var j = 0; j < trs.length; j++) {
+      trs[j].addEventListener("click", function () { open(this.getAttribute("data-t")); });
+    }
+  }
+
+  function open(ticker) {
+    var t = DATA.tickers[ticker];
+    if (!t) return;
+    document.getElementById("dTitle").innerHTML =
+      '<span class="num">' + esc(t.ticker) + "</span> " + esc(t.name);
+    document.getElementById("dMeta").textContent =
+      (t.industry || "未分類") + " · 首次進榜 " + t.first_seen + " · 最後在榜 " + t.last_seen +
+      " · 上榜 " + t.appearances + " 次";
+    var ret = lastReturn(t);
+    var stats = "";
+    stats += statCard("首次進榜", t.first_seen);
+    stats += statCard("最後在榜", t.last_seen);
+    stats += statCard("上榜次數", t.appearances + " / " + DATA.runs);
+    stats += statCard("自首次報酬", '<span class="' + cls(ret) + '">' + pct(ret) + "</span>", true);
+    document.getElementById("dStats").innerHTML = stats;
+    document.getElementById("dChart").innerHTML = chart(t);
+    var rows = "";
+    for (var i = t.entries.length - 1; i >= 0; i--) {
+      var e = t.entries[i];
+      rows += "<tr>";
+      rows += "<td class=\"num\">" + esc(e.d) + "</td>";
+      rows += "<td>" + (e.b ? '<span class="tag">' + esc(e.b) + "</span>" : "—") + "</td>";
+      rows += "<td class=\"hide-sm\">" + horizonTag(e.h) + "</td>";
+      rows += "<td class=\"num\">" + (e.sc === null || e.sc === undefined ? "—" : Number(e.sc).toFixed(0)) + "</td>";
+      rows += "<td class=\"num\">" + num(e.c) + "</td>";
+      rows += "<td class=\"num hide-sm " + cls(e.chg) + "\">" + sign(e.chg === null ? null : e.chg / 100) + "</td>";
+      rows += "<td class=\"num hide-sm " + cls(e.e60) + "\">" + sign(e.e60) + "</td>";
+      rows += "<td class=\"num hide-sm " + cls(e.e240) + "\">" + sign(e.e240) + "</td>";
+      rows += "<td class=\"hide-sm\">" + (e.s ? '<span class="tag">' + esc(e.s) + "</span>" : "—") + "</td>";
+      rows += "</tr>";
+      if (e.r) {
+        var facts = "";
+        for (var fk in e.r) {
+          if (Object.prototype.hasOwnProperty.call(e.r, fk)) {
+            facts += "<div><span class=\"rk\">" + esc(fk) + "</span>" + esc(e.r[fk]) + "</div>";
+          }
+        }
+        rows += "<tr><td colspan=\"9\" style=\"padding:0 0 10px 0;border-bottom:1px solid rgba(31,41,66,.6)\">";
+        rows += '<div class="rationale">' + facts + "</div></td></tr>";
+      }
+    }
+    document.getElementById("dTb").innerHTML = rows;
+    document.getElementById("drawer").classList.add("open");
+    document.getElementById("drawer").scrollTop = 0;
+    document.querySelector(".sheet").scrollTop = 0;
+    history.replaceState(null, "", "?ticker=" + encodeURIComponent(ticker));
+  }
+  function statCard(k, v, raw) {
+    return '<div class="card"><div class="k">' + esc(k) + '</div><div class="v">' +
+      (raw ? v : esc(v)) + "</div></div>";
+  }
+
+  function chart(t) {
+    var path = t.path || [];
+    if (path.length < 2) return '<div class="cap">報酬路徑不足</div>';
+    var W = 820, H = 170, PAD = 8;
+    var vals = path.map(function (p) { return p[2] === null ? 0 : p[2]; });
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (hi === lo) { hi += 0.01; lo -= 0.01; }
+    var span = hi - lo;
+    var step = path.length > 1 ? (W - PAD * 2) / (path.length - 1) : 0;
+    var pts = [];
+    for (var i = 0; i < path.length; i++) {
+      var x = PAD + i * step;
+      var y = PAD + (hi - vals[i]) / span * (H - PAD * 2);
+      pts.push(x.toFixed(1) + "," + y.toFixed(1));
+    }
+    var zeroY = PAD + (hi - 0) / span * (H - PAD * 2);
+    var lastVal = vals[vals.length - 1];
+    var stroke = lastVal >= 0 ? "#ec7063" : "#58d68d";
+    var svg = '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none">';
+    svg += '<line x1="' + PAD + '" y1="' + zeroY.toFixed(1) + '" x2="' + (W - PAD) + '" y2="' + zeroY.toFixed(1) +
+      '" stroke="#1f2942" stroke-width="1" stroke-dasharray="4 4"/>';
+    svg += '<polyline fill="none" stroke="' + stroke + '" stroke-width="2" points="' + pts.join(" ") + '"/>';
+    svg += "</svg>";
+    svg += '<div class="cap">自首次進榜日起的每日報酬（' + esc(path[0][0]) + " 起 · " +
+      (lastVal >= 0 ? "紅＝上漲" : "綠＝下跌") + " · 目前 " + pct(lastVal) + "）</div>";
+    return svg;
+  }
+
+  function closeDrawer() {
+    document.getElementById("drawer").classList.remove("open");
+    history.replaceState(null, "", location.pathname);
+  }
+
+  document.getElementById("close").addEventListener("click", closeDrawer);
+  document.getElementById("drawer").addEventListener("click", function (e) {
+    if (e.target === this) closeDrawer();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeDrawer();
+  });
+  document.getElementById("q").addEventListener("input", apply);
+  document.getElementById("flt").addEventListener("change", apply);
+  document.getElementById("sort").addEventListener("change", apply);
+
+  fetch("data/watchlist-history.json", { cache: "no-cache" })
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      DATA = data;
+      var raw = data.tickers || {};
+      ORDER = Object.keys(raw).map(function (k) {
+        var t = raw[k];
+        t.ticker = k;
+        t.current_bucket = null;
+        for (var i = 0; i < t.entries.length; i++) {
+          if (t.entries[i].d === (data.current || {}).date) {
+            t.current_bucket = t.entries[i].b;
+            t.current_horizon = t.entries[i].h;
+          }
+        }
+        return t;
+      });
+      renderCards();
+      document.getElementById("load").style.display = "none";
+      apply();
+      var want = new URLSearchParams(location.search).get("ticker");
+      if (want && DATA.tickers[want]) open(want);
+    })
+    .catch(function (err) {
+      document.getElementById("load").innerHTML =
+        "歷史資料載入失敗：" + esc(err.message) + "<br><span style='font-size:.8rem'>請確認 data/watchlist-history.json 已產生</span>";
+    });
+})();
+</script>
+</body>
+</html>

@@ -29,8 +29,10 @@ REPO_SOURCE_FILES = (
     'src/chip_advanced.py', 'src/sector_aggregate.py', 'src/build_ticker_meta.py',
     'src/concept_stocks.py', 'src/render_concepts.py', 'src/render_chips_advanced.py',
     'src/industry_zh.py', 'src/generate_og.py', 'src/chip_push.py',
+    'src/watchlist_history.py',
 )
 REPORT_FRONTEND_FILES = ('analyze.html','readme.html','chips-history.html','monitor.html',
+                         'watchlist-history.html',
                          'manifest.json','sw.js','assets/textsize.css','assets/textsize.js')
 SOURCE_FILES = (
     "run_daily.ps1", "run_stage.py", "pipeline_state.py", "render_only.py",
@@ -46,11 +48,11 @@ SOURCE_FILES = (
     "check_openalice_health.py", "db_client.py", "deep_dive_prompts.py", "market_screen.py",
     "process_lifecycle.ps1", "publish_verified_sites.ps1", "sync_groove_release.py",
     "metadata_backfill_daily.ps1", "metadata_backfill.py", "market_screen_daily.ps1",
-    "company_refresh_daily.ps1", "company_refresh.py", "postflight_daily.ps1",
+    "company_refresh_daily.ps1", "company_refresh.py", "daily_certification_catchup.py", "postflight_daily.ps1",
     "sync_legacy_tables_runner.ps1", "sync_legacy_tables.py",
     "yfinance_daily.py", "yfinance_batch.py", "cache_manager.py",
     "finmind_batch.py", "finmind_client.py",
-    "groove_service_watch.ps1",
+    "groove_service_watch.ps1", "news_refresh_watchlist.py",
 )
 
 
@@ -179,32 +181,39 @@ def validate_watchlist(body, picks):
         raise ValueError("watchlist HTML does not contain the 24 committed picks")
 
 
-def db_snapshot():
+def db_snapshot(require_screen=True):
     import db_client as db
     with db.get_cursor() as c:
         c.execute("SELECT MAX(Date) AS d FROM daily_data2_full")
         data_date = str(c.fetchone()["d"])
         c.execute("SELECT COUNT(*) AS n, COUNT(DISTINCT Ticker) AS tickers FROM daily_data2_full WHERE Date=%s", (data_date,))
         coverage = c.fetchone()
-        c.execute("SELECT id,run_date,picks_count FROM market_screen_runs WHERE run_date=%s ORDER BY id DESC LIMIT 1", (data_date,))
-        run = c.fetchone()
-        if not run:
-            raise ValueError(f"no screen run for {data_date}")
-        c.execute("SELECT ticker,horizon,bucket,status FROM market_screen_picks WHERE run_id=%s ORDER BY bucket,horizon,ticker", (run["id"],))
-        picks = c.fetchall()
         c.execute("SELECT ticker FROM industry_type WHERE ticker REGEXP '^[0-9]{4}$|^[0-9]{4}[A-Z]$' ORDER BY ticker")
         render_tickers = [row['ticker'] for row in c.fetchall()]
+        if not require_screen:
+            run = None
+            picks = []
+        else:
+            c.execute("SELECT id,run_date,picks_count FROM market_screen_runs WHERE run_date=%s ORDER BY id DESC LIMIT 1", (data_date,))
+            run = c.fetchone()
+            if not run:
+                raise ValueError(f"no screen run for {data_date}")
+            c.execute("SELECT ticker,horizon,bucket,status FROM market_screen_picks WHERE run_id=%s ORDER BY bucket,horizon,ticker", (run["id"],))
+            picks = c.fetchall()
+    if coverage["tickers"] < 1900:
+        raise ValueError(f"OHLCV coverage insufficient: {coverage}")
+    base = {"data_date": data_date, "ohlcv_rows": coverage["n"],
+            "ohlcv_tickers": coverage["tickers"], "render_tickers": render_tickers}
+    if not require_screen:
+        return base
     groups = Counter((p["bucket"], p["horizon"]) for p in picks)
     expected = {(b, h): 3 for b in BUCKETS for h in ("long", "short")}
     if run["picks_count"] != 24 or len(picks) != 24 or groups != expected:
         raise ValueError(f"invalid picks for run {run['id']}: {dict(groups)}")
     if any(p["status"] != "active" for p in picks):
         raise ValueError("inactive picks in current run")
-    if coverage["tickers"] < 1900:
-        raise ValueError(f"OHLCV coverage insufficient: {coverage}")
-    return {"data_date": data_date, "run_id": run["id"], "picks_count": 24,
-            "bucket_counts": {b: 6 for b in sorted(BUCKETS)}, "picks": picks,
-            "ohlcv_rows": coverage["n"], "ohlcv_tickers": coverage["tickers"], "render_tickers": render_tickers}
+    return {**base, "run_id": run["id"], "picks_count": 24,
+            "bucket_counts": {b: 6 for b in sorted(BUCKETS)}, "picks": picks}
 
 
 @contextmanager
@@ -248,7 +257,10 @@ def begin(mode="full"):
     # Invalidate publish eligibility before preflight, including preflight failures.
     atomic_json(STATE, run)
     try:
-        run.update(db_snapshot())
+        # A new trading date has no screen run yet. Capture and gate canonical
+        # inputs first; finalize_inputs() binds the newly generated 24 picks
+        # after the market_screen stage and before any renderer runs.
+        run.update(db_snapshot(require_screen=False))
         if run["data_date"] != expected_session(execution_day):
             raise ValueError(f"upstream stale: expected {expected_session(execution_day)}, got {run['data_date']}")
         run["source_hashes"] = source_hashes()
@@ -326,7 +338,8 @@ def validate_all_reports(receipt, run):
         raise ValueError('All-report ranking/advanced coverage mismatch')
     expected = {'sectors.html','chips.html','chips-advanced.html','concepts.html',
         'data/sectors.json','data/chips.json','data/chips-advanced.json','data/concept-stocks.json',
-        'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png'}
+        'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png',
+        'data/watchlist-history.json'}
     expected.update(f'data/chips-history/{day}.json' for day in dates)
     expected.update(REPORT_FRONTEND_FILES)
     artifacts = receipt.get('artifacts', [])
@@ -538,7 +551,10 @@ def main():
             return 0
         else:
             value = verify_marker()
-        print(json.dumps({k: value[k] for k in ("nightly_id", "data_date", "run_id", "status")}, ensure_ascii=False))
+        # begin intentionally has no run_id until market_screen finishes and
+        # finalize-inputs binds the new picks. Keep the CLI summary usable for
+        # both pre-screen and finalized states.
+        print(json.dumps({k: value.get(k) for k in ("nightly_id", "data_date", "run_id", "status")}, ensure_ascii=False))
         return 0
     except Exception as e:
         print(f"FATAL: {e}", file=sys.stderr)

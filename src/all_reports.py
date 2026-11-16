@@ -91,13 +91,18 @@ def main():
                 'source':inputs['source'],'tickers':daily})
         ticker_meta.main()
         ps.atomic_json(data / 'chips-history-index.json',{'date':inputs['date'],'nightly_id':run['nightly_id'],'source':inputs['source'],'dates':sorted(dates),'count':len(dates)})
+        import watchlist_history
+        watchlist_history.write_json(watchlist_history.build_history(),
+            data / 'watchlist-history.json',inputs['date'],run['nightly_id'])
+        print('all_reports: watchlist history ready',flush=True)
         picks = [p for p in og.parse_watchlist(ps.PUBLIC / 'watchlist.html') if p['horizon'] != 'margin']
         if {p['ticker'] for p in picks} != {p['ticker'] for p in run['picks']}:
             raise ValueError('OG selected-pick identity mismatch')
         og.render_og(picks,data / 'og.png',inputs['date'])
         paths = ['sectors.html','chips.html','chips-advanced.html','concepts.html',
             'data/sectors.json','data/chips.json','data/chips-advanced.json','data/concept-stocks.json',
-            'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png']
+            'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png',
+            'data/watchlist-history.json']
         paths += [f'data/chips-history/{day}.json' for day in dates]
         paths += list(ps.REPORT_FRONTEND_FILES)
         artifacts = [ps.artifact(ps.PUBLIC / relative,relative) for relative in paths]

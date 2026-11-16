@@ -425,3 +425,56 @@ D016 的 NO-GO 建立在「證據量不足 + 四項 GO 條件全 FAIL」上，�
 - bundle 各 head 的 gain 結構：`scripts/_debug/_bundle_anatomy.py`
 - 詳見 `docs/RESP-2026-11-12-01-retrain-root-cause-and-terms.md`
 
+---
+
+## D018: 選股清單歷史回看（watchlist history）
+
+**日期**：2026-11-16
+
+**Context**:
+每日精選 24 檔每晚整份換掉，任何網頁都只能回答「現在榜上有哪些」，
+永遠回答不了「這檔上次進榜是什麼時候、理由是什麼、之後賺賠如何」。
+既有資料其實都在：`market_screen_picks` 保留每次入選的 score／rationale／bucket／
+close_at_pick，`daily_data2_full` 有正規收盤價，只是沒有被組織成可查詢的歷史。
+
+**Decision**:
+1. 新增 `src/watchlist_history.py`：讀 `market_screen_runs` + `market_screen_picks` +
+   `daily_data2_full` → 產生單一緊湊文件 `public/data/watchlist-history.json`
+   （每檔含首次／最後進榜、上榜次數、每次入選明細、首次進榜後的每日報酬路徑）。
+2. 新增靜態頁 `public/watchlist-history.html`：總覽表（可搜尋／篩選／排序）+
+   點列下鑽該檔時間軸與報酬圖 + `?ticker=` 深層連結；顏色沿用台股慣例（紅漲綠跌）。
+3. nightly stage 7（`src/all_reports.py`）每次重建歷史文件，
+   `scripts/pipeline_state.py` 的認證白名單同步加入兩個新產物，
+   `scripts/render_full_watchlist.py` 每張 pick 卡加「📜 歷史 →」連結。
+4. 理由文字在建置時解析成結構化欄位（原本是 `**欄位**：值` 的整段文字），
+   文件由 943 KB 降到 909 KB，頁面也能一行一個事實呈現。
+5. **不修** `market_screen_picks` 的同日重複入選（見下），只去重並揭露。
+
+**Why**:
+- 歷史是「清單」這種每日替換型產物唯一能被稽核的證據；沒有它，
+  任何績效宣稱都只能用當日截圖
+- `market_screen_picks` 沒有 `(run_id, ticker)` 唯一鍵，實測 17 天、20 組同一檔在同一次
+  篩選被寫入兩次；那些天的 24 筆其實只有 23 個不重複標的，而
+  `publish_manifest.fetch_picks()` 只檢查列數所以查不出來。
+  本功能以 `(run_id, ticker)` 去重（保留 id 最小者）並在頁面與 JSON 揭露天數，
+  但**沒有**加唯一鍵、沒有回寫既有列、沒有改 market screen——
+  那要先查清楚為什麼會重複入選，屬於另一個需要單獨授權的修正。
+- 認證契約（`validate_all_reports`）對產物集合是嚴格相等比對，
+  新增檔案若不同步白名單會讓 nightly 認證失敗，因此改動必須成對進行
+
+**Trade-off**:
+- 歷史文件每晚重建，main 會有滾動 diff（與既有的 `chips-history-index.json` 同一模式）
+- JSON 909 KB（緊湊 JSON，GH Pages 會 gzip，實際傳輸約 180 KB）
+- 只涵蓋 `market_screen_runs` 保留的期間（目前 2026-08-12 起 50 次）；更早的清單無 DB 紀錄
+
+**驗證**:
+- `tests/test_watchlist_history.py`：6 個測試（理由解析、同日去重、認證身分、
+  緊湊輸出、產物白名單、頁面契約、台股顏色）
+- 全套 `pytest tests/`：235 passed / 1 failed；唯一失敗
+  `test_db_config.py::test_missing_password_fails_closed` 為**既有失敗**
+  （`scripts/db_client.py` 有他人未提交的 registry fallback 改動；
+  以 HEAD 版本隔離驗證為 3 passed），與本功能無關
+- 瀏覽器實測（487×767 手機視窗）：總覽表、下鑽抽屜、報酬圖、理由逐行、
+  深層連結、去重後次數皆正確
+- 詳見 `docs/WATCHLIST_HISTORY_FEATURE.md`
+

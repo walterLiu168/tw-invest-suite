@@ -36,7 +36,7 @@ import sys
 import json
 import time
 from bounded_deep_dive import fetch_tickers
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 import pymysql
 
@@ -990,7 +990,7 @@ def render_tags_bar(c: ms.Candidate) -> str:
     tags = []
     if c.excess_return_240d is not None:
         cls = "tag-green" if c.excess_return_240d > 0 else "tag-red"
-        tags.append(f'<span class="tag {cls}">240d {c.excess_return_240d:+.1%}</span>')
+        tags.append(f'<span class="tag {cls}">240 曆日價格報酬 {c.excess_return_240d:+.1%}</span>')
     if c.foreign_net and c.foreign_net > 0:
         tags.append(f'<span class="tag tag-green">外資 +{c.foreign_net/1000:,.0f} 張</span>')
     elif c.foreign_net and c.foreign_net < 0:
@@ -1036,21 +1036,81 @@ def render_zen_section(c: ms.Candidate) -> str:
     return f'<div class="zen-grid">{"".join(cells)}</div>'
 
 
-def render_news_section(d: Dict, limit=5) -> str:
-    rows = d.get("news") or []
+def render_news_section(d: Dict, ticker: Optional[str] = None, limit=5) -> str:
+    """Render the news section.
+
+    Always reads from the OpenAlice `stock_news` table. FinMind's
+    TaiwanStockNews dataset lags 24-72h for popular tickers, so the
+    `d["news"]` set by `analyze_stock.fetch_all → fm.stock_news` is no
+    longer trusted. The dedicated news-refresh tasks
+    (OpenAlice News Refresh Every 2h / RSS Refresh / AI-Telegram Stock
+    News Auto Refresh) keep stock_news same-day.
+    """
+    rows = []
+    db_error = d.get("_canonical_news_error")
+    canonical = d.get("_canonical_news")
+    target_date = (os.environ.get("TW_NEWS_DATE")
+                   or os.environ.get("TW_DATA_DATE")
+                   or db.latest_date("daily_data2_full")
+                   or datetime.now().strftime("%Y-%m-%d"))
+    if canonical is not None:
+        rows = canonical
+    elif ticker:
+        try:
+            fresh = db.news_for_tickers([ticker], limit_per=limit, days=5,
+                                        target_date=target_date).get(ticker, [])
+            rows = fresh
+        except Exception as exc:
+            db_error = str(exc)
+            rows = []
+    rows = [
+        {
+            "title": r.get("title", "—"),
+            "source": r.get("source", "—"),
+            "date": r.get("published_at") or r.get("date"),
+            "link": r.get("link") or r.get("url", ""),
+        }
+        for r in rows
+    ]
+
+    fallback_used = False
     if not rows:
-        return '<div class="muted">_查無近期新聞_</div>'
-    rows_sorted = sorted(rows, key=lambda x: x.get("date", ""), reverse=True)[:limit]
+        # FinMind is allowed only when it meets the same five-day freshness
+        # contract. Never silently reintroduce the known 30-day stale feed.
+        end_date = date.fromisoformat(str(target_date)[:10])
+        start_date = end_date - timedelta(days=4)
+        for row in d.get("news") or []:
+            value = row.get("date") or row.get("published_at")
+            try:
+                published = datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+            except (TypeError, ValueError):
+                continue
+            if start_date <= published <= end_date:
+                rows.append({
+                    "title": row.get("title", "—"),
+                    "source": f"{row.get('source', 'FinMind')}（FinMind fallback）",
+                    "date": value,
+                    "link": row.get("link") or row.get("url", ""),
+                })
+        fallback_used = bool(rows)
+    if not rows:
+        reason = "stock_news 暫時無法讀取；" if db_error else ""
+        return f'<div class="muted">_{reason}近 5 日無可驗證新聞_</div>'
+    rows_sorted = sorted(rows, key=lambda x: str(x.get("date", "")).replace("T", " "), reverse=True)[:limit]
     items = []
     for r in rows_sorted:
         title = r.get("title", "—")
         source = r.get("source", "—")
         date_s = r.get("date", "—")
+        if hasattr(date_s, "strftime"):
+            date_s = date_s.strftime("%Y-%m-%d %H:%M:%S")
         link = r.get("link", "")
         if link:
-            items.append(f'<div class="news-item">· <a href="{_esc(link)}" target="_blank">{_esc(title)}</a><div class="muted" style="font-size:0.7rem">{_esc(date_s)} · {_esc(source)}</div></div>')
+            items.append(f'<div class="news-item">· <a href="{_esc(link)}" target="_blank">{_esc(title)}</a><div class="muted" style="font-size:0.7rem">{_esc(str(date_s))} · {_esc(source)}</div></div>')
         else:
-            items.append(f'<div class="news-item">· {_esc(title)}<div class="muted" style="font-size:0.7rem">{_esc(date_s)} · {_esc(source)}</div></div>')
+            items.append(f'<div class="news-item">· {_esc(title)}<div class="muted" style="font-size:0.7rem">{_esc(str(date_s))} · {_esc(source)}</div></div>')
+    if fallback_used:
+        items.insert(0, '<div class="muted">stock_news 無近期資料；以下為符合 5 日時限的 FinMind fallback。</div>')
     return "\n".join(items)
 
 
@@ -1247,20 +1307,20 @@ def render_zen_chart_section(ticker: str, c: ms.Candidate) -> str:
 def render_valuation_section(c: ms.Candidate) -> str:
     """20d excess return and calendar-day price returns; missing bars stay absent."""
     items = [
-        {"label": "20d 超額", "value": c.excess_return_20d},
+        {"label": "20 曆日相對樣本均值", "value": c.excess_return_20d},
         {"label": "60 曆日", "value": c.excess_return_60d},
         {"label": "120 曆日", "value": c.excess_return_120d},
         {"label": "240 曆日", "value": c.excess_return_240d},
     ]
     missing = [item["label"] for item in items if item["value"] is None]
     chart = _svg_horizontal_bars([item for item in items if item["value"] is not None], width=520, height=130,
-                                  title="報酬率（僅 20d 扣大盤）", value_fmt="+.1%")
+                                  title="原始價格報酬（20 曆日減有效樣本等權均值）", value_fmt="+.1%")
     if missing:
         chart += '<div class="muted">未提供：' + _esc('、'.join(missing)) + '</div>'
     cap_label = f"{c.market_cap / 1e8:,.1f} 億" if c.market_cap is not None else "未提供"
     summary = f"""
 - 市值: **{cap_label}** | 收盤: {c.close:.2f} | 成交量: {c.volume/1000:,.1f} 張
-- **240d** 是長期動能指標，**60d** 是中期趨勢，**20d** 是短期動能
+- 60/120/240 為日曆日回溯原始價格報酬；20 曆日相對報酬扣除當日有效樣本等權均值。未含股息或除權息調整，不代表總報酬或相對加權指數報酬。
 """
     return chart + summary
 
@@ -1490,7 +1550,7 @@ def render_pick_card(c: ms.Candidate, d: Dict, idx: int) -> str:
         "fl_roe": ("🧬 ROE", render_finlab_roe_chart(d)),
         "fl_rev": ("📈 月營收", render_finlab_revenue_chart(d)),
         "div": ("💵 配息", render_dividend_chart_section(d)),
-        "news": ("📰 新聞", render_news_section(d, limit=5)),
+        "news": ("📰 新聞", render_news_section(d, ticker=c.ticker, limit=5)),
         "obs": ("💡 觀察", render_observations(d)),
         "dd": ("🔬 Deep-dive", render_deep_dive_prompt(c)),
     }
@@ -1678,6 +1738,7 @@ def _render_margin_tab(candidates: List[Dict]) -> str:
             {days_badge}
             <span class="pick-score" style="background:var(--acc);color:#000;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78rem">Score {score:.0f}</span>
             <a class="analyze-link" href="analyze/{_esc(c['ticker'])}.html" target="_blank">🔍 分析 →</a>
+            <a class="analyze-link" href="watchlist-history.html?ticker={_esc(c['ticker'])}" target="_blank">📜 歷史 →</a>
           </div>
           <div class="pick-grid">
             <div class="pick-cell">
@@ -1749,7 +1810,7 @@ def render_bucket(bucket_label: str, picks: List[ms.Candidate], data_map: Dict[s
 
 # ---- main ----
 
-def main():
+def main(groove_only: bool = False):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="backslashreplace")
     import os
@@ -1788,7 +1849,8 @@ def main():
         bucket_picks[c.bucket].append(c)
     committed_candidates = [c for group in bucket_picks.values() for c in group]
     ms.enrich_long_term_returns(committed_candidates, today)
-    ms.enrich_news_for_picks(committed_candidates)
+    news_target_date = os.environ.get("TW_NEWS_DATE") or today
+    ms.enrich_news_for_picks(committed_candidates, news_target_date)
     for c in committed_candidates:
         try:
             result = ms.zen.analyze(c.ticker, days=120)
@@ -1810,6 +1872,22 @@ def main():
     all_picks = [c for v in bucket_picks.values() for c in v]
     t0 = time.time()
     data_map = fetch_tickers(c.ticker for c in all_picks)
+    # One bounded canonical-news query for all 24 picks. Calling
+    # news_for_tickers once per card would repeat the same 50k-row scan.
+    try:
+        canonical_news = db.news_for_tickers(
+            [c.ticker for c in all_picks], limit_per=5, days=5,
+            target_date=news_target_date,
+        )
+        canonical_news_error = None
+    except Exception as exc:
+        canonical_news = {}
+        canonical_news_error = str(exc)
+    for candidate in all_picks:
+        details = data_map.setdefault(candidate.ticker, {})
+        details["_canonical_news"] = canonical_news.get(candidate.ticker, [])
+        if canonical_news_error:
+            details["_canonical_news_error"] = canonical_news_error
 
     # ---- Step 4: render + write ----
     print(f"[4/4] Rendering HTML…")
@@ -1913,24 +1991,25 @@ function copyText(btn) {{
 </html>"""
 
     # Write outputs
-    reports_dir = REPORTS_DIR
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    out1 = reports_dir / f"watchlist-full-{today}.html"
-    out1.write_text(html_doc, encoding="utf-8")
-    print(f"  → {out1} ({len(html_doc):,} bytes)")
-
     groove = GROOVE_WATCHLIST
     groove.write_text(html_doc, encoding="utf-8")
     print(f"  → {groove} ({len(html_doc):,} bytes)")
 
-    public = ps.PUBLIC
-    (public / "watchlist.html").write_text(html_doc, encoding="utf-8")
-    ps.atomic_json(public / "data" / "watchlist-full.json", {
-        "nightly_id": os.environ.get("TW_NIGHTLY_ID", "manual"),
-        "data_date": today, "run_id": snapshot["run_id"], "picks": snapshot["picks"],
-        "html_sha256": ps.sha256(public / "watchlist.html"),
-        "fetch_errors": {t: fetch_error_sources(d["fetch_errors"]) for t, d in data_map.items() if d.get("fetch_errors")},
-    })
+    if not groove_only:
+        reports_dir = REPORTS_DIR
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        out1 = reports_dir / f"watchlist-full-{today}.html"
+        out1.write_text(html_doc, encoding="utf-8")
+        print(f"  → {out1} ({len(html_doc):,} bytes)")
+
+        public = ps.PUBLIC
+        (public / "watchlist.html").write_text(html_doc, encoding="utf-8")
+        ps.atomic_json(public / "data" / "watchlist-full.json", {
+            "nightly_id": os.environ.get("TW_NIGHTLY_ID", "manual"),
+            "data_date": today, "run_id": snapshot["run_id"], "picks": snapshot["picks"],
+            "html_sha256": ps.sha256(public / "watchlist.html"),
+            "fetch_errors": {t: fetch_error_sources(d["fetch_errors"]) for t, d in data_map.items() if d.get("fetch_errors")},
+        })
 
     # Stats
     total_errs = sum(len(d.get("fetch_errors", [])) for d in data_map.values())
@@ -1939,4 +2018,10 @@ function copyText(btn) {{
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--groove-only", action="store_true",
+        help="update only C:\\Groove-Lab\\watchlist.html; preserve certified public artifacts",
+    )
+    main(groove_only=parser.parse_args().groove_only)
