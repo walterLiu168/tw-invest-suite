@@ -1566,6 +1566,7 @@ def render_pick_card(c: ms.Candidate, d: Dict, idx: int) -> str:
     actions = f"""
     <div class="actions">
       <a href="https://walterLiu168.github.io/stock-report/market-screen-2026-08-12.html#{ticker}" target="_blank">📊 Market Report</a>
+      <a href="watchlist-history.html?ticker={_esc(ticker)}" target="_blank">📜 選股歷史</a>
       <a href="https://github.com/your-org/ticker-dashboard/blob/main/{ticker}.md" onclick="return false">🎛 Ticker Dashboard</a>
       <a href="https://walterLiu168.github.io/stock-report/wall-street-{ticker}.html" onclick="return false">🏛 Wall Street</a>
       <a href="https://walterLiu168.github.io/stock-report/research-{ticker}.md" onclick="return false">📋 Research</a>
@@ -1738,7 +1739,6 @@ def _render_margin_tab(candidates: List[Dict]) -> str:
             {days_badge}
             <span class="pick-score" style="background:var(--acc);color:#000;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78rem">Score {score:.0f}</span>
             <a class="analyze-link" href="analyze/{_esc(c['ticker'])}.html" target="_blank">🔍 分析 →</a>
-            <a class="analyze-link" href="watchlist-history.html?ticker={_esc(c['ticker'])}" target="_blank">📜 歷史 →</a>
           </div>
           <div class="pick-grid">
             <div class="pick-cell">

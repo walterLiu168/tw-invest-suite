@@ -120,6 +120,18 @@ class WatchlistHistoryTests(unittest.TestCase):
         renderer = (ROOT / 'scripts' / 'render_full_watchlist.py').read_text(encoding='utf-8')
         self.assertIn('watchlist-history.html?ticker=', renderer)
 
+    def test_history_link_sits_on_the_curated_card_not_the_margin_tab(self):
+        """The margin rebound tab is a different population with no pick history.
+
+        Linking it would produce dead links for names that never entered
+        market_screen_picks, and would leave the curated picks without one.
+        """
+        source = (ROOT / 'scripts' / 'render_full_watchlist.py').read_text(encoding='utf-8')
+        margin = source.split('def _render_margin_tab', 1)[1]
+        curated = source.split('def render_pick_card', 1)[1].split('def ', 1)[0]
+        self.assertNotIn('watchlist-history.html', margin)
+        self.assertIn('watchlist-history.html?ticker=', curated)
+
     def test_taiwan_colour_convention_is_kept(self):
         page = (ROOT / 'public' / 'watchlist-history.html').read_text(encoding='utf-8')
         self.assertIn('.up { color: var(--red); }', page)
