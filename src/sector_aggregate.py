@@ -411,6 +411,7 @@ footer a {{ color: var(--acc); }}
 <nav class="module-tabs">
   <a class="mod-tab" href="readme.html">🏠 首頁</a>
   <a class="mod-tab" href="watchlist.html">📊 24 檔精選</a>
+  <a class="mod-tab" href="watchlist-history.html">📜 精選歷史</a>
   <a class="mod-tab active" href="sectors.html">🌊 板塊輪動</a>
   <a class="mod-tab" href="chips.html">💎 籌碼排行</a>
   <a class="mod-tab" href="concepts.html">🔥 概念股</a>

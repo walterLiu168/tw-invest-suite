@@ -530,3 +530,69 @@ picks，所以不是重複寫入；`daily_data2_full` 也沒有任何重複 `(Ti
 - `scripts/market_screen.py` 屬 SHA 契約內的 cron 檔，runtime 副本已同步
 - 詳見 `docs/RESP-2026-11-17-01-long-short-slot-overlap.md`
 
+---
+
+## D020: 衍生欄位補算不與資料集階段綁死；精選歷史進首頁 nav
+
+**日期**：2026-11-17
+
+**Context**:
+11/17 的 18:20 篩選通過了 D019 的互斥契約（24 名額／24 個不重複標的），但產出的
+24 檔 `change_pct` 全是 0、short 分數只剩 5 種值。追查後確認 `daily_data2_full` 的
+`change_pct` 在 11/17 全 NULL、`sma_*`／`atr_14`／`rsi_14`／`is_gap` 全是欄位 DEFAULT 0：
+FinMind canonical 階段在 18:00–18:07 執行時，margin 資料集回報
+`Canonical source is empty`、shareholding／shares 缺漏 → 資料集階段丟例外 →
+`recompute_derived` 從未執行 → 最新交易日就留在佔位值上。而 19:00 的 price 階段
+`affected_rows=0`（狀態已標記完成）→ `touched_dates` 維持 False → 補算同樣被跳過。
+short 分數的 trend／rsi／gap 三個組成因此全數失效，分數上限從 3.5 塌到 1.4，
+12 檔 short 選股有 9 檔會選錯。
+
+同一晚 21:30 的 nightly（`run_daily.ps1`）會用 `--refresh-existing` 重跑篩選並覆蓋同一筆
+run，但補算窗口只剩 22:25 之前。
+
+**Decision**:
+1. **立刻補算 11/17**（Walter 授權選項 A）：以同一張表的既有 OHLCV 重算 7 個衍生欄位，
+   先在 11/16 的真值上做唯讀驗算（差異僅為欄位小數位進位），再用上游
+   `recompute_derived()` 對 5 檔抽樣交叉驗證（逐欄 0 差異）。不呼叫 FinMind API、
+   不改 schema、不動其他欄位。
+2. **補結構性漏洞**（Walter 授權選項 A，local-only 未 push）：在
+   `AI-Telegram/strategy_lab/finmind_batch_update.py` 新增 `tickers_missing_derived()`，
+   資料集階段改為 `try/except` 記錯但不中斷，補算條件由 `touched_dates and "price" in phase_names`
+   改為只看 `"price" in phase_names`（`touched_tickers` 為空時用佔位值偵測兜底），
+   補算與 inst-nets／cache 失效跑完後**再 re-raise**，維持 fail-closed。
+   偵測條件用 `change_pct IS NULL OR sma_13 = 0`——`rsi_14 = 0` 會誤判連 14 根跌停的標的，已排除。
+3. **精選歷史進首頁 nav**：既有 `public/watchlist-history.html` 從未被任何頁面連到，
+   首頁 nav 也沒有它。補上第 9 個跨頁 tab（靜態頁 3 個 + nightly 重新生成的 4 個產生器），
+   並在該頁新增「📅 每日 24 檔」視圖（由既有 JSON 前端推導，不改已認證的 artifact）。
+
+**Why**:
+- 量測先於模型、量測先於修復：同一個「看起來正常」的 run（24 名額、認證通過、log 乾淨）
+  底下藏著資料品質塌陷，只有逐欄 NULL 稽核才看得出來
+- 補算必須與「資料集有沒有寫到東西」脫鉤。`affected_rows=0` 在正常情況代表沒事，
+  在狀態已標記完成的情況下卻代表「永遠不會再補」——這正是 11/17 的成因
+- 不能為了讓流程「看起來成功」而吞掉失敗：re-raise 保留原本的失敗 exit code
+- nav 分頁要改**產生器**而不是輸出檔：`chips.html`／`sectors.html`／`concepts.html`／
+  `chips-advanced.html` 每晚重新生成，只改輸出檔隔夜就被蓋掉
+- 「每日 24 檔」不另建資料來源：既有 `watchlist-history.json` 已含每日入選明細，
+  前端推導可避免改動已認證 artifact 與 nightly 的資料契約
+
+**Trade-off**:
+- 修補只在 local，未 push；且該檔另有他人未提交的改動（`official_twse_json`／
+  `capital_suspensions`／`resolve_price_universe`），**不可整檔 commit**，必須逐 hunk 取用
+- `chipscore_daily` 沒有最新交易日（11/16 的篩選也是 `chipscore: 0`）是**天天如此**的
+  結構性缺口，本次未處理，short 分數的 chip 來源仍長期缺料
+- `tickers_missing_derived` 用 `sma_13 = 0` 當佔位值訊號，極少數 Close 全為 0 的列會被
+  無害地重算一次（冪等，不改變結果）
+
+**驗證**:
+- 18:20 篩選：run_id=110，24 列 distinct=24，每個 `(bucket, horizon)` 皆 3 檔，log 無 FAILED
+- 補算後複查：`change_pct` NULL 1,964 → 0、`sma_13` 全 0 → 0、`rsi_14` 全 0 → 1、漲跌幅範圍
+  與 11/16 一致
+- 上游 `recompute_derived()` 對 5 檔抽樣重算 → 與補寫值逐欄 0 差異
+- 新 helper：健康日期回報 0 檔；人為清空 5 檔後 5 檔全數偵測到
+- `pytest tests/`：245 passed / 1 failed（唯一失敗為既有的
+  `test_db_config.py::test_missing_password_fails_closed`，成因是他人未提交的
+  `scripts/db_client.py` registry fallback）
+- 8 個改動頁面 inline script 全數 `node --check` 通過；瀏覽器實測 nav 9 tab、
+  逐檔與每日兩個視角、`?view=day` 深層連結、console 無錯誤
+- 詳見 `docs/RESP-2026-11-17-02-screen-verification-derived-fix-pick-history.md`
