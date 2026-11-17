@@ -53,7 +53,9 @@ Pending (NOT addressed in fixup4):
 import argparse
 import os
 import sys
+import json
 import traceback
+from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -231,6 +233,7 @@ def validate_result(result):
         return False, f"result is not a non-empty dict: {type(result).__name__}"
     expected_buckets = [b[0] for b in ms.PRICE_BUCKETS]
     total = 0
+    tickers = []
     for bucket in expected_buckets:
         if bucket not in result:
             return False, f"missing bucket '{bucket}'"
@@ -239,9 +242,19 @@ def validate_result(result):
             if n == 0:
                 return False, f"bucket '{bucket}' horizon '{horizon}' empty"
             total += n
+            tickers.extend(c.ticker for c in result[bucket].get(horizon, []))
     if total != 24:
         return False, f"total picks = {total}, expected 24"
-    return True, f"24 picks, 4 buckets, both long/short OK"
+    seen = Counter(tickers)
+    repeated = sorted(t for t, n in seen.items() if n > 1)
+    if repeated:
+        # The long and short rankings are independent over the same bucket, so
+        # the same name used to take both slots and the published "24 names"
+        # was really fewer.  The selection now keeps them exclusive; fail
+        # closed if that ever regresses.
+        return False, (f"{len(repeated)} pick slot(s) repeat a ticker: "
+                       f"{', '.join(repeated)}")
+    return True, f"24 picks, 24 distinct tickers, 4 buckets, both long/short OK"
 
 
 def persist_atomic(data_date, picks_count, notes, result):
@@ -280,10 +293,10 @@ def persist_atomic(data_date, picks_count, notes, result):
                             float(c.close), float(c.change_pct or 0),
                             int(c.volume),
                             float(c.market_cap) if c.market_cap else None,
-                            float(c.excess_return_60d or 0),
-                            float(c.excess_return_240d or 0),
-                            None,
-                            c.zen_summary or "",
+                            float(c.excess_return_60d) if c.excess_return_60d is not None else None,
+                            float(c.excess_return_240d) if c.excess_return_240d is not None else None,
+                            float(c.score) if c.score is not None else None,
+                            c.zen_summary,
                         ))
             if not rows_to_insert:
                 raise RuntimeError("no picks to insert")
@@ -324,6 +337,22 @@ def generate_artifacts(data_date, result):
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     paths = []
     errors = []
+    try:
+        audit_dir = Path(__file__).parent / '_debug' / 'screen_scores'
+        audit_dir.mkdir(parents=True, exist_ok=True)
+        audit_path = audit_dir / f'{data_date}.json'
+        audit_rows = [dict(ticker=c.ticker, bucket=bucket, horizon=horizon,
+                           score=c.score, details=c.score_details)
+                      for bucket, groups in result.items()
+                      for horizon, picks in groups.items() for c in picks]
+        # Repair-only reconstruction lacks factors; retain the original audit.
+        if audit_rows and all(r['details'] and r['score'] is not None for r in audit_rows):
+            temp = audit_path.with_suffix('.tmp')
+            temp.write_text(json.dumps({'data_date': str(data_date), 'picks': audit_rows},
+                                       ensure_ascii=False, indent=2), encoding='utf-8')
+            temp.replace(audit_path)
+    except Exception as e:
+        errors.append(f'score audit: {e}')
     try:
         md_path = mr.save_report(result, data_date=data_date)
         paths.append((md_path, True))
@@ -385,8 +414,8 @@ def _row_to_candidate(row):
         rsi14=0.0,
         atr14=0.0,
         is_gap=0,
-        excess_return_60d=float(er60) if er60 is not None else 0.0,
-        excess_return_240d=float(er240) if er240 is not None else 0.0,
+        excess_return_60d=float(er60) if er60 is not None else None,
+        excess_return_240d=float(er240) if er240 is not None else None,
         market_cap=float(mc) if mc is not None else 0.0,
         horizon=horizon or "",
         zen_summary=rationale or "",
@@ -555,7 +584,7 @@ def run():
     # === Run screener ===
     print("[runner] running screener...")
     try:
-        result = ms.screen_market()
+        result = ms.screen_market(enforce_features=True)
     except Exception as e:
         print(f"[runner] ERROR: screen_market() failed: {e}")
         traceback.print_exc()

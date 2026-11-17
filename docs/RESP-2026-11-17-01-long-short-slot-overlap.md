@@ -15,8 +15,8 @@
 50 次篩選中有 **18 次**出現同一檔佔兩個名額 → 對外宣稱的「24 檔」實際只有 **23 檔**。
 2026-11-16 線上清單就是如此：**3443 同時出現在 long 與 short 兩張卡**。
 
-已修（不改選股邏輯）：統計去重、名額／檔數分開標示、頁面明確揭露重疊。
-待決：要不要讓 long／short 互斥（會改變當天選到誰）。
+**Walter 已於 2026-11-17 批准選項 B（long／short 互斥），已實作。**
+同時保留呈現層的誠實揭露作為第二道防線。
 
 ---
 
@@ -110,7 +110,29 @@ wins = sum(1 for r in rets if r > 0)
 
 ---
 
-## 3. 已實作（不改選股邏輯）
+## 4. 已實作
+
+### 4.1 選股層：long／short 互斥（2026-11-17 經 Walter 批准）
+
+`scripts/market_screen.py` 新增 `pick_horizons(bucket, n)`：
+
+```python
+longs = [replace(c, horizon="long") for c in pick_long_term(candidates, n)]
+long_tickers = {c.ticker for c in longs}
+pool = pick_short_term(candidates, len(candidates))
+shorts = [replace(c, horizon="short") for c in pool
+          if c.ticker not in long_tickers][:n]
+```
+
+- short 名單跳過 long 已取走的名稱，改取該排序的**下一名**
+- short 的分數仍是 `short_term_score`（不是沿用 long 分數）
+- **邊界**：若該 bucket 的不重複名稱不足 6 個，short 會依 long 分數由低到高讓出名額，
+  確保名額數仍是 24，並把讓出的名稱記錄下來（`reused`）在畫面輸出
+- `screen_market()` 印出 `bucket exhausted, slot reused for ...` 以便稽核
+
+**效果**：每日 24 個名額必定是 24 個不重複標的。
+
+### 4.2 呈現層：統計去重 + 誠實揭露（保留為第二道防線）
 
 | 位置 | 改動 |
 |---|---|
@@ -119,43 +141,29 @@ wins = sum(1 for r in rets if r > 0)
 | 頁面標題與頁尾 | 同樣改用名額／檔數，不再硬寫「24 檔」 |
 | 頁面新增揭露列 | 有重複時顯示黃色說明列，列出重複檔名與重疊名額數 |
 | 平均報酬／勝率 | 改以不重複標的計算，停止雙重計數 |
-| `tests/test_watchlist_overlap.py` | 新增 4 個測試（重複只計一次、無重複、缺報酬、頁面不得硬寫 24 檔） |
+| `tests/test_watchlist_overlap.py` | 4 個測試 |
+| `tests/test_market_screen_exclusive.py` | 4 個測試（互斥、short 分數、bucket 名額不足時讓位、每 bucket 3+3） |
 
-**沒有**改 `market_screen.py` 的選股邏輯、**沒有**加 DB 唯一鍵、**沒有**回寫既有資料列。
+**沒有**加 DB 唯一鍵、**沒有**回寫既有資料列。
 
 ---
 
-## 4. 待你決定：要不要讓 long／short 互斥
+## 4.3 為什麼仍保留呈現層的揭露
 
-### 選項 A（目前狀態，已實作）：兩個名額可以重疊，但誠實揭露
+即使選股層已互斥，認證層目前仍然只驗「每個 (bucket, horizon) 3 檔、總數 24」，
+不驗標的是否重複。若未來有人改動選股邏輯，兩道防線都還在：
+一邊讓頁面不會說錯話，一邊讓統計不會被雙重計數。
 
-- 24 個名額、12 long + 12 short 的策略設計完整保留
-- 頁面標明 `24 名額／23 檔` 並列出重複檔
-- 成本：同一張卡會出現兩次（但帶不同角色標籤，其實有資訊性）
+---
 
-### 選項 B：short 名單排除 long 名單 → 24 個不重複標的
+## 4.4 變更帶來的選股影響
 
-```python
-longs  = [replace(c, horizon="long")  for c in pick_long_term(bucket, N)]
-shorts = [replace(c, horizon="short") for c in pick_short_term(bucket, N)
-          if c.ticker not in {x.ticker for x in longs}]
-```
+互斥會讓 **short 名額往下移**：某檔原本同時是 long 與 short 首選時，
+short 那一格改由該 bucket 的 short 次名接手。
 
-- 產品承諾「24 檔」變成真的 24 檔
-- **但這是選股邏輯變更**：當天的短中期第 1 名會換人（例如 11-16 的 short 名額會從 3443 換成
-  該 bucket 的 short 次名）
-- 依 `docs/MINIMAX_P0_HANDOVER_2026-09-30.md`「沒有隨機換股」與未授權不 commission 策略的
-  治理邊界，**這需要你明確批准**才做
-- 影響評估需要至少一次完整 nightly 才能確認名額分布與認證都穩定
-
-### 選項 C：long／short 互斥，且被選中的檔直接合併成一張卡（兩個角色）
-
-- 資訊完整（同一張卡同時顯示長期與短中期兩個分數）
-- 名額變成 23 檔 → 產品承諾要改成 23 或補一檔
-- 改動面最大，不建議現在做
-
-**我的建議：先 A（已上），觀察一週；若「24 檔」的落差持續造成誤讀，再評估 B。**
-B 的改動很小但需要一次 nightly 的驗證窗口。
+這是 Walter 明確批准的策略變更。要量化「每天換掉幾個 short 名額」，
+需要新的篩選結果才能比較（歷史上沒有存 short 候選池），
+因此以 **2026-11-17 起的實際篩選**為準，觀察一個月後再回頭比較歷史績效。
 
 ---
 
