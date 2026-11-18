@@ -25,6 +25,8 @@ Updated: 2026-09-17. Runtime and repository copies of scheduled files must have 
 | 22:30–02:00 every 30 min; 02:30 / 04:00 / 06:00 | nightly-health | Check exact owner creation identity, stage heartbeat deadlines and between-stage gaps; guarded recovery kills the owner tree, never auto-publishes |
 | 00:05 | postflight | Local/pre-publication checks and dashboard; remote verification is not claimed yet |
 | 00:30 | publish | Wait up to 130 minutes for daily-report, verify marker, prepare immutable site, publish, verify remote hashes, run postflight, publish final dashboard |
+| 06:00+ | certification-catchup | If the previous trading session landed late and is not certified, rerun the full nightly and publish only after the normal marker/site/postflight gates pass |
+| 06:00+ hourly | tw-invest-suite-certification-catchup | Independent 72-hour Scheduler owner; guard skips a matching delivered receipt and delegates new sessions to the full catch-up |
 
 ## Nightly stages
 
@@ -74,6 +76,8 @@ Certification is terminal. `fail_run` cannot change the same certified attempt f
 The publisher overlays certified artifacts onto a fresh staging directory, verifies every staged artifact hash, and uses a fast-forward Git push to `gh-pages`. Its local Git configuration and `info/attributes` preserve the certified bytes, including CRLF, regardless of Windows autocrlf defaults. No force push is needed. It verifies the remote manifest, watchlist, patterns, JSON and all selected ticker pages by byte hashes. Only then is the publication receipt marked verified.
 
 The same job runs final postflight and publishes the morning dashboard and daily summary in a second bounded status commit. Both reports are checked remotely even on an identical-content retry. Receipts retain the analytical and final status commit identities. The status reports are not part of the immutable analytical-artifact manifest, avoiding self-referential hashes.
+
+The publisher waits for the producers it certifies. It first waits for the nightly to stop, then - when the nightly ran today - it also waits for `tw-invest-suite-company-refresh` (23:25) and `tw-invest-suite-sync-legacy` (23:30). The final postflight's `company_null` check reads `daily_data2_full.company` for the target date, and that column is only filled by company-refresh; publishing before it ran failed the check, which skipped `sync_groove_release.py` and the Telegram push and left `groovelab.dev` one session behind until the after-midnight catch-up ran. The after-midnight catch-up path skips this wait because the producers already ran on the target date. The wait is bounded by the same deadline as the nightly wait and never blocks the nightly itself (the nightly only publishes in the short-circuit `-Mode publish`).
 
 Walter authorized source pushes, publication and necessary Scheduler updates on 2026-09-16, and authorized the final UAC retry with Sep17 `continue`. Current deployment evidence and remaining gates are recorded in `docs/chatgpt_debug/RESP-2026-09-16-deployment-acceptance.md`. The installed `publish_verified_sites.ps1` verifies canonical publication and postflight before `sync_groove_release.py` copies certified stock paths and verifies Groove remote hashes. It preserves the music application's root index and configuration. Sep17 legitimate UAC deployment returned 0; the live Scheduler action points to this wrapper with S4U and wake enabled. Actual end-to-end publication still requires a fresh certified full run.
 

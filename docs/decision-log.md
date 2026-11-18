@@ -596,3 +596,63 @@ run，但補算窗口只剩 22:25 之前。
 - 8 個改動頁面 inline script 全數 `node --check` 通過；瀏覽器實測 nav 9 tab、
   逐檔與每日兩個視角、`?view=day` 深層連結、console 無錯誤
 - 詳見 `docs/RESP-2026-11-17-02-screen-verification-derived-fix-pick-history.md`
+
+---
+
+## D021: 發佈器要等它所認證的生產者
+
+**日期**：2026-11-18
+
+**Context**:
+22:50 的發佈器等 nightly 結束（23:09）後，在 23:10-23:19 執行 publish。gh-pages 的 push 成功
+（`acb690161 Verified daily status 2026-11-17`），但 postflight 回傳 exit=1 →
+`publish_verified_sites.ps1` 在第一個子腳本後就 `exit` → `sync_groove_release.py` 與
+`chip_push.py` 從未執行 → `C:\Groove-Lab`（groovelab.dev 的來源）停在 11/16，線上落後一個
+session，要靠跨午夜的 hourly catchup（00:00 `PUBLISH_ONLY` → 00:09）才補上。
+
+真正的失敗 check 不是排程時序，而是 postflight 的 `company_null`：`daily_data2_full` 當日的
+`company` 空值必須 ≤5，而填公司名稱的 `tw-invest-suite-company-refresh` 排在 **23:25** ——
+比發佈器晚。23:19 時空值尚未清乾淨 → check 失敗 → postflight `overall_pass=False` →
+dashboard 轉 CRITICAL → exit 1。00:05 重跑時 `null=0` 就通過了。
+
+（附帶釐清：`company-refresh`／`sync-legacy`／`health-check` 這些晚到任務在 postflight 裡只進
+`warnings`，本來就不會讓 postflight 失敗；`checks["tasks"]` 的 pass 恆為 true。）
+
+**Decision**:
+1. **在程式碼層讓發佈器等它依賴的生產者**（`scripts/publish_ghpages_daily.ps1`，repo 與 runtime
+   同步為同一份 bytes）：
+   - 等 nightly 停止（既有行為）
+   - 若 nightly 是「今天」跑的，再等 `tw-invest-suite-company-refresh` 與
+     `tw-invest-suite-sync-legacy` 今日已執行過
+   - 判斷用 `LastRunTime.Date`（**不看 rc**）：producer 真的失敗時應讓 postflight 如實失敗
+     （fail-closed），而不是讓發佈器空等到 deadline
+   - 等待以既有的 `$deadline` 為界
+   - 跨午夜的 catch-up 路徑不等待（該時段生產者已在目標日跑過）
+2. **不動認證閘門**：`company_null` 的 ≤5 標準維持，不為了讓發佈早一點而放寬。
+3. **不改成排程時間**：原本想把 `tw-invest-suite-publish` 的觸發從 22:50 移到 23:45，但該工作
+   排程以 S4U 登入，`Set-ScheduledTask` 被 ACL 擋、`schtasks /change` 要求互動式密碼
+   （且不得由代理處理）→ 改用程式碼層的依賴感知等待：版本可控、不依賴排程權限、也擋得住
+   未來有人把觸發時間往前調。
+   - 備份：`scripts/_debug/publish_task_before_20261118.xml`（原始觸發 `2026-10-06T22:50:00+08:00`）
+
+**Why**:
+- 發佈器認證的資料，是那些「晚於 nightly、但在發佈前」才生產出來的欄位。認證閘門本身沒錯，
+  錯的是發佈時機早於資料生產者。
+- 等「任務有跑過」而不是等「任務成功」：失敗的 producer 應讓 postflight 如實失敗，而不是讓
+  發佈器空等兩小時。
+- 等待寫在程式碼裡比寫在排程裡好：排程時間要提升權限才能改，且下次有人把時間往前調就會悄悄
+  退化回同一個坑。
+
+**Trade-off**:
+- 發佈會從約 23:19 移到約 23:31（等 company-refresh 與 sync-legacy），比原本晚約 12 分鐘，
+  但**同夜就完成**兩站同步與 Telegram push，不再需要靠跨午夜補同步。
+- 若 company-refresh 當天真的失敗，postflight 仍會失敗（正確行為），此時仍需靠 catchup 補。
+
+**驗證**:
+- repo 與 runtime 的 `publish_ghpages_daily.ps1` SHA-256 一致；BOM 與原有行尾保留；
+  PowerShell parser 無錯誤
+- guard 條件實測：nightly 昨天跑（catch-up 路徑）→ 不等待；nightly 今天跑（同夜路徑）→
+  等到 23:25／23:30
+- `run_daily.ps1` 只有短路模式 `-Mode publish` 才會呼叫 publisher；排程的 daily-report 用
+  full mode → nightly 不會被這個等待拖住
+- 詳見 `docs/RESP-2026-11-17-02-screen-verification-derived-fix-pick-history.md`

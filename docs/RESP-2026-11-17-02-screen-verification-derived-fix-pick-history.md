@@ -220,3 +220,52 @@ run（`market_screen_runs` 以 `run_date` UPSERT），所以 11/16 那天的最�
   重訓仍被 P1–P3 阻塞
 - **AI-Telegram 的改動未 push**，且該檔有他人未提交內容，不可整檔提交
 - 22:25 的 nightly 重跑與 22:50 的發佈結果，另行複查
+
+---
+
+## 7. 發佈時序修正（2026-11-18，Walter 批准「do 1 and 2」）
+
+### 7.1 問題
+
+11/17 的 nightly 認證通過（23:09:53）且 gh-pages push 成功（23:18:24），但
+`https://groovelab.dev/` 仍顯示 11/16 的內容。
+
+追查鏈路：
+
+1. 22:50 的發佈器等 nightly 結束 → 23:10 執行 publish → gh-pages push 成功
+2. `publish_ghpages.py` 接著跑 `postflight_daily.py --after-publish` → **exit=1**
+3. `publish_verified_sites.ps1` 在第一個子腳本非零時就 `exit` → `sync_groove_release.py`
+   與 `chip_push.py` 從未執行 → `C:\Groove-Lab` 停在 11/16
+4. 直到 11/18 00:00 的 hourly catchup（`PUBLISH_ONLY` → 00:09）才補上，線上才回到 11/17
+
+失敗的 check 是 **`company_null`**（不是排程時序）：
+
+| 檢查 | 23:19（同夜發佈） | 00:05（跨午夜補同步） |
+|---|---|---|
+| `company_null` | **false**（當日 company 空值 > 5） | true（`null=0`） |
+| 其他 check | true | true |
+
+`daily_data2_full.company` 是由 `tw-invest-suite-company-refresh`（**23:25**）填的，比發佈器晚；
+所以同夜發佈時 postflight 如實失敗 → 整條發佈鏈中止。
+
+### 7.2 修法
+
+在 `scripts/publish_ghpages_daily.ps1` 加上依賴感知等待（repo 與 runtime 同一份 bytes）：
+等 nightly 停止後，若 nightly 是「今天」跑的，再等 `company-refresh` 與 `sync-legacy`
+今日已執行過。判斷用 `LastRunTime.Date` 而非 rc，失敗的 producer 仍讓 postflight 如實失敗。
+
+原本想直接改排程觸發時間（22:50 → 23:45），但該排程以 S4U 登入、`Set-ScheduledTask` 被 ACL 拒、
+`schtasks /change` 要求互動式密碼 → 改用程式碼層方案（版本可控、不依賴排程權限）。
+原始排程 XML 已備份於 `scripts/_debug/publish_task_before_20261118.xml`。
+
+### 7.3 預期效果
+
+發佈時間由約 23:19 移到約 23:31，但**同夜完成**兩站同步與 Telegram push，
+`groovelab.dev` 不再落後一個 session，也不再需要跨午夜補同步。
+
+### 7.4 Push（Walter 批准）
+
+- `tw-invest-suite`：`a1e6244`（精選歷史 tab ＋ 每日 24 檔視圖）、`87e3ce1d4`（short 分數保留兩位小數）、
+  以及本次的發佈等待修正與文件 → push 到 `origin/main`
+- `AI-Telegram`：`strategy_lab/finmind_batch_update.py` 的 derived 補算修補 → 逐 hunk 取用後 commit 與 push
+  （該檔另有他人未提交內容，**不可整檔提交**）
