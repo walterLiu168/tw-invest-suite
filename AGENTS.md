@@ -138,6 +138,16 @@ Get-ScheduledTask -TaskName "tw-invest-suite-daily"
 7. **不要**用 bash 跑 > 30 min 的 batch（會 timeout），改用 `render_chunk.py` 拆 4 chunks 並行
 8. **不要**用 `pip install` 一次裝太多 ML package，預設只裝 xgboost + scikit-learn
 9. **不要**用 LLM commentary 沒設 API key 跑（會 401），先 `--dry-run` 驗 prompt
+10. **不要**在 nightly／catchup 執行期間修改任何被 `source_hashes()` 涵蓋的檔案
+    （`scripts/`、`src/`、`public/`，以及 `D:\CODEX\AI-Telegram\strategy_lab\finmind_batch_update.py`）。
+    `source_hashes()` 的檢查在兩個地方各擋一次——`finalize_inputs` 與 `complete`——而且各有兩種失敗：
+    (a) runtime 與 repo 的 SHA 不符 → `runtime/repo SHA mismatch: <檔名>`；
+    (b) 與 run 開始時記錄的 `run['source_hashes']` 不符 → `Source changed before input finalization`
+    ／`source changed during nightly`。
+    動手前先確認沒有 run 在跑；每小時的 catchup 排程（`certification_catchup_guard.ps1`）
+    會自己重試，所以改完等下一班比手動觸發安全。
+11. **不要**只改 repo 不同步 runtime（`~/.claude/skills/tw-invest-suite/scripts/`）。
+    兩邊要同一個指令裡一起更新並立刻驗 SHA 相等，否則 (a) 會擋下整輪 run。
 
 ---
 

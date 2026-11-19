@@ -714,3 +714,136 @@ dashboard 轉 CRITICAL → exit 1。00:05 重跑時 `null=0` 就通過了。
   修回值與原值完全相同
 - `pytest tests/`：見同日的執行結果（唯一失敗為既有的 `test_db_config.py`）
 - 詳見 `docs/RESP-2026-11-17-02-screen-verification-derived-fix-pick-history.md` 第 8 節
+
+## D023: 認證鏈的兩個基礎設施缺陷——狀態檔競態與午夜快照缺口
+
+**日期**：2026-11-20
+
+**Context**:
+複查 11/19 的 nightly 成品時，結論不是「成品待確認」而是**失敗**：Stage 1 的 `finmind_maint`
+掛掉 → 整輪 FAILED → 無 marker、無發布、無 Telegram。追查過程中挖出兩個**先前未知**的基礎設施缺陷：
+
+1. **P5：132 MB 續傳狀態檔的原子替換競態**。`AI-Telegram` 的 `StateStore.save()` 用
+   `tmp.replace(self.path)` 替換 `finmind_batch_state.json`；同一個檔案有兩個 producer
+   （`AI-Telegram Scheduled Pipeline` 與 nightly 的 `_fetch_today.py --phase canonical`，
+   22:00:29 與 22:00:33 兩支 `canonical_universe_*.json` 可證），贏的那個把輸的那個的
+   原子替換打成 `[WinError 5] 存取被拒`，於是整個 canonical 階段中止。
+   這不是 regression：`dl_errors.jsonl` 裡同型錯誤已出現 5 次（10/13、10/15、**11/11**、11/12、11/19），
+   11/11 那次 nightly 也以完全相同的型式失敗。
+2. **P6：午夜補救跑永遠落在供應商的快照缺口裡**。`refresh_market_map()` 只查
+   `TaiwanStockInfo` 的「今天」。實測該供應商**只保留一份完整快照、日期標成今天**
+   （3,358 列），過去日期只留 1–2 列差異紀錄，而完整快照約在**午夜後一小時**才發布。
+   因此 00:00:01 的補救跑永遠查不到東西 → Stage 1 valuation 失敗 → 整輪 FAILED。
+   這個失敗在 **09/30、10/01、10/02、10/03、10/06、10/07、10/22、11/04、11/12、11/20 共 10 次**，
+   也就是說**每小時的認證補救網自 2026-09-30 起就是壞的**——這才是 11/11 與 11/19 的
+   nightly 失敗後從未自癒的真正原因（不是沒人重試，是重試機制本身壞了）。
+
+**Decision**:
+1. **P5：狀態檔的原子替換要能承受被鎖**。`StateStore.__init__` 改成先
+   `path.read_bytes().decode("utf-8")` 再 `json.loads`（讀完關 handle 再解析，避免 132 MB 檔
+   在解析期間被別的 producer 鎖住）；`save()` 在 `PermissionError` 下退避重試
+   （8 次、上限 3.0s、最長約 13.5 秒），最終仍失敗才重新拋出。
+   教訓：**續傳 marker 只是快取，資料本身已進 DB——掉一個 marker 只值一次重載，不值得中止整個階段**；
+   但重試必須有上限，最後仍然 fail-closed。
+2. **P6：listing venue 要能在快照缺口期解析，而且不能靜默接受殘缺快照**。三層：
+   (a) 查 7 天視窗而非今天；(b) **完整性門檻**——完整快照有數千列、差異日只有 1–2 列，
+   `MIN_LISTING_SNAPSHOT_ROWS = 1500` 把「已發布」「發布中」「只有差異」分開，
+   **半成品發布不再會被誤當成完整快照**（原程式會直接收下當天所有列）；
+   (c) **備援來源用交易所自己的 Open Data**（TWSE `t187ap03_L` 1,098 檔 ＋ TPEx `mopsfin_t187ap03_O`
+   898 檔，聯集 1,996、零衝突），因為交易所名單**沒有發布排程**，午夜隨時可用。
+   另把 venue 來源寫進 `finance_fetch.json` 收據（`venue_source`／`venue_source_date`）。
+   教訓：**跨午夜抓「當日快照」型資料時，必須有完整性門檻與不依賴供應商排程的備援**；
+   依賴單一來源的排程，等於把可預期的缺口寫進排程。
+3. **P7：認證鏈有兩組獨立的來源雜湊檢查，run 進行期間不可變更相關檔案**。
+   `source_hashes()` 在 `finalize_inputs` 與 `complete` 兩處各擋一次，而且各有兩種失敗：
+   runtime↔repo SHA 不符（`runtime/repo SHA mismatch`），以及與 run 開始時記錄的
+   `run['source_hashes']` 不符（`Source changed before input finalization`）。
+   我在 02:00 那班執行中套用 P6，直接把整輪打回 FAILED（Stage 1 四階段全綠只差最後一道）。
+   教訓：**認證鏈的防線是「run 開始到結束之間來源不可變」，所以修補必須排在 run 之外**；
+   每小時的 catchup 會自己重試，改完等下一班比手動觸發安全。
+   已寫進 `AGENTS.md`「不要做的事」第 10、11 項。
+
+**Why**:
+- 兩個缺陷的形狀都是「**別人擋住我**」：狀態檔被鎖、快照還沒生出來。兩者都不該讓整條認證鏈中止。
+- P6 特別值得做成「雙來源」，因為它的缺口是**供應商的排程**，不是我們的 bug；
+  依賴別人的排程就等於把自己的復原能力交出去。交易所名單反而是最穩的那一份。
+- P7 是這次過程中學到的最重要的操作性教訓：認證鏈有防線，而防線的觸發條件比想像中寬。
+- 覆蓋率比較支持這個方向：官方名單對估值宇宙 1,974 檔覆蓋 1,966，**優於**供應商快照的 1,958；
+  且兩者在 1,982 個共同代號上 `.TW`／`.TWO` 完全一致 → 換來源不會讓已快取的估值資料失效。
+
+**Trade-off**:
+- 備援來源的**宇宙覆蓋率反而比較高**：交易所名單對 1,974 檔宇宙覆蓋 **1,966**，供應商快照只有 1,958。
+  11/19 那 16 檔缺估值快取的代號裡，有 8 檔（1808 潤隆建設、4804 大略國際、8084 巨虹電子、
+  8291 尚茂電子材料、9103 美德向邦、9105 泰金寶、9110 越南製造加工、9136 巨騰國際）官方名單有、
+  供應商快照沒有 → 走備援時這 8 檔反而拿得到 venue、可能補回快取。
+  代價是官方名單不含 ETF／ETN（供應商多那 421 檔），但 ETF 碼不在 1,974 的估值宇宙內。
+- 每次 venue 解析多打 1 次供應商查詢；備援成立時再多 2 次交易所 HTTP（僅在供應商無完整快照時）。
+- 完整性門檻 1,500 是經驗值（實測完整快照 2,403 列、差異日 ≤17 列），若市場規模量級改變需重估。
+- P5 的重試最長約 13.5 秒；最壞情況下 canonical 階段仍會失敗（fail-closed）。
+
+**驗證**:
+- P6 故障注入 8 情境全綠：完整快照走供應商、午夜缺口走交易所、發布中取較早的完整快照、
+  供應商錯誤走交易所、兩邊都掛 fail closed、注入 rows 維持既有尾綴語意、過期／衝突 rows fail closed。
+- venue 一致性：官方與供應商在 1,982 個共同代號上尾綴相反 **0 處** → 切換來源不使快取失效。
+- `pytest tests/test_valuation_sources.py -q` → 7 passed；runtime 實際檔案
+  `refresh_market_map()` → `{'source': 'provider', 'source_date': '2026-11-20', 'mapped_tickers': 2403}`。
+- P5 於正式排程驗證：02:00 那班 `finmind_maint` 於 02:10:37 exit 0（132 MB 狀態檔寫入成功，無 WinError 5）。
+- 詳見 `docs/RESP-2026-11-20-01-nightly-failure-root-cause-and-recovery.md`
+
+## D024: 認證成功不等於發布成功——排程的退出碼不可用來判斷現在的狀態
+
+**日期**：2026-11-20
+
+**Context**:
+11/19 在 04:04:34 終於取得有效認證（`last_completed.json`：`status=ok`、`data_date=2026-11-19`、
+`nightly_id=db92dacd…`），GitHub Pages 也發布並遠端驗證成功（commit `c2df18c3`）。
+但 **Groove 同步與 Telegram 籌碼推送沒有執行**——Telegram 收據停在 11/13。
+
+追下去是一條完整的循環依賴：
+
+```
+tw-invest-suite-daily-report（就是 nightly 本體，21:30 觸發）在 11/19 失敗 → task rc=1
+  └→ build_dashboard.py 把 daily-report rc≠0 判成 🔴 CRITICAL（dashboard exit 2）
+      └→ postflight_daily.py 看到 dashboard exit≥2 → overall_pass=False → exit 1
+          └→ publish_ghpages.py 只看 post.returncode → status 翻成 "failed" → exit 1
+              └→ publish_verified_sites.ps1 逐段檢查 exit code → 在 Groove 同步前停下
+                  └→ chip_push.py 沒跑 → Telegram 收據停在 11/13
+```
+
+`tw-invest-suite-daily-report` 的 rc=1 **就是 11/19 nightly 失敗的倒影**。catchup 在 03:00
+重跑並成功認證之後，這個 rc 仍是舊的，要等到 11/20 21:30 的下一次 nightly 才會被覆蓋。
+於是只要某一晚 nightly 失敗，恢復路徑就會被永久堵住。
+
+這與 D023 的 P6 是同一種病：**用一個過時的失敗訊號去判斷現在的狀態**。
+
+**Decision**:
+1. **認證若發生在某個排程上次執行之後，就代表那次執行已被取代** → 該排程的 rc 降級為 🟡 WARNING
+   （仍顯示在 Action items，不靜默）。判定用 `marker.started_at` 與 task `last_run` 比較；
+   兩者都是本機時間，取前 19 個字元做字典序比較即可。
+2. **認證成功與發布成功是兩件事，收據要分開看**。`publication_result.json` 記
+   `postflight_exit`，`groove_publication_result.json` 與 `chip_telegram_result.json` 各自記自己的批次；
+   只有三者都對上同一個 `nightly_id`，`certified_for()` 才回 true。
+3. **改了被 `source_hashes()` 涵蓋的檔案，就讓 catchup 重跑認證**，不要手動重簽 marker。
+   手動改 marker 的雜湊等於偽造認證證據，絕不允許。
+
+**Why**:
+- 排程的 `last_task_result` 描述的是**那一次執行**的結果，不是「現在的狀態」。
+  當有更晚的、已認證的執行存在時，用舊 rc 判斷現在是錯的。
+- 把失敗降級成「仍可見的警告」而不是「消失」，是為了維持「不可靜默」的原則：
+  使用者仍然看得到那晚 nightly 失敗過，只是不再被它卡住。
+- 這個缺陷的殺傷力在於它讓 P5／P6 的修補成果無法落地：認證成功了、GitHub Pages 也上線了，
+  但兩站與 Telegram 仍然停在舊日期。**修好上游而沒修好下游，等於沒修。**
+
+**Trade-off**:
+- 排程 rc 的判定不再單獨決定發布，因此一晚 nightly 失敗後，該晚的失敗不會阻止恢復發布。
+  這是刻意的：真正的成功判準是 marker ＋ 發布收據，不是排程的退出碼。
+- 改了 hashed 檔案就必須重跑整條 nightly（約 70 分鐘）才能重新認證。代價是時間，
+  好處是認證證據永遠與當下的原始碼一致。
+
+**驗證**:
+- 修補前：dashboard 判 🔴 CRITICAL（exit 2）→ postflight exit 1 → publication status=failed。
+- 修補後（同一份 marker 與 receipt）：daily-report 的 rc=1 被判為「已被 db92dacd 的成功認證取代」的
+  🟡 WARNING；dashboard 不再產生 CRITICAL。
+- 05:00 的 catchup 以 `run_daily.ps1 -Force` 重跑整條並重新認證，隨後發布；
+  Groove 與 Telegram 收據隨之更新（結果見 `docs/RESP-2026-11-20-01-nightly-failure-root-cause-and-recovery.md`）。
+- 詳見 `docs/RESP-2026-11-20-01-nightly-failure-root-cause-and-recovery.md`
