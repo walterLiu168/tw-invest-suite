@@ -68,12 +68,28 @@ def render_dashboard():
         quarantine = c.fetchall()
     for item in quarantine:
         issues.append(("WARNING" if item["Ticker"] == "7768" else "CRITICAL", f"Quarantine {item['Ticker']}: {item['n']} open; PENDING J 需處理，未自動豁免新增列"))
+    # A certification that started after a scheduled task's last run supersedes
+    # that run's outcome.  tw-invest-suite-daily-report runs run_daily.ps1, so
+    # when the nightly fails the certification catch-up re-runs the whole
+    # pipeline and certifies the same data_date successfully - yet the task's
+    # own exit code still says "failed" until the next nightly runs.  Left as
+    # CRITICAL that stale code makes the dashboard fail, which makes the
+    # postflight fail, which stops publish_verified_sites.ps1 before the
+    # Groove sync and the Telegram push - so one failed nightly could never
+    # recover.  The failure stays visible as a WARNING.
+    marker_started = str(marker.get("started_at") or "")[:19] if marker else ""
     for task in cron:
         if task["rc"] is None:
             issues.append(("CRITICAL", f"{task['task']}: missing task/result"))
         elif task["state"] != "Running" and task["rc"] != 0:
-            severity = "CRITICAL" if task["task"].endswith(("daily-report", "market-screen")) else "WARNING"
-            issues.append((severity, f"{task['task']}: rc={task['rc']}; 請見當次檢查明細"))
+            task_run = str(task.get("last_run") or "")[:19]
+            if marker_started and task_run and task_run < marker_started:
+                issues.append(("WARNING", f"{task['task']}: rc={task['rc']}；該次執行已被 "
+                                           f"{marker['nightly_id'][:8]} 的成功認證取代"
+                                           f"（認證開始於 {marker_started}）"))
+            else:
+                severity = "CRITICAL" if task["task"].endswith(("daily-report", "market-screen")) else "WARNING"
+                issues.append((severity, f"{task['task']}: rc={task['rc']}; 請見當次檢查明細"))
     post_path = ps.RUNTIME / "_debug" / "postflight_latest.json"
     if post_path.exists():
         post = ps.read_json(post_path)
