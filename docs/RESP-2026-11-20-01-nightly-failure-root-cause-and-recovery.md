@@ -11,14 +11,22 @@
 **每小時的認證補救排程自 2026-09-30 起就是壞的**，十次午夜嘗試全部在同一行錯誤上死掉。
 這解释了為什麼 11/11 與 11/19 的 nightly 失敗後從來沒有自癒過。
 
-兩個根因都已修補並驗證，提交為：
+三個根因都已修補並驗證，並在正式排程下完成一次端到端恢復，提交為：
 
 | 倉庫 | 提交 | 內容 |
 |---|---|---|
 | `tw-invest-suite` | `00e343511` | P6：listing venue 在供應商快照缺口期的解析（含完整性門檻與交易所備援） |
+| `tw-invest-suite` | `a1bed6c11` | P8：認證可取代更早的排程執行 → stale rc 降為 WARNING，讓發布鏈不再自我封鎖 |
+| `tw-invest-suite` | `a33e68aa1` | docs：本文件與決策紀錄 D023／D024 |
 | `AI-Telegram` | `0d6ead8` | P5：132 MB 續傳狀態檔的原子替換在 WinError 5 下退避重試 |
 
-兩筆皆為 **local-only，未 push**（等 Walter 指示）。
+四筆皆為 **local-only，未 push**（等 Walter 指示）。
+
+**最終結果（2026-11-20 06:13）**：05:00 那班 catchup 以修補後的原始碼重跑，
+Stage 1–7 全綠並重新認證（`nightly_id=ffa8f4ca…`，06:04:14），
+GitHub Pages、Groove-Lab、Telegram 三段收據全部轉綠（Telegram `message_id=4219`）。
+chain audit 的 5 項 nightly findings 全部清零，只剩一項與本次無關的既存項。
+詳見第 8 節。
 
 ---
 
@@ -213,12 +221,12 @@ nightly 才會被覆蓋。於是只要某一晚 nightly 失敗，恢復路徑就
 
 ## 6. 過程中的兩次自傷（已記錄）
 
-### 5.1 只改 repo 未同步 runtime → 01:00 補救死在 SHA 閘門
+### 6.1 只改 repo 未同步 runtime → 01:00 補救死在 SHA 閘門
 
 `finalize_inputs` 會逐一比對 runtime 與 repo 的 SHA。01:00 那班在 Stage 1 四個階段全綠之後，
 死在 `FATAL: runtime/repo SHA mismatch: yfinance_batch.py`。已補上同步步驟。
 
-### 5.2 在 run 進行中改檔 → 02:00 補救死在「來源已變更」閘門
+### 6.2 在 run 進行中改檔 → 02:00 補救死在「來源已變更」閘門
 
 02:00 那班我在 02:12（Stage 1 stock_features 執行中）套用了 P6。
 `pipeline_state.py` 的 `finalize_inputs` 另有一道閘門：
@@ -232,7 +240,7 @@ nightly 才會被覆蓋。於是只要某一晚 nightly 失敗，恢復路徑就
 
 ---
 
-## 7. 待確認與殘餘風險
+## 7. 殘餘風險（認證恢復後仍存在）
 
 - **P1–P3 重訓仍被阻塞**：chip 特徵來源表（`data_source` 欄位顯示 2020-01～2026-06-11 建自
   `daily_data2`，之後改用 `daily_data2_full` 且從未回填）、歷史回填、缺漏日補齊。
@@ -241,3 +249,62 @@ nightly 才會被覆蓋。於是只要某一晚 nightly 失敗，恢復路徑就
 - `company_refresh.py` 走同一個供應商快照，也有同樣的午夜脆弱性；
   目前 `industry_type` 的 `company` 欄位沒有損壞字元（0 筆），所以那條路徑是惰性的，尚未修。
 - `C:\Groove-Lab` 的 origin 行程需提升權限才能重啟，`no-transform` 要等它自然重啟才生效。
+
+## 8. 最終結果（認證與發布）
+
+### 8.1 認證
+
+| 項目 | 值 |
+|---|---|
+| data_date | 2026-11-19 |
+| nightly_id | `ffa8f4ca35324509a613c0e7a2dcdd7d` |
+| status | ok |
+| run_id | 114 |
+| picks | 24 |
+| 認證完成時間 | 2026-11-20T06:04:14.117419 |
+| venue 來源 | provider ／ 2026-11-20 |
+| 估值覆蓋 | 1958／1974 fresh |
+
+### 8.2 三段收據
+
+| 收據 | 狀態 |
+|---|---|
+| `publication_result.json`（GitHub Pages） | verified ／ postflight_exit=0 |
+| `groove_publication_result.json`（Groove-Lab） | verified ／ beacon 容錯 ['watchlist-history.html'] |
+| `chip_telegram_result.json`（Telegram 籌碼摘要） | sent ／ message_id=4219 |
+
+### 8.3 chain audit
+
+狀態 **DEGRADED**（target 2026-11-19，檢查於 2026-11-20T06:14:41.399682+08:00）
+
+剩餘項：
+- 電源喚醒計時器證據無法讀取；尚未驗證實際睡眠喚醒
+
+## 9. 附帶查到的另一個問題：AI-Telegram 18:00 那班中止
+
+（獨立於 nightly，順手查完。）
+
+`AI-Telegram Scheduled Pipeline` 的 `publish_static_site` stage **自 2026-11-03 起每天失敗**
+（最後一次成功是 11/02，exit=0）。根因是 AWS 憑證檔不見了：
+
+```
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\Users\icemo\Downloads\rootkey.csv'
+  aws_amplify_deploy.py:53 in credentials()
+```
+
+- `config/shared_config.json` 的 `aws_amplify.credentials_csv` 寫死指向 `C:\Users\icemo\Downloads\rootkey.csv`；
+  該檔已不存在（Downloads 目錄已被清理，只剩兩個無關檔案），整個使用者目錄下也找不到。
+- `api_keys` 裡沒有 AWS 憑證，`credentials()` 第 52 行只有在 access/secret 齊全時才會跳過 CSV，
+  因此**沒有替代來源**。
+- pipeline 有 `SCHEDULER_CONTINUES_AFTER_FAILURE`，其他 stage 照跑，但
+  `https://main.d1ydtmhelzqul1.amplifyapp.com` 這個靜態站自 11/03 起就沒有再更新。
+
+修法需要憑證，必須由 Walter 決定（我不動憑證檔）：
+
+1. 重新產生 root access key 並下載 CSV，放回 `C:\Users\icemo\Downloads\rootkey.csv`；**或**
+2. 把 `credentials_csv` 改指到不會被清理的固定位置（例如 `D:\CODEX\AI-Telegram\config\rootkey.csv`）；
+   **或**
+3. 直接把 `aws_access_key_id` / `aws_secret_access_key` / `aws_session_token` 放進
+   `config/shared_config.local.json` 的 `api_keys`（程式會跳過 CSV 這條路）。
+
+建議 2 ＋ 3 併用：憑證不放在 Downloads 這種會被整理的目錄，也就不會再被清掉一次。
