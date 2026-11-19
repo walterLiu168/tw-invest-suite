@@ -49,40 +49,133 @@ _company_map = {}
 _market_map_lock = threading.Lock()
 
 
-def refresh_market_map(rows=None):
-    """Resolve listing venue from fresh canonical provider metadata."""
+# --- Listing venue resolution ---------------------------------------------
+# FinMind's TaiwanStockInfo publishes exactly ONE complete listing snapshot,
+# stamped with the current date, and keeps only the per-day diffs for earlier
+# dates.  Measured 2026-11-20: one session carries 3358 rows, a past date
+# carries one or two.  The snapshot lands roughly an hour after midnight, so
+# the 00:00 certification catch-up always read an empty window and failed the
+# whole valuation stage (ten failures between 2026-09-30 and 2026-11-20).
+#
+# A complete snapshot therefore carries thousands of rows while a diff day
+# carries one or two, so MIN_LISTING_SNAPSHOT_ROWS separates "published" from
+# "still being published" and from "diff only".
+LISTING_WINDOW_DAYS = 7
+MIN_LISTING_SNAPSHOT_ROWS = 1500
+TWSE_LISTING_URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_L'
+TPEX_LISTING_URL = 'https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O'
+
+
+def _listing_snapshot_from_provider():
+    """Newest complete listing snapshot the provider currently exposes.
+
+    Returns (rows, latest_day).  rows is empty when the provider exposes no
+    complete snapshot yet — the daily snapshot is published about an hour
+    after midnight, and before that only per-day diffs are visible.
+    """
+    import finmind_batch as fm
     from datetime import date, timedelta
-    if rows is None:
-        import finmind_batch as fm
-        today = date.today().isoformat()
-        rows = fm._call('TaiwanStockInfo', '', start_date=today, end_date=today)
+    today = date.today()
+    rows = fm._call('TaiwanStockInfo', '',
+                    start_date=(today - timedelta(days=LISTING_WINDOW_DAYS)).isoformat(),
+                    end_date=today.isoformat())
     if not rows or any('_error' in row for row in rows):
-        raise RuntimeError('Listing venue metadata unavailable')
-    valid = []
+        return [], None
+    per_day = {}
     for row in rows:
         try:
             day = date.fromisoformat(str(row.get('date', '')))
         except ValueError:
             continue
-        if date.today() - timedelta(days=7) <= day <= date.today() and row.get('type') in {'twse','tpex'}:
-            valid.append((day,row))
+        if row.get('type') not in {'twse', 'tpex'}:
+            continue
+        per_day.setdefault(day, []).append(row)
+    complete = [day for day, day_rows in per_day.items()
+                if len(day_rows) >= MIN_LISTING_SNAPSHOT_ROWS]
+    if not complete:
+        return [], None
+    latest = max(complete)
+    return per_day[latest], latest
+
+
+def _listing_snapshot_from_exchanges(today):
+    """Listing venue straight from the exchanges' own open data.
+
+    The exchanges publish on no snapshot schedule, so this keeps the 00:00
+    catch-up alive while the provider's daily snapshot is still being built.
+    The two open-data lists carry listed companies only; the provider adds
+    the ETF/ETN codes on top of them.
+    """
+    import requests
+    rows = []
+    try:
+        twse = requests.get(TWSE_LISTING_URL, timeout=30).json()
+        tpex = requests.get(TPEX_LISTING_URL, timeout=30).json()
+    except Exception as exc:
+        raise RuntimeError(f'Exchange listing open data unavailable: {exc}') from exc
+    for record in twse:
+        code = str(record.get('公司代號', '')).strip()
+        if code:
+            rows.append({'stock_id': code, 'stock_name': str(record.get('公司名稱', '')).strip(),
+                         'type': 'twse', 'date': today})
+    for record in tpex:
+        code = str(record.get('SecuritiesCompanyCode', '')).strip()
+        if code:
+            rows.append({'stock_id': code, 'stock_name': str(record.get('CompanyName', '')).strip(),
+                         'type': 'tpex', 'date': today})
+    return rows
+
+
+def refresh_market_map(rows=None):
+    """Resolve listing venue from fresh canonical provider metadata."""
+    from datetime import date, timedelta
+    today = date.today()
+    window = today - timedelta(days=LISTING_WINDOW_DAYS)
+    if rows is None:
+        try:
+            selected, latest = _listing_snapshot_from_provider()
+        except Exception as exc:
+            raise RuntimeError(f'Listing venue metadata unavailable: {exc}') from exc
+        source = 'provider'
+        if not selected:
+            try:
+                selected = _listing_snapshot_from_exchanges(today)
+            except Exception as exc:
+                raise RuntimeError('Listing venue metadata unavailable') from exc
+            source = 'exchanges'
+            latest = today
+            if len(selected) < MIN_LISTING_SNAPSHOT_ROWS:
+                raise RuntimeError('Listing venue metadata unavailable')
+        valid = [(latest, row) for row in selected]
+    else:
+        source = 'injected'
+        valid = []
+        for row in rows:
+            try:
+                day = date.fromisoformat(str(row.get('date', '')))
+            except ValueError:
+                continue
+            if window <= day <= today and row.get('type') in {'twse', 'tpex'}:
+                valid.append((day, row))
+        if not valid:
+            raise RuntimeError('Listing venue metadata is stale or invalid')
+        latest = max(day for day, _ in valid)
     if not valid:
-        raise RuntimeError('Listing venue metadata is stale or invalid')
-    latest = max(day for day, _ in valid)
+        raise RuntimeError('Listing venue metadata unavailable')
     venues = {}
     for day, row in valid:
         if day == latest:
-            venues.setdefault(str(row['stock_id']).strip(),set()).add(row['type'])
+            venues.setdefault(str(row['stock_id']).strip(), set()).add(row['type'])
     if any(len(values) != 1 for values in venues.values()):
         raise ValueError('Conflicting current listing venues')
-    mapped = {ticker:'.TW' if next(iter(values))=='twse' else '.TWO'
-              for ticker,values in venues.items()}
+    mapped = {ticker: '.TW' if next(iter(values)) == 'twse' else '.TWO'
+              for ticker, values in venues.items()}
     _market_map.clear()
     _market_map.update(mapped)
     _company_map.clear()
-    _company_map.update({str(row['stock_id']).strip():row.get('stock_name')
-                         for day,row in valid if day==latest})
-    return {'source_date':latest.isoformat(),'mapped_tickers':len(mapped)}
+    _company_map.update({str(row['stock_id']).strip(): row.get('stock_name')
+                         for day, row in valid if day == latest})
+    return {'source': source, 'source_date': latest.isoformat(), 'mapped_tickers': len(mapped)}
 
 
 def _format_ticker_yf(ticker: str) -> str:

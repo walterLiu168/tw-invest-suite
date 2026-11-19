@@ -64,7 +64,8 @@ def cache_coverage(tickers, target_date):
 
 def refresh(tickers, target_date):
     with valuation_lock():
-        yfb.refresh_market_map()
+        venue = yfb.refresh_market_map()
+        venue_info = venue if isinstance(venue, dict) else {}
         coverage = cache_coverage(tickers,target_date)
         if coverage['fresh_tickers'] < 1900:
             pending = coverage['missing_tickers']
@@ -75,7 +76,8 @@ def refresh(tickers, target_date):
             logging.info('Provider results %s; provider_dead=%s',counts,yfb.is_dead())
             coverage = cache_coverage(tickers,target_date)
         coverage.update(nightly_id=os.environ.get('TW_NIGHTLY_ID','manual'),checked_at=datetime.now().isoformat(),
-                        status='ok' if coverage['fresh_tickers']>=1900 else 'failed')
+                        status='ok' if coverage['fresh_tickers']>=1900 else 'failed',
+                        venue_source=venue_info.get('source'),venue_source_date=venue_info.get('source_date'))
         filename = 'finance_fetch.json' if os.environ.get('TW_NIGHTLY_ID') else 'finance_refresh_latest.json'
         ps.atomic_json(ps.RUNTIME/'_debug'/filename,coverage)
         logging.info('Actual verified cache coverage %s/%s; missing=%s',coverage['fresh_tickers'],len(tickers),len(coverage['missing_tickers']))
@@ -93,11 +95,24 @@ def main():
         raise ValueError("Empty valuation-refresh universe")
     from market_calendar import is_session
     weekend_catchup = os.environ.get('TW_WEEKEND_CATCHUP') == '1'
-    if not is_session(date.today()) and not weekend_catchup:
-        logging.info('Non-trading session: preserve periodic financial cache; skip downloads')
-        return 0
     target_date = os.environ.get('TW_DATA_DATE') or date.today().isoformat()
     date.fromisoformat(target_date)
+    if not is_session(date.today()) and not weekend_catchup:
+        # A late-data catch-up can run on a TWSE holiday/weekend.  Preserve
+        # the cache, but still emit a receipt for this nightly_id so
+        # finalize_inputs never inherits the previous nightly's receipt.
+        venue = yfb.refresh_market_map()
+        venue_info = venue if isinstance(venue, dict) else {}
+        coverage = cache_coverage(tickers, target_date)
+        coverage.update(nightly_id=os.environ.get('TW_NIGHTLY_ID', 'manual'),
+                        checked_at=datetime.now().isoformat(),
+                        status='ok' if coverage['fresh_tickers'] >= 1900 else 'failed',
+                        venue_source=venue_info.get('source'),
+                        venue_source_date=venue_info.get('source_date'))
+        ps.atomic_json(ps.RUNTIME / '_debug' / 'finance_fetch.json', coverage)
+        logging.info('Non-trading session: preserved cache receipt %s/%s for %s',
+                     coverage['fresh_tickers'], coverage['expected_tickers'], target_date)
+        return 0 if coverage['status'] == 'ok' else 2
     return refresh(tickers,target_date)
 
 
