@@ -656,3 +656,61 @@ dashboard 轉 CRITICAL → exit 1。00:05 重跑時 `null=0` 就通過了。
 - `run_daily.ps1` 只有短路模式 `-Mode publish` 才會呼叫 publisher；排程的 daily-report 用
   full mode → nightly 不會被這個等待拖住
 - 詳見 `docs/RESP-2026-11-17-02-screen-verification-derived-fix-pick-history.md`
+
+---
+
+## D022: 完整性檢查的四項修補——不靜默丟分頁、不靜默改位元組、補算不綁死流程
+
+**日期**：2026-11-19
+
+**Context**:
+例行資料完整性檢查（官方 chain audit + DB 層稽核）確認 DB 與認證鏈健康，但發現四個缺陷，
+其中兩個是我自己造成的：
+
+1. **P1 live 精選頁少一頁**：18:00 的 news-only 重渲染把 live 的 `watchlist.html` 覆蓋成
+   沒有「🎯 潛在反彈」分頁的版本（該日融資資料尚未載入 → 候選回空 → 分頁被靜默略過），
+   使用者整天看到少 60 檔的頁面。官方 audit 的 `manifest hash_mismatch=1` 就是它。
+2. **P3 Groove 收據永遠 failed**：我 11/16 新建 `watchlist-history.html` 時忘了把它加進
+   `C:\Groove-Lab\server.py` 的認證頁白名單 → 該頁只送 `no-store`、少了 `no-transform` →
+   Cloudflare 有權注入 Web Analytics beacon → 位元組驗證必敗 → 連帶 Telegram 籌碼摘要
+   自 11/13 起未送出。
+3. **P4 FinMind 衍生欄位補算仍會被跳過**：11/19 的 18:00 那班在資料集迴圈之後中止，
+   而 derived 補算排在迴圈之後 → 最新交易日再次留下佔位值（`change_pct` NULL、sma/rsi 全 0），
+   18:20 的篩選因此用壞掉的 short 評分選股。19:00 那班才補回來。
+4. **P2 Telegram 未送**：是 P3 的下游症狀，不是獨立缺陷。
+
+**Decision**:
+1. **P1：分頁不可靜默消失**。`_fetch_margin_distress_candidates()` 改為逐級回退：
+   今日 scan JSON → 最新已產生的 scan JSON → 最新有 `MarginBalance > 0` 的日期的 DB fallback → 原行為；
+   回退到較舊日期時分頁顯示「⚠ 本次融資資料日為 X」。
+   教訓：**呈現層遇到上游資料未到時，應降級顯示並標明，而不是整段消失**。
+2. **P2/P3：兩端都修**。伺服器白名單補上 `/watchlist-history.html`（`no-transform` 讓邊緣不得改寫），
+   驗證端另外容忍 beacon 注入（只移除那一支 script，其餘差異仍失敗，被容忍路徑記進收據）。
+   教訓：**認證鏈的位元組比對不該被 CDN 的行為改變**——但也不能因此放寬比對，所以兩端都補。
+3. **P4：補算不得綁死在資料集階段的成敗上**。derived 補算移入 `finally`，只要 price 階段在範圍內
+   就一定執行；而且 price 階段即使 `affected_rows=0`（狀態已標記完成）也會用佔位值偵測補算。
+   教訓：**衍生欄位是價格的純函數，它的補算不該依附在任何會失敗的步驟之後**。
+4. **每次修補都要有「故障注入」證據**：把一列的衍生欄位清成佔位值 → 重跑 price 階段（空跑情境）
+   → 確認修回且值與原值完全相同。
+
+**Why**:
+- 三個缺陷的共同形狀都是「**靜默**」：分頁靜默消失、位元組靜默被改、補算靜默被跳過。
+  靜默的失敗最貴，因為沒有任何一處會報錯，只有看結果的人會發現。
+- P1 的修法選擇「顯示舊資料並標明日期」而不是「等資料到了再顯示」：使用者要的是一份完整可讀的頁面，
+  帶著明確的資料日標記，比少一頁好。
+- P3 兩端都做是因為兩端各有道理：伺服器端讓線上回應回到認證位元組（根本解），
+  驗證端容忍注入則讓這條鏈在邊緣行為改變時不會再次卡死（韌性）。
+
+**Trade-off**:
+- 分頁回退會顯示較舊日期的融資資料；已用頁面上的資料日提示揭露，不再假裝是最新。
+- origin 行程需提升權限才能重啟，`no-transform` 要等它下次自然重啟才生效；在此之前靠驗證端的容忍層維持管線通暢。
+- P4 只保證「price 階段在範圍內就會補算」；若 price 階段本身失敗（OHLCV 沒寫進去），
+  補算會寫 0 值而不是 NULL——那是 fail-closed 的正確行為。
+
+**驗證**:
+- P1：runtime 副本實測 `_fetch_margin_distress_candidates(top_n=60)` → `candidates=60 source_date=2026-11-18`
+- P3b：線上實測 `verify_paths` → `verified=5 tolerated=['watchlist-history.html'] PASS`
+- P4：故障注入測試 → 清空 2330 的 7 欄 → price 階段 `affected_rows=0` → `[derived] updated_rows=1`，
+  修回值與原值完全相同
+- `pytest tests/`：見同日的執行結果（唯一失敗為既有的 `test_db_config.py`）
+- 詳見 `docs/RESP-2026-11-17-02-screen-verification-derived-fix-pick-history.md` 第 8 節

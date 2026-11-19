@@ -1,4 +1,6 @@
 import hashlib
+import http.server
+import threading
 from pathlib import Path
 import sys
 import tempfile
@@ -7,6 +9,29 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import sync_groove_release as groove
+
+BEACON = (b'<script type="module" '
+          b'src="https://static.cloudflareinsights.com/beacon.min.js/vce7018" '
+          b'integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTsc" '
+          b'crossorigin="anonymous"></script>\n')
+
+
+class _BeaconHandler(http.server.BaseHTTPRequestHandler):
+    """Serve the staged bytes with the Cloudflare beacon injected, like the edge does."""
+
+    body = b""
+    inject = True
+
+    def do_GET(self):  # noqa: N802
+        payload = self.body.replace(b"</body>", BEACON + b"</body>") if self.inject else self.body
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args):
+        pass
 
 
 class GrooveReleaseTests(unittest.TestCase):
@@ -26,7 +51,7 @@ class GrooveReleaseTests(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(groove, "GROOVE", self.dest).start()
         patch.object(groove, "RESULT", self.dest / "receipt.json").start()
-        self.remote = patch.object(groove, "verify_paths", return_value=["watchlist.html"]).start()
+        self.remote = patch.object(groove, "verify_paths", return_value=(["watchlist.html"], [])).start()
 
     def test_exact_copy_retry_preserves_music_files(self):
         music = self.dest / "index.html"
@@ -60,3 +85,43 @@ class GrooveReleaseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             groove.deploy(self.root, self.manifest)
         self.assertFalse((self.dest / "index.html").exists())
+
+
+class BeaconToleranceTests(unittest.TestCase):
+    """The Cloudflare edge rewrites HTML bodies; only that script may be ignored."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / "release"
+        self.root.mkdir()
+        self.page = self.root / "watchlist-history.html"
+        self.page.write_bytes(b"<html><body>\n<p>certified</p>\n</body>\n</html>\n")
+        self.expected = hashlib.sha256(self.page.read_bytes()).hexdigest()
+
+        _BeaconHandler.body = self.page.read_bytes()
+        _BeaconHandler.inject = True
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), _BeaconHandler)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self.server.shutdown)
+
+    def test_injected_beacon_is_tolerated_and_recorded(self):
+        verified, tolerated = groove.verify_paths(
+            self.root, ["watchlist-history.html"], f"http://127.0.0.1:{self.port}")
+        self.assertEqual(verified, ["watchlist-history.html"])
+        self.assertEqual(tolerated, ["watchlist-history.html"])
+
+    def test_any_other_difference_still_fails(self):
+        _BeaconHandler.body = b"<html><body>\n<p>tampered</p>\n</body>\n</html>\n"
+        with self.assertRaises(ValueError):
+            groove.verify_paths(self.root, ["watchlist-history.html"],
+                                f"http://127.0.0.1:{self.port}")
+
+    def test_a_clean_body_needs_no_tolerance(self):
+        _BeaconHandler.inject = False
+        verified, tolerated = groove.verify_paths(
+            self.root, ["watchlist-history.html"], f"http://127.0.0.1:{self.port}")
+        self.assertEqual(verified, ["watchlist-history.html"])
+        self.assertEqual(tolerated, [])

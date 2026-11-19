@@ -269,3 +269,98 @@ run（`market_screen_runs` 以 `run_date` UPSERT），所以 11/16 那天的最�
   以及本次的發佈等待修正與文件 → push 到 `origin/main`
 - `AI-Telegram`：`strategy_lab/finmind_batch_update.py` 的 derived 補算修補 → 逐 hunk 取用後 commit 與 push
   （該檔另有他人未提交內容，**不可整檔提交**）
+
+---
+
+## 8. 2026-11-19 資料完整性檢查與四項修補
+
+### 8.1 檢查範圍
+
+官方 `daily_chain_audit.py --no-notify`（唯讀）+ 自訂 DB 層稽核：
+
+- `daily_data2_full` 最新日、列數／不重複標的數、重複 `(Ticker, Date)`
+- 衍生欄位（`change_pct`／`sma_*`／`atr_14`／`rsi_14`／`is_gap`）逐日 NULL／0 統計
+- `company`／`SharesOutstanding_shares` 空值、`metadata_quarantine` 未結案數
+- D019 精選契約（名額數／distinct／每 bucket 組數）
+- 認證 manifest 的 2,037 個 artifact 逐一雜湊比對
+- 線上 `groovelab.dev` 與 `walterliu168.github.io` 的實際回應位元組
+
+### 8.2 健康的項目
+
+| 項目 | 狀態 |
+|---|---|
+| DB 最新交易日 | 2026-11-19，1,962 列／1,962 檔 |
+| 重複 `(Ticker, Date)` | 0 |
+| `metadata_quarantine` 未結案 | 0 |
+| 衍生欄位 11/13～11/18 | 全部正常（`change_pct` NULL=0、sma/atr 全非 0、漲跌幅範圍 [-100, 10]） |
+| 衍生欄位 11/19 | 19:00 那班已補算完成（見 8.4） |
+| D019 精選契約（run 114／11-19） | 24 名額／24 distinct／8 組各 3 檔 → PASS |
+| 11/18 nightly | marker D056-3 ok、run_id 112、publication verified、**postflight_exit=0**（D021 的發佈等待修正生效） |
+| live 資料層 | groovelab.dev 的 JSON／manifest／readme 與本地**位元組相等**，nightly_id 與認證 session 一致 |
+| runtime ↔ repo SHA | 9 個 cron 檔全 MATCH |
+
+### 8.3 P1：live 精選頁每天有 6 小時少了「🎯 潛在反彈」分頁
+
+**症狀**：`https://groovelab.dev/watchlist.html` 不含「潛在反彈」；live 檔 1,951,377 bytes／25 個
+pick-ticker，認證版 2,118,583 bytes／85 個。官方 audit 的 `manifest missing/hash_mismatch=1`
+指的就是 `watchlist.html`。
+
+**根因**：`news_refresh_watchlist.py`（排程 18:00）會重渲染 live 頁面（腳本明文寫「live 頁面會被覆寫」）。
+該次渲染時 `render_full_watchlist.py` 的 `_fetch_margin_distress_candidates()` 回空：
+
+1. `outputs/margin_rebound/<今天>.json` 還沒產生（margin_rebound scan 在 nightly 的 Stage 5，約 23:06）
+2. 退回 DB fallback，但 11/19 的 `MarginBalance` **1,962 列全部是 0**（margin 資料集尚未載入，
+   `dl_errors` 有 `Canonical source is empty`）
+3. → `margin_candidates` 為空 → `if margin_candidates:` 整個分頁被**靜默略過**
+4. live 頁面被覆蓋 → 使用者整天看到少一頁、少 60 檔的頁面
+
+**修法**：候選改為**逐級回退**，且分頁標明資料日：
+today 的 scan JSON → **最新已產生的 scan JSON** → 最新有 `MarginBalance > 0` 的日期的 DB fallback → 原行為。
+回退到較舊日期時，分頁會顯示「⚠ 本次融資資料日為 X（最新一筆資料尚未含融資資料，22:25 後自動更新）」。
+
+實測（runtime 副本）：`candidates=60  source_date=2026-11-18`。
+
+### 8.4 P4：FinMind 18:00 那班為何仍留下佔位值
+
+- 18:00 那班是 AI-Telegram Scheduled Pipeline（`automation/openalice_phased_download.cmd`
+  分階段呼叫 `_fetch_today.py --phase price|inst|margin|daytrade`，都用同一份
+  `strategy_lab/finmind_batch_update.py`）
+- 18:00:09 的 `canonical_universe` 顯示 **degraded=true**：ticker **8291** 當日 TPEx 官方停牌
+  （1963 候選 → 1962 解析，coverage 0.99949）；19:00 那班已是 coverage 1.0
+- 18:01:54 margin 資料集報 `Canonical source is empty`；`TaiwanStockShareholding` /
+  `TaiwanStockIssuedShares` **完全沒有 11-19 的 state** → 該階段在資料集迴圈**之後**就中止
+- 原本的修補只把 derived 補算包在「資料集迴圈」的 try/except 之後 → 例外若發生在迴圈之後
+  （例如 `--ensure-state-schema` 的狀態檢查），補算仍然被跳過 → 11/19 仍留下佔位值
+
+**修法**：把 derived 補算移進 `finally`（涵蓋 refresh 階段），只要 price 階段在範圍內就一定會補算。
+
+**驗證**：把 2330 在 11/19 的 7 個衍生欄位清成佔位值後重跑 price 階段（`affected_rows=0` 的空跑情境）
+→ `[derived] updated_rows=1`，且**修回的值與原值完全相同**。
+
+### 8.5 P2／P3：Telegram 未送與 Groove 收據失敗
+
+**P3 根因**：`C:\Groove-Lab\server.py` 有一份「認證股票頁」白名單，命中者送
+`Cache-Control: no-store, no-transform`。`no-transform` 正是告訴 Cloudflare 邊緣不得改寫回應的標頭。
+`/watchlist-history.html` **不在白名單**（11/16 新建該頁時漏加）→ 只送 `no-store` →
+Cloudflare 有權注入 Web Analytics beacon → 線上回應 31,324 bytes vs 檔案 30,957 bytes →
+`sync_groove_release.py` 的位元組驗證**永遠失敗** → Groove 收據 failed → `chip_push.py`
+要求收據 verified → **Telegram 籌碼摘要自 11/13 起未送出**（ledger 是空的）。
+
+**兩處修補**（Walter 指示「兩者都做」）：
+1. `C:\Groove-Lab\server.py`：把 `/watchlist-history.html` 加入白名單 → 送 `no-transform`。
+   備份：`scripts/_debug/groove_server.py.before-20261119`。**但 origin 行程以其他使用者身分執行，
+   無提升權限無法重啟**（`Stop-Process` → Access denied），所以這項會在 origin 下次自然重啟時生效。
+2. `scripts/sync_groove_release.py`（repo 與 runtime 同步）：驗證端容忍 beacon 注入——
+   只移除 `cloudflareinsights.com/beacon.min.js` 那一支 script（整行移除與行內移除各試一次），
+   其餘任何差異仍失敗；被容忍的路徑記在收據的 `cloudflare_beacon_tolerated_paths`。
+   線上實測：`verified=5  tolerated=['watchlist-history.html']  PASS`。
+
+**連帶效果**：Groove 收據轉綠 → Telegram 恢復 → hourly catchup 不再每小時重發同一場
+（今天已重發 3 次：15:05／16:05／17:05，gh-pages 被重複提交）。
+
+### 8.6 未修與邊界
+
+- `chipscore_daily` 仍沒有最新交易日（11/19 缺），short 分數的 chip 來源長期缺料（既有結構性缺口）
+- margin 資料集自 11/13 起每天報 `Canonical source is empty`，屬資料來源的問題，未追到底
+- AI-Telegram 的 18:00 那班在資料集迴圈後中止的**根因**（哪個步驟拋例外）尚未定位，
+  但補算已改為 `finally`，不再受它影響

@@ -1618,45 +1618,105 @@ def render_pick_card(c: ms.Candidate, d: Dict, idx: int) -> str:
 
 # ---- per-bucket group ----
 
-def _fetch_margin_distress_candidates(top_n: int = 10) -> List[Dict]:
+def _latest_date_with_margin() -> Optional[str]:
+    """Newest date in daily_data2_full that still has margin balance data.
+
+    The margin data set lands later in the evening, so a daytime render can
+    see a newest date whose MarginBalance is still empty.
+    """
+    with db.get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT MAX(Date) FROM daily_data2_full WHERE MarginBalance > 0")
+        row = cur.fetchone()
+    if not row or not row[0]:
+        return None
+    value = row[0]
+    return value.isoformat()[:10] if hasattr(value, "isoformat") else str(value)[:10]
+
+
+def _fetch_margin_distress_candidates(top_n: int = 10) -> Tuple[List[Dict], Optional[str]]:
     """從 outputs/margin_rebound/<date>.json 讀取 scan 結果。
 
     若 JSON 不存在（scan 還沒跑過），fallback 到 DB query 算簡化版。
     全 7 維度的 scan 結果由 src/margin_rebound/scan.py 產出。
+
+    Returns (candidates, source_date).  The candidates are never silently
+    dropped: when the newest date has no margin data yet (the data set and the
+    evening scan arrive later), the newest available source is used and its
+    date is returned so the tab can state it.
     """
     import json
     # Try reading today's JSON (scripts/outputs/margin_rebound/<date>.json)
     today = date.today().isoformat()
     skill_root = Path(__file__).parent
-    json_path = skill_root / "outputs" / "margin_rebound" / f"{today}.json"
+    scan_dir = skill_root / "outputs" / "margin_rebound"
+    json_path = scan_dir / f"{today}.json"
     if json_path.exists():
         try:
             d = json.loads(json_path.read_text(encoding="utf-8"))
             candidates = d.get("candidates", [])
-            return candidates[:top_n]
+            if candidates:
+                return candidates[:top_n], today
         except (json.JSONDecodeError, OSError):
             pass
-    # Fallback: simple DB query (old behavior)
-    return _fetch_margin_distress_fallback(top_n)
+    # The newest scan that already ran.  The scan belongs to the nightly and
+    # lands after the price data, so an early re-render must reuse it instead
+    # of dropping the tab.
+    if scan_dir.is_dir():
+        for snap in sorted(scan_dir.glob("*.json"), reverse=True):
+            if snap.name == "history.json":
+                continue
+            try:
+                d = json.loads(snap.read_text(encoding="utf-8"))
+                candidates = d.get("candidates", [])
+            except (json.JSONDecodeError, OSError):
+                continue
+            if candidates:
+                return candidates[:top_n], snap.stem
+    # Fallback: simple DB query (old behavior) on the newest date that has
+    # margin data, not on a newest date whose margin data has not landed.
+    margin_date = _latest_date_with_margin()
+    if margin_date:
+        candidates = _fetch_margin_distress_fallback(top_n, on_date=margin_date)
+        if candidates:
+            return candidates, margin_date
+    return _fetch_margin_distress_fallback(top_n), None
 
 
-def _fetch_margin_distress_fallback(top_n: int = 10) -> List[Dict]:
-    """Fallback: 從 DB 查詢融資反彈候選人（簡化版，不含多維度評分）。"""
+def _fetch_margin_distress_fallback(top_n: int = 10, on_date: Optional[str] = None) -> List[Dict]:
+    """Fallback: 從 DB 查詢融資反彈候選人（簡化版，不含多維度評分）。
+
+    on_date pins the trading date; the default is the newest date in the table.
+    """
     out = []
     with db.get_conn() as conn:
         cur = conn.cursor(pymysql.cursors.DictCursor)
-        cur.execute("""
-            SELECT
-                d.Ticker, d.Date, d.Close, d.MarginBalance,
-                d.ShortBalance, d.Volume,
-                c.industry, c.company AS name
-            FROM daily_data2_full d
-            LEFT JOIN industry_type c ON d.Ticker = c.ticker
-            WHERE d.Date = (SELECT MAX(Date) FROM daily_data2_full)
-              AND d.MarginBalance >= 5000
-              AND d.Close >= 5
-              AND d.Volume >= 100
-        """)
+        if on_date:
+            cur.execute("""
+                SELECT
+                    d.Ticker, d.Date, d.Close, d.MarginBalance,
+                    d.ShortBalance, d.Volume,
+                    c.industry, c.company AS name
+                FROM daily_data2_full d
+                LEFT JOIN industry_type c ON d.Ticker = c.ticker
+                WHERE d.Date = %s
+                  AND d.MarginBalance >= 5000
+                  AND d.Close >= 5
+                  AND d.Volume >= 100
+            """, (on_date,))
+        else:
+            cur.execute("""
+                SELECT
+                    d.Ticker, d.Date, d.Close, d.MarginBalance,
+                    d.ShortBalance, d.Volume,
+                    c.industry, c.company AS name
+                FROM daily_data2_full d
+                LEFT JOIN industry_type c ON d.Ticker = c.ticker
+                WHERE d.Date = (SELECT MAX(Date) FROM daily_data2_full)
+                  AND d.MarginBalance >= 5000
+                  AND d.Close >= 5
+                  AND d.Volume >= 100
+            """)
         latest = cur.fetchall()
         if not latest:
             return []
@@ -1697,7 +1757,7 @@ def _fetch_margin_distress_fallback(top_n: int = 10) -> List[Dict]:
     return out[:top_n]
 
 
-def _render_margin_tab(candidates: List[Dict]) -> str:
+def _render_margin_tab(candidates: List[Dict], source_date: Optional[str] = None) -> str:
     """Render the 🎯 潛在反彈 tab content (uses multi-dim scan results).
 
     D025: 顯示 tier 標籤 + 進場天數 badge（🆕 新進 / 🔥 持續 / ⚠️ 持續 8+ 天）。
@@ -1807,10 +1867,14 @@ def _render_margin_tab(candidates: List[Dict]) -> str:
         sections.append(f"""
         <h3 style="margin:18px 0 8px;color:var(--{'green' if badge_color=='red' else 'amber'});font-size:0.95rem">{label} <small class="muted" style="font-weight:400">{desc} · {len(group)} 檔</small></h3>
         <div class="picks">{''.join(cards)}</div>""")
+    margin_date_note = ""
+    if source_date and source_date != date.today().isoformat():
+        margin_date_note = (f'⚠ 本次融資資料日為 <b>{source_date}</b>'
+                            f'（最新一筆資料尚未含融資資料，22:25 後自動更新）。<br>')
     return f"""
     <div class="tab-content" data-bucket="margin">
       <h2 class="bucket-title">🎯 潛在反彈候選 <small>7 維度評分 (維持率 / 融資變化 / Bias / RSI / 布林 / 量價 / 集保*)</small></h2>
-      <p class="muted" style="font-size:0.82rem;margin:4px 0 12px">*集保戶數 / 千張大戶需 TDCC 申報資料，目前沒接入。每日 22:25 自動更新。<br>
+      <p class="muted" style="font-size:0.82rem;margin:4px 0 12px">*集保戶數 / 千張大戶需 TDCC 申報資料，目前沒接入。每日 22:25 自動更新。<br>{margin_date_note}
       <b>Tier 1</b> 維持率 &lt; 130%（斷頭區）；<b>Tier 2</b> 130-150% 連 3 日融資下降（警示區）。進場天數：<span class="chip chip-pos">🆕 新進</span> ≤ 2 天 / <span class="chip chip-neu">🔥 持續</span> 3-7 天 / <span class="chip" style="background:rgba(110,118,130,0.15);color:#8b949e">⚠️ 持續 8+ 天</span>。</p>
       {''.join(sections)}
     </div>"""
@@ -1923,11 +1987,11 @@ def main(groove_only: bool = False):
     contents_html = []
     # First tab: 潛在反彈 (margin distress candidates) — highest priority
     # D025: margin tab 顯示更多 (Tier 1 strict + Tier 2 warning, 總共 ~60 張)
-    margin_candidates = _fetch_margin_distress_candidates(top_n=60)
+    margin_candidates, margin_source_date = _fetch_margin_distress_candidates(top_n=60)
     if margin_candidates:
         active = "active"  # first tab = default open
         tabs_html.append(f'<button class="tab {active}" data-bucket="margin">🎯 潛在反彈 <span class="count">{len(margin_candidates)}</span></button>')
-        contents_html.append(_render_margin_tab(margin_candidates))
+        contents_html.append(_render_margin_tab(margin_candidates, margin_source_date))
     for i, bucket_label in enumerate(["<100", "100-300", "300-1000", ">1000"]):
         items = bucket_picks.get(bucket_label, [])
         if not items: continue

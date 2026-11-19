@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import urllib.request
 import uuid
@@ -13,16 +14,48 @@ GROOVE = Path(r"C:\Groove-Lab")
 RESULT = ps.RUNTIME / "_debug" / "groove_publication_result.json"
 
 
+# The Cloudflare edge in front of groovelab.dev injects exactly one browser
+# insights script into HTML responses.  It is not part of the certified
+# artifact, so it is removed before the byte comparison.  Only this script is
+# ever removed; any other difference still fails the check.
+#
+# The beacon normally occupies a whole line, so removing only the tag would
+# leave an empty line behind.  Both normalisations are offered and the served
+# body is accepted when either one reproduces the certified bytes.
+CLOUDFLARE_BEACON_LINE = re.compile(
+    rb"(?m)^[ \t]*<script[^>]*cloudflareinsights\.com/beacon\.min\.js[^>]*>.*?</script>[ \t]*\r?\n?",
+    re.S | re.I,
+)
+CLOUDFLARE_BEACON_INLINE = re.compile(
+    rb"<script[^>]*cloudflareinsights\.com/beacon\.min\.js[^>]*>.*?</script>",
+    re.S | re.I,
+)
+
+
+def canonical_variants(body: bytes):
+    """Byte forms of a served body that ignore the injected Cloudflare beacon."""
+    yield CLOUDFLARE_BEACON_LINE.sub(b"", body)
+    yield CLOUDFLARE_BEACON_INLINE.sub(b"", body)
+
+
 def verify_paths(root, relative_paths, base):
+    tolerated = []
+
     def check(relative):
         request = urllib.request.Request(base + "/" + relative + "?verify=" + uuid.uuid4().hex, headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"})
         with urllib.request.urlopen(request, timeout=20) as response:
             body = response.read()
-        if hashlib.sha256(body).hexdigest() != ps.sha256(root / relative):
+        expected = ps.sha256(root / relative)
+        if hashlib.sha256(body).hexdigest() != expected:
+            for candidate in canonical_variants(body):
+                if hashlib.sha256(candidate).hexdigest() == expected:
+                    tolerated.append(relative)
+                    return relative
             raise ValueError(f"Groove remote SHA mismatch: {relative}")
         return relative
     with ThreadPoolExecutor(max_workers=4) as executor:
-        return list(executor.map(check, sorted(relative_paths)))
+        verified = list(executor.map(check, sorted(relative_paths)))
+    return verified, tolerated
 
 
 def deploy(root, manifest):
@@ -55,8 +88,13 @@ def deploy(root, manifest):
     wanted = {"watchlist.html", "patterns.html", "analyze/index.html", "analyze/patterns.html", "analyze/patterns.json", "data/patterns.json", "data/watchlist-full.json", "data/dashboard.md", f"data/daily_summary_{manifest['data_date']}.md", f"data/publish_manifest_{manifest['data_date']}.json"}
     wanted.update(f"analyze/{pick['ticker']}.html" for pick in manifest["tickers"])
     wanted.update(a['gh_path'] for a in manifest['artifacts'] if not a['gh_path'].startswith('analyze/'))
-    verified = verify_paths(root, wanted, "https://groovelab.dev")
+    verified, tolerated = verify_paths(root, wanted, "https://groovelab.dev")
     result = {"nightly_id": manifest["nightly_id"], "data_date": manifest["data_date"], "run_id": manifest["run_id"], "status": "verified", "copied_paths": len(paths), "verified_paths": verified}
+    if tolerated:
+        # The edge rewrote these bodies with the browser-insights beacon.  The
+        # certified bytes are intact underneath it, but record it so the
+        # injection is visible in the receipt instead of silently passing.
+        result["cloudflare_beacon_tolerated_paths"] = sorted(tolerated)
     ps.atomic_json(RESULT, result)
     return result
 
