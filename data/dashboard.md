@@ -1,24 +1,24 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-20T00:05:13
+**Generated**: 2026-11-20T04:12:13
 **OVERALL**: 🔴 CRITICAL
 
 **Data date**: 2026-11-19
 **DB picks**: 24 active; run_id=114
 **OHLCV coverage**: 1962 rows ／ 1962 tickers
-**Nightly**: UNVERIFIED
-**Optional degraded**: ?
-**Publication**: verified ／ data_date=2026-11-18
-**Verified at**: 2026-11-19T17:07:32.767239
-**Published commit**: 4bbb074e7a9769ae82a29a9d29547fa161acbe07
+**Nightly**: db92dacd23d84c5ca8ce72189367a536
+**Optional degraded**: 0
+**Publication**: verified ／ data_date=2026-11-19
+**Verified at**: 2026-11-20T04:11:52.617544
+**Published commit**: c2df18c32eca3dfda2f7854845a04915d7002e88
 
 ## Action items
-- 🔴 nightly is incomplete/failed or marker belongs to another run
+- 🟡 32 個股資料不完整，頁面已標示；fresh=1942 ／ rendered=1974
 - 🔴 tw-invest-suite-daily-report: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-health-check: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-marker-watchdog: rc=1; 請見當次檢查明細
 - 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
-- 🔴 本次 nightly 尚無有效完成證據
-- 🟡 本次 GitHub Pages 發布尚未驗證；HTTP 200 不等於資料已更新
+- 🟡 tw-invest-suite-postflight: rc=1; 請見當次檢查明細
+- 🔴 本次 postflight 未通過
 
 ## Cron results
 | Task | State | LastRun | RC |
@@ -31,7 +31,7 @@
 | tw-invest-suite-sync-legacy | Ready | 2026-11-19T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-11-19T23:55:55.0000000+08:00 | 1 |
 | tw-invest-suite-publish | Ready | 2026-11-19T22:50:50.0000000+08:00 | 1 |
-| tw-invest-suite-postflight | Running | 2026-11-20T00:05:05.0000000+08:00 | 267009 |
+| tw-invest-suite-postflight | Ready | 2026-11-20T00:05:05.0000000+08:00 | 1 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
