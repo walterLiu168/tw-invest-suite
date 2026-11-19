@@ -1,24 +1,23 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-20T04:12:13
-**OVERALL**: 🔴 CRITICAL
+**Generated**: 2026-11-20T06:12:05
+**OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-11-19
 **DB picks**: 24 active; run_id=114
 **OHLCV coverage**: 1962 rows ／ 1962 tickers
-**Nightly**: db92dacd23d84c5ca8ce72189367a536
+**Nightly**: ffa8f4ca35324509a613c0e7a2dcdd7d
 **Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-11-19
-**Verified at**: 2026-11-20T04:11:52.617544
-**Published commit**: c2df18c32eca3dfda2f7854845a04915d7002e88
+**Verified at**: 2026-11-20T06:11:44.200060
+**Published commit**: 01f406983ded229a6f616e173fb522d91a858ccf
 
 ## Action items
 - 🟡 32 個股資料不完整，頁面已標示；fresh=1942 ／ rendered=1974
-- 🔴 tw-invest-suite-daily-report: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-health-check: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-marker-watchdog: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-postflight: rc=1; 請見當次檢查明細
-- 🔴 本次 postflight 未通過
+- 🟡 tw-invest-suite-daily-report: rc=1；該次執行已被 ffa8f4ca 的成功認證取代（認證開始於 2026-11-20T05:00:03）
+- 🟡 tw-invest-suite-health-check: rc=1；該次執行已被 ffa8f4ca 的成功認證取代（認證開始於 2026-11-20T05:00:03）
+- 🟡 tw-invest-suite-marker-watchdog: rc=1；該次執行已被 ffa8f4ca 的成功認證取代（認證開始於 2026-11-20T05:00:03）
+- 🟡 tw-invest-suite-publish: rc=1；該次執行已被 ffa8f4ca 的成功認證取代（認證開始於 2026-11-20T05:00:03）
+- 🟡 tw-invest-suite-postflight: rc=1；該次執行已被 ffa8f4ca 的成功認證取代（認證開始於 2026-11-20T05:00:03）
 
 ## Cron results
 | Task | State | LastRun | RC |
