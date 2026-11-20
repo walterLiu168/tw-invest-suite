@@ -219,6 +219,7 @@ run（`market_screen_runs` 以 `run_date` UPSERT），所以 11/16 那天的最�
 - **`stock_chip_features_daily` 涵蓋率斷層**（train/serve skew）尚未處理，
   重訓仍被 P1–P3 阻塞
 - **AI-Telegram 的改動未 push**，且該檔有他人未提交內容，不可整檔提交
+  （**2026-11-20 更新**：該改動已在遠端 `2a3808aa3`；該檔工作樹目前的差異是**他人**的未提交內容）
 - 22:25 的 nightly 重跑與 22:50 的發佈結果，另行複查
 
 ---

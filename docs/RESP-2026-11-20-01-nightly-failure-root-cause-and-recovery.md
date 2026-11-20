@@ -3,6 +3,11 @@
 **日期**：2026-11-20
 **範圍**：`tw-invest-suite`（repo 與 runtime）、`AI-Telegram`（local-only 未 push）
 
+> **2026-11-20 15:1x 更新（push 狀態）**：本文件寫成時，`tw-invest-suite` 的四筆提交尚未 push；
+> Walter 隨後指示「tw-invest-suite 三筆 push, omit telegram for now」，
+> 該 repo 的提交**已 push**（`HEAD == origin/main`）。`AI-Telegram` 的兩筆（`9760439`、`0d6ead8`）
+> **仍未 push**（依指示保留）。
+
 ---
 
 ## 0. 結論先講
@@ -20,7 +25,9 @@
 | `tw-invest-suite` | `a33e68aa1` | docs：本文件與決策紀錄 D023／D024 |
 | `AI-Telegram` | `0d6ead8` | P5：132 MB 續傳狀態檔的原子替換在 WinError 5 下退避重試 |
 
-四筆皆為 **local-only，未 push**（等 Walter 指示）。
+四筆寫成當時皆為 **local-only，未 push**；**2026-11-20 更新：該 repo 已 push**
+（Walter 指示「tw-invest-suite 三筆 push, omit telegram for now」），
+`AI-Telegram` 的 `0d6ead8` 依指示仍未 push。
 
 **最終結果（2026-11-20 06:13）**：05:00 那班 catchup 以修補後的原始碼重跑，
 Stage 1–7 全綠並重新認證（`nightly_id=ffa8f4ca…`，06:04:14），

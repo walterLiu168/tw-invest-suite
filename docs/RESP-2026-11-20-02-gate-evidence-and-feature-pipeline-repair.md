@@ -436,7 +436,7 @@ playback AUC `win20_net` 0.5600、`win20_net_1pct` 0.5980，組合 −44.17%。
    本回合連同覆蓋率守門一起納入版控。
 6. **`config/data_policy.json` 被 `.gitignore` 排除**（`config/`），所以
    `min_source_coverage` 這個新鍵只存在於本機，改動不會進版控。
-7. **`tw-invest-suite` 已 push（HEAD = `origin/main` = `0a68e4381`）；
+7. **`tw-invest-suite` 已 push（`HEAD == origin/main`，無未推提交）；
    只有 AI-Telegram 的 `9760439` 與 `0d6ead8` 依指示未 push。**
 8. **AI-Telegram 的 `aws_amplify` 憑證遺失**（`rootkey.csv`）仍未處理，
    靜態站自 11/03 起無法發布。

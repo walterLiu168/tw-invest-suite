@@ -555,7 +555,7 @@ run，但補算窗口只剩 22:25 之前。
    先在 11/16 的真值上做唯讀驗算（差異僅為欄位小數位進位），再用上游
    `recompute_derived()` 對 5 檔抽樣交叉驗證（逐欄 0 差異）。不呼叫 FinMind API、
    不改 schema、不動其他欄位。
-2. **補結構性漏洞**（Walter 授權選項 A，local-only 未 push）：在
+2. **補結構性漏洞**（Walter 授權選項 A；當時 local-only 未 push，現已在遠端 `2a3808aa3`）：在
    `AI-Telegram/strategy_lab/finmind_batch_update.py` 新增 `tickers_missing_derived()`，
    資料集階段改為 `try/except` 記錯但不中斷，補算條件由 `touched_dates and "price" in phase_names`
    改為只看 `"price" in phase_names`（`touched_tickers` 為空時用佔位值偵測兜底），
@@ -579,6 +579,9 @@ run，但補算窗口只剩 22:25 之前。
 **Trade-off**:
 - 修補只在 local，未 push；且該檔另有他人未提交的改動（`official_twse_json`／
   `capital_suspensions`／`resolve_price_universe`），**不可整檔 commit**，必須逐 hunk 取用
+  （**2026-11-20 更新**：此條的狀態註記已過期。`tickers_missing_derived` 與上述三個符號
+  都已在遠端 `2a3808aa3` 裡；`strategy_lab/finmind_batch_update.py` 目前的工作樹差異是**他人**
+  的未提交內容，仍然不可整檔 commit。決策內容本身不變。）
 - `chipscore_daily` 沒有最新交易日（11/16 的篩選也是 `chipscore: 0`）是**天天如此**的
   結構性缺口，本次未處理，short 分數的 chip 來源仍長期缺料
 - `tickers_missing_derived` 用 `sma_13 = 0` 當佔位值訊號，極少數 Close 全為 0 的列會被
