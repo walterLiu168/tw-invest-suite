@@ -1,35 +1,34 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-20T17:07:36
+**Generated**: 2026-11-20T23:39:21
 **OVERALL**: 🟡 WARNING
 
-**Data date**: 2026-11-19
-**DB picks**: 24 active; run_id=114
+**Data date**: 2026-11-20
+**DB picks**: 24 active; run_id=119
 **OHLCV coverage**: 1962 rows ／ 1962 tickers
-**Nightly**: ffa8f4ca35324509a613c0e7a2dcdd7d
+**Nightly**: 37e9e86f8cba48608be78932ca4f5105
 **Optional degraded**: 0
-**Publication**: verified ／ data_date=2026-11-19
-**Verified at**: 2026-11-20T17:07:16.137974
-**Published commit**: dd34ee6761dec47103cff4d7fe66fab99b287e5a
+**Publication**: verified ／ data_date=2026-11-20
+**Verified at**: 2026-11-20T23:38:58.472400
+**Published commit**: 208d28c6c8a2c59d3aa5d9fa4e8149cd42334dff
 
 ## Action items
-- 🟡 32 個股資料不完整，頁面已標示；fresh=1942 ／ rendered=1974
-- 🟡 tw-invest-suite-daily-report: rc=1；該次執行已被 ffa8f4ca 的成功認證取代（認證開始於 2026-11-20T05:00:03）
-- 🟡 tw-invest-suite-health-check: rc=1；該次執行已被 ffa8f4ca 的成功認證取代（認證開始於 2026-11-20T05:00:03）
-- 🟡 tw-invest-suite-marker-watchdog: rc=1；該次執行已被 ffa8f4ca 的成功認證取代（認證開始於 2026-11-20T05:00:03）
-- 🟡 tw-invest-suite-publish: rc=1；該次執行已被 ffa8f4ca 的成功認證取代（認證開始於 2026-11-20T05:00:03）
-- 🟡 tw-invest-suite-postflight: rc=1；該次執行已被 ffa8f4ca 的成功認證取代（認證開始於 2026-11-20T05:00:03）
+- 🟡 25 個股資料不完整，頁面已標示；fresh=1949 ／ rendered=1974
+- 🟡 10 個 watchlist ticker 補充資料不完整；各卡片列出失敗來源
+- 🟡 tw-invest-suite-health-check: rc=1; 請見當次檢查明細
+- 🟡 tw-invest-suite-marker-watchdog: rc=1；該次執行已被 37e9e86f 的成功認證取代（認證開始於 2026-11-20T21:30:02）
+- 🟡 tw-invest-suite-postflight: rc=1；該次執行已被 37e9e86f 的成功認證取代（認證開始於 2026-11-20T21:30:02）
 
 ## Cron results
 | Task | State | LastRun | RC |
 |---|---|---|---|
-| tw-invest-suite-daily-report | Ready | 2026-11-19T21:30:30.0000000+08:00 | 1 |
-| tw-invest-suite-market-screen | Ready | 2026-11-19T18:20:20.0000000+08:00 | 0 |
-| tw-invest-suite-yfinance | Ready | 2026-11-19T22:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-health-check | Ready | 2026-11-19T23:00:00.0000000+08:00 | 1 |
-| tw-invest-suite-company-refresh | Ready | 2026-11-19T23:25:25.0000000+08:00 | 0 |
-| tw-invest-suite-sync-legacy | Ready | 2026-11-19T23:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-daily-report | Ready | 2026-11-20T21:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-market-screen | Ready | 2026-11-20T18:20:20.0000000+08:00 | 0 |
+| tw-invest-suite-yfinance | Ready | 2026-11-20T22:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-health-check | Ready | 2026-11-20T23:00:00.0000000+08:00 | 1 |
+| tw-invest-suite-company-refresh | Ready | 2026-11-20T23:25:25.0000000+08:00 | 0 |
+| tw-invest-suite-sync-legacy | Ready | 2026-11-20T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-11-19T23:55:55.0000000+08:00 | 1 |
-| tw-invest-suite-publish | Ready | 2026-11-19T22:50:50.0000000+08:00 | 1 |
+| tw-invest-suite-publish | Running | 2026-11-20T22:50:50.0000000+08:00 | 267009 |
 | tw-invest-suite-postflight | Ready | 2026-11-20T00:05:05.0000000+08:00 | 1 |
 
 ## Scope
