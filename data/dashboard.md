@@ -1,5 +1,5 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-20T23:39:21
+**Generated**: 2026-11-21T00:05:14
 **OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-11-20
@@ -15,8 +15,6 @@
 - 🟡 25 個股資料不完整，頁面已標示；fresh=1949 ／ rendered=1974
 - 🟡 10 個 watchlist ticker 補充資料不完整；各卡片列出失敗來源
 - 🟡 tw-invest-suite-health-check: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-marker-watchdog: rc=1；該次執行已被 37e9e86f 的成功認證取代（認證開始於 2026-11-20T21:30:02）
-- 🟡 tw-invest-suite-postflight: rc=1；該次執行已被 37e9e86f 的成功認證取代（認證開始於 2026-11-20T21:30:02）
 
 ## Cron results
 | Task | State | LastRun | RC |
@@ -27,9 +25,9 @@
 | tw-invest-suite-health-check | Ready | 2026-11-20T23:00:00.0000000+08:00 | 1 |
 | tw-invest-suite-company-refresh | Ready | 2026-11-20T23:25:25.0000000+08:00 | 0 |
 | tw-invest-suite-sync-legacy | Ready | 2026-11-20T23:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-marker-watchdog | Ready | 2026-11-19T23:55:55.0000000+08:00 | 1 |
-| tw-invest-suite-publish | Running | 2026-11-20T22:50:50.0000000+08:00 | 267009 |
-| tw-invest-suite-postflight | Ready | 2026-11-20T00:05:05.0000000+08:00 | 1 |
+| tw-invest-suite-marker-watchdog | Ready | 2026-11-20T23:55:55.0000000+08:00 | 0 |
+| tw-invest-suite-publish | Ready | 2026-11-20T22:50:50.0000000+08:00 | 0 |
+| tw-invest-suite-postflight | Running | 2026-11-21T00:05:05.0000000+08:00 | 267009 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
