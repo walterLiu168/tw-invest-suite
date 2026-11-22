@@ -1,24 +1,23 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-22T00:05:12
-**OVERALL**: 🔴 CRITICAL
+**Generated**: 2026-11-22T17:28:36
+**OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-11-20
 **DB picks**: 24 active; run_id=119
 **OHLCV coverage**: 1962 rows ／ 1962 tickers
-**Nightly**: UNVERIFIED
-**Optional degraded**: ?
+**Nightly**: adbf6c6c1a2844f3a829e9cd1ff28c05
+**Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-11-20
-**Verified at**: 2026-11-21T17:07:18.603681
-**Published commit**: 98f891b22e585670e539c978279db7fb02bd1fa6
+**Verified at**: 2026-11-22T17:28:13.846629
+**Published commit**: 8eef41dd142c918b40fe01ea2c31d942cb935151
 
 ## Action items
-- 🔴 nightly is incomplete/failed or marker belongs to another run
-- 🔴 tw-invest-suite-daily-report: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-yfinance: rc=2; 請見當次檢查明細
-- 🟡 tw-invest-suite-marker-watchdog: rc=1; 請見當次檢查明細
-- 🟡 tw-invest-suite-publish: rc=1; 請見當次檢查明細
-- 🔴 本次 nightly 尚無有效完成證據
-- 🟡 本次 GitHub Pages 發布尚未驗證；HTTP 200 不等於資料已更新
+- 🟡 25 個股資料不完整，頁面已標示；fresh=1949 ／ rendered=1974
+- 🟡 tw-invest-suite-daily-report: rc=1；該次執行已被 adbf6c6c 的成功認證取代（認證開始於 2026-11-22T16:44:23）
+- 🟡 tw-invest-suite-yfinance: rc=2；該次執行已被 adbf6c6c 的成功認證取代（認證開始於 2026-11-22T16:44:23）
+- 🟡 tw-invest-suite-marker-watchdog: rc=1；該次執行已被 adbf6c6c 的成功認證取代（認證開始於 2026-11-22T16:44:23）
+- 🟡 tw-invest-suite-publish: rc=1；該次執行已被 adbf6c6c 的成功認證取代（認證開始於 2026-11-22T16:44:23）
+- 🟡 tw-invest-suite-postflight: rc=1；該次執行已被 adbf6c6c 的成功認證取代（認證開始於 2026-11-22T16:44:23）
 
 ## Cron results
 | Task | State | LastRun | RC |
@@ -31,7 +30,7 @@
 | tw-invest-suite-sync-legacy | Ready | 2026-11-21T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-11-21T23:55:55.0000000+08:00 | 1 |
 | tw-invest-suite-publish | Ready | 2026-11-21T22:50:50.0000000+08:00 | 1 |
-| tw-invest-suite-postflight | Running | 2026-11-22T00:05:05.0000000+08:00 | 267009 |
+| tw-invest-suite-postflight | Ready | 2026-11-22T00:05:05.0000000+08:00 | 1 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
