@@ -170,9 +170,14 @@ if ($Mode -eq 'arm') {
     }
     $privilege = Enable-ShutdownPrivilege
     if ($privilege -ne 'enabled') {
+        # The token cannot enable SeShutdownPrivilege (UAC filtered token), so
+        # this box cannot be suspended from an unelevated task.  That is an
+        # environment fact, not a failed test: record the evidence and exit
+        # clean.  The chain audit carries the authoritative statement.
         Write-Receipt @{ mode = 'arm'; status = 'suspend_unavailable'; privilege = $privilege
             at = (Get-Date).ToString('o') }
-        exit 4
+        Write-Output ("suspend unavailable: " + $privilege)
+        exit 0
     }
     $pre = @{
         mode = 'arm'; status = 'armed'; at = (Get-Date).ToString('o')
@@ -206,11 +211,17 @@ Add-Type -TypeDefinition `$NativeCode
 }
 
 # Mode = wake
-$events = Get-PowerEvents
 $pre = @{}
 if (Test-Path $Stamp) {
     try { $pre = Get-Content $Stamp -Raw | ConvertFrom-Json } catch { $pre = @{} }
 }
+# The wake task repeats every five minutes.  Only a real arm attempt is evidence;
+# without one, leave the receipt alone instead of overwriting it.
+if (-not ($pre -and $pre.PSObject.Properties.Name -contains 'mode' -and $pre.mode -eq 'arm')) {
+    Write-Output 'no arm attempt on record - nothing to report'
+    exit 0
+}
+$events = Get-PowerEvents
 $suspendAt = $null
 if ($pre -and $pre.PSObject.Properties.Name -contains 'suspend_at') { $suspendAt = [datetime]$pre.suspend_at }
 $after = @($events | Where-Object { $suspendAt -and ([datetime]$_.when) -gt $suspendAt })

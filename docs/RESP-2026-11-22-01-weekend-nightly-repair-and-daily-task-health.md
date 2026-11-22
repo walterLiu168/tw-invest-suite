@@ -280,8 +280,70 @@ arm 任務在沒有核准的測試時回 0（正常狀態，不是紅字），�
 
 ## §5 端到端驗證
 
-（待 11/22 週末認證完成後補上：nightly_id、四段收據、manifest 重算後的 hash 不符數、
-catchup 不再重跑 nightly 的證據。）
+### 5.1 週末路徑第一次被認證（2026-11-22 17:21:06）
+
+`nightly_id = adbf6c6c1a2844f3a829e9cd1ff28c05`、`data_date = 2026-11-20`、
+`execution_date = 2026-11-21`、`marker_version = D056-3`、`status = ok`。
+
+| stage | 結果 | 備註 |
+|---|---|---|
+| 1 bind_inputs | OK（61 秒） | 重算 canonical 摘要 52.5 秒 + DB 快照 |
+| 2 render | OK（1,420 秒） | 1,974 個 HTML、**0 失敗** |
+| 3 patterns / 4 patterns_html | OK | |
+| 5 margin_scan | OK | optional stage，未進 degraded |
+| 6 watchlist | OK | |
+| 7 **all_reports** | **OK** | ← 11/21 在這裡 `KeyError: 'picks'` |
+
+marker 內容：`run_id 119`、`picks 24`、`artifacts 2,037`、`render_count 1,974`、
+`fresh_render_count 1,949`、`degraded_stages 0`。
+
+**維護收據繼承成立**：`inherited_maintenance_nightly_id = 37e9e86f…`（週五那一輪），
+`canonical_inputs_sha256 = ca64fa12…`（與週五認證存下的值**完全相同**）。
+
+### 5.2 發佈
+
+`publish_verified_sites.ps1` → exit 0：
+
+- `PUBLISHED_AND_VERIFIED data_date=2026-11-20 postflight_exit=0`、`copied_paths 2040`
+- `publication_result.json`／`groove_publication_result.json`：`status=verified`、nightly 為本輪
+- `postflight_latest.json`：`overall_pass=true`
+- `publish_manifest_2026-11-20.json`：重寫為本輪 nightly、2,037 個產物
+  （**11/21 那次留下的 1,978 個 hash 不符在此歸零**）
+- Telegram：`Telegram sent data_date=2026-11-20 message_id=4288 already_sent=True`
+  → **沒有重複推送**（同一個 session 的同一則籌碼摘要）。
+
+### 5.3 chain audit 復綠
+
+稽核的三個檢查點原本都用「nightly_id 必須完全相同」判定，對「週末重渲染」這種
+「同一份 canonical 資料、另一輪認證」的情況不成立，已改成同一條語意
+（`maintenance_claim_holds()` 三路判定：同一輪／繼承／現存摘要）：
+
+- `canonical_history`：原本 `identity 不一致` + `同批次逐欄 log 證據缺失`
+  → 現在 **verified**（30/30 sessions、price 58,836 列、chips 294,180 列）。
+  log 交叉檢查改為對應**收據自己的那一輪**（收據證明的是哪一輪的刷新，就核哪一輪的 log）。
+- `chips ledger`：原本 `缺失或與 receipt 不一致` → 收據標 `already_sent` 時，
+  ledger 記的是**實際寄送**的那一輪、receipt 記的是**觀察到既有投遞**的那一輪，
+  其餘投遞識別欄位（data_date／chat_hash／message_id／message_sha256）仍必須逐欄相同。
+- `manifest` 1,978 個 hash 不符 → **歸零**；postflight／all_reports 兩項 finding → 歸零。
+
+**稽核結果：只剩一項 finding**——「本機自上次開機後未曾從睡眠喚醒」。
+那不是缺陷，是本機的誠實現況（§4.4）。
+
+### 5.4 catchup 不再每小時重跑 nightly
+
+`certification_catchup_guard.ps1` 與 `daily_certification_catchup.py` 改用同一條
+`maintenance_claim_holds()` 規則：維護收據不再被要求「必須是同一個 nightly_id」，
+但 publication 的 nightly_id 仍必須與 marker 相等、marker 的 data_date／marker_version／
+status 全部照舊。週末認證因此**不會**讓 hourly catchup 判定「未認證」而每小時重跑整條 nightly。
+
+### 5.5 其他排程的實測
+
+| 排程 | 實測 |
+|---|---|
+| `OpenAlice RSS Refresh Every 2h` | 17:00 那次排程 → `status: verified`、`exit_code: 0`、81 個查詢、零 429 |
+| `tw-invest-suite-yfinance`（非交易日獨立執行） | exit 0，且 `finance_fetch.json` 前後雜湊相同（不再被覆寫） |
+| `AI-Telegram Scheduled Pipeline` | owner 行程活著（心跳每輪更新）、singleton lock 回報「another scheduler is already running」→ 管線確實在跑 |
+| `tw-invest-suite-ai-telegram-owner-watchdog` | 已註冊（每 15 分鐘）；「owner alive, task=Running - nothing to do」 |
 
 ---
 

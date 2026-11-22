@@ -977,4 +977,10 @@ tw-invest-suite-daily-report（就是 nightly 本體，21:30 觸發）在 11/19 
   24 picks、run_id=119，且與 DB 即時快照完全一致；二次綁定被擋。
 - canonical 連續性：2026-11-22 量測，現行 `canonical_inputs_hash('2026-11-20')`
   與 11/20 認證存下的 `canonical_inputs_sha256` **相同**（52.5 秒）。
-- 端到端與收據：見 `docs/RESP-2026-11-22-01-weekend-nightly-repair-and-daily-task-health.md` §5。
+- `maintenance_claim_holds()` 六項斷言：同一輪／繼承／摘要備援（相同摘要 True、錯誤摘要
+  False）／requested_date 不符 → False。
+- 端到端：2026-11-22 17:21:06 **週末路徑第一次被認證**（`adbf6c6c…`、data_date 2026-11-20、
+  7 個 stage 全綠、2,037 個產物、degraded 0）；`inherited_maintenance_nightly_id` 指向 11/20
+  那一輪。發佈 exit 0、`postflight_exit=0`、manifest 重寫（1,978 個 hash 不符歸零）、
+  Telegram `already_sent=True`（未重複推送）。chain audit 只剩「未曾從睡眠喚醒」一項 finding。
+- 收據細節見 `docs/RESP-2026-11-22-01-weekend-nightly-repair-and-daily-task-health.md` §5。

@@ -311,12 +311,18 @@ def db_snapshot(target: str) -> dict[str, Any]:
     return result
 
 
-def canonical_history_snapshot(cfg: AuditConfig, target: str, nightly_id: str | None) -> dict[str, Any]:
+def canonical_history_snapshot(cfg: AuditConfig, target: str, nightly_id: str | None,
+                               inherited_nightly_id: str | None = None) -> dict[str, Any]:
     """Read actual same-run source verification, never infer it from price counts."""
     receipt_path = json_path(cfg.runtime_root, "maintenance_fetch.json")
     receipt = load_json(receipt_path) or {}
     findings = []
-    if not nightly_id or receipt.get("nightly_id") != nightly_id or receipt.get("requested_date") != target:
+    # A weekend re-render inherits the previous run's maintenance receipt: it
+    # re-renders byte-identical canonical inputs without refreshing them, so the
+    # receipt that certified those inputs is still the right one.  Same rule as
+    # pipeline_state.maintenance_claim_holds().
+    accepted = {nightly_id, inherited_nightly_id} - {None, ""}
+    if not accepted or receipt.get("nightly_id") not in accepted or receipt.get("requested_date") != target:
         findings.append("canonical maintenance identity 不一致或缺失")
     six = {"price", "inst", "margin", "daytrade", "shareholding", "shares"}
     five = six - {"price"}
@@ -331,9 +337,12 @@ def canonical_history_snapshot(cfg: AuditConfig, target: str, nightly_id: str | 
             findings.append(f"{prefix} 30-session 來源驗證未通過")
     if set(receipt.get("chips_history_datasets", [])) != five:
         findings.append("五條歷史籌碼來源清單缺失")
-    # Cross-check receipt against the actual normal maintenance stdout.
+    # Cross-check receipt against the actual normal maintenance stdout.  The log
+    # must belong to the run that wrote the receipt - on a weekend re-render that
+    # is the inherited run, not the marker.
+    receipt_run = receipt.get("nightly_id")
     logs = sorted((cfg.runtime_root / "_debug" / "stage_logs").glob(
-        f"*_{nightly_id}_stage1_finmind_maint.log")) if nightly_id else []
+        f"*_{receipt_run}_stage1_finmind_maint.log")) if receipt_run else []
     content = "\n".join(p.read_text(encoding="utf-8-sig", errors="replace") for p in logs)
     source_lanes = set(re.findall(r"^SOURCE_VERIFY dataset=(\w+) date=" + re.escape(target)
                                 + r" tickers=[1-9]\d* mismatch=0$", content, re.M))
@@ -440,8 +449,13 @@ def ai_snapshot(cfg: AuditConfig, target: str) -> dict[str, Any]:
     key = f"{target}:{chip_result.get('chat_hash', '')}"
     entry = ledger.get(key) if isinstance(ledger, dict) else None
     fields = ("data_date", "nightly_id", "chat_hash", "message_id", "message_sha256")
+    # A weekend re-render reproduces the same chips summary for the same session
+    # and must not send a duplicate Telegram message.  The delivery ledger keeps
+    # the run that actually sent it; the receipt names the run that observed the
+    # existing delivery.  Every other delivery identity field still has to match.
+    compare = [k for k in fields if k != "nightly_id" or not chip_result.get("already_sent")]
     if (not isinstance(entry, dict) or entry.get("status") != "sent"
-            or any(not chip_result.get(k) or entry.get(k) != chip_result.get(k) for k in fields)):
+            or any(not chip_result.get(k) or entry.get(k) != chip_result.get(k) for k in compare)):
         findings.append("chips ledger 缺失或與 receipt 不一致（不重送）")
     return {"gate": {"path": str(gate_path) if gate_path else None, "value": gate}, "reports": len(four), "chips_summary": chips.is_file(), "chip_result": chip_result, "ledger": ledger, "delivery_state_entries": len(state) if isinstance(state, dict) else 0, "findings": findings}
 
@@ -564,7 +578,9 @@ def audit(cfg: AuditConfig) -> dict[str, Any]:
     artifacts = artifact_snapshot(cfg, target)
     ai = ai_snapshot(cfg, target)
     nightly_id = artifacts.get("identity", {}).get("nightly_id")
-    history = canonical_history_snapshot(cfg, target, nightly_id)
+    marker = load_json(json_path(cfg.runtime_root, "last_completed.json")) or {}
+    history = canonical_history_snapshot(cfg, target, nightly_id,
+                                         marker.get("inherited_maintenance_nightly_id"))
     forward = load_json(cfg.ai_root / 'output' / 'forward_validation' / 'summary.json') or {}
     prediction = load_json(cfg.ai_root / 'output' / 'daily_prediction_refresh' / 'latest.json') or {}
     prediction_attempt = load_json(cfg.ai_root / 'output' / 'daily_prediction_refresh' / 'latest_attempt.json') or {}
