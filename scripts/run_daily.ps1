@@ -340,6 +340,14 @@ if ($Mode -eq 'full' -and $run.trading_session -and -not $SkipFinmind) {
     $stages += @{ N=1; Name='finalize_inputs'; Cmd='pipeline_state.py finalize-inputs'; To=120 }
 }
 
+# The canonical refresh stages are what bind the 24 picks into the run state.
+# Without them (weekend re-render, or a catch-up run with -SkipFinmind) the picks
+# stay only in the DB and all_reports/complete() fail on a missing 'picks' key.
+# Bind the committed screen snapshot for this data_date instead.
+if (-not ($stages | Where-Object { $_.Name -eq 'finalize_inputs' })) {
+    $stages += @{ N=1; Name='bind_inputs'; Cmd='pipeline_state.py bind-screen-inputs'; To=420 }
+}
+
 # Stage 2: Render (1,962 tickers)
 $renderBudget = $TimeoutMin
 if ($Mode -eq 'full') { $renderBudget = [Math]::Min($TimeoutMin,60) }

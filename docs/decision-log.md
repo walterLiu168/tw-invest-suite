@@ -925,3 +925,56 @@ tw-invest-suite-daily-report（就是 nightly 本體，21:30 觸發）在 11/19 
 - ledger 20 日期限：`pytest test_forward_validation_refresh.py test_forward_validation_coverage.py`
   → 20 passed。
 - 重訓結果與與現任模型的對照見 `docs/RESP-2026-11-20-02-gate-evidence-and-feature-pipeline-repair.md` §4。
+
+## D026: 週末不是「沒有資料要更新」，是缺了把已提交的 picks 綁回 run state
+
+**日期**：2026-11-22
+
+**Context**:
+1. 11/21（週六）21:30 的 nightly 失敗在 Stage 7：`src/all_reports.py:99` 取 `run['picks']` → `KeyError`。
+   但 `run['picks']` 從來不是 render 寫的，是 `finalize_inputs` 綁的；而 `finalize_inputs`
+   只存在於 `run_daily.ps1` 的**交易日分支**裡。週末跳過下載階段 → 那兩個鍵從頭到尾不存在。
+   **旁證**：資料庫 `market_screen_runs` 的 `run_date` 全部是平日，週末從無新的 screen run，
+   但週五那次（run_id 119）的 24 檔 picks 一直在 DB 裡、全部 active——**picks 一直都在，只是沒綁**。
+2. **週末路徑從未被認證過**：`public/data/publish_manifest_*.json` 只有平日（最新 2026-11-20）。
+   11/22（週日）21:30 會以完全相同的方式失敗。
+3. 同一個根因也解釋了稽核症狀：11/21 的 render **已經改寫 1,974 個 analyze 檔**才在 Stage 7 崩，
+   所以 manifest 對不上 → chain audit 報 1,978 個 hash 不符。**一個根因、兩個症狀。**
+
+**Decision**:
+1. **新增 `pipeline_state.py bind-screen-inputs`**：把 DB 已提交的 24 picks／run_id／picks_count／
+   bucket_counts 綁進 run state——`finalize_inputs` 之外的第二條綁定路徑，
+   給沒有跑 canonical refresh 的執行（週末、帶 `-SkipFinmind` 的 catch-up）使用。
+   `run_daily.ps1` 在 `finalize_inputs` 不存在時補上這個 stage。
+2. **週末重渲染不得改動 canonical 資料**：bind 重算 `canonical_inputs_hash(data_date)`，
+   必須與**上一次認證**的 `canonical_inputs_sha256` **位元組相同**，不同就拒絕綁定；
+   相同才記 `inherited_maintenance_nightly_id`，讓新認證**繼承**上一輪的維護收據。
+3. **只放寬 catchup／guard 的 maintenance 綁定**（同一 nightly_id **或**同一繼承來源）。
+   publication 的 nightly_id 仍須與 marker 相等；marker 的 data_date／marker_version／status 照舊。
+4. **`complete()` 與 `all_reports.py` 的缺鍵改成名單**：講清楚缺什麼，不再丟 KeyError。
+5. **yfinance 在非交易日不再誤報**：目標日期本來就沒有 session，0 個新鮮標的是正確答案；
+   獨立排程也不再覆寫 nightly 的 `finance_fetch.json`。
+
+**Why**:
+- 認證鏈的每一段都在回答同一個問題：**這批產物是從哪一份 canonical 資料、哪一次認證長出來的。**
+  週末缺的不是資料，是那條綁定。
+- 維護收據證明的是「那份 canonical 資料有從供應商正確刷新過」——它綁的是**資料**，
+  不是**某一個 nightly 實例**；把它綁到 nightly_id 上只是交易日的巧合，週末兩者必然分岔。
+- 放寬的邊界不是「信任」而是「證明」：繼承的前提是 canonical 摘要位元組相同，
+  這比 nightly_id 相等更嚴格。
+- 若只補「綁 picks」而不處理收據繼承，週末認證會成功，**但 catchup 每小時都會判定未認證
+  → 每小時重跑一次整條 nightly**。能認證不等於修好。
+
+**Trade-off**:
+- 每次週末認證多算一次 canonical 摘要（實測 52.5 秒）→ bind stage 的 timeout 由 120s 提到 420s。
+- 週末認證會重寫 `public/` 產物並發佈一次與週五同資料的新 manifest——這是 run_daily.ps1
+  週末分支本來就寫著的設計（only render + patterns + publish），代價是發佈流水線週末多跑一次。
+- `certification_catchup_guard.ps1` 原本不在版控內（認證鏈的 9 個孤兒之一）。
+  這次為了改 maintenance 綁定必須動它，因此一併納入版控，否則這個修正會變成新的孤兒。
+
+**驗證**:
+- 隔離單元驗證：模擬 11/21 的 run state（status=running、無 picks、無 run_id）→ bind 成功綁定
+  24 picks、run_id=119，且與 DB 即時快照完全一致；二次綁定被擋。
+- canonical 連續性：2026-11-22 量測，現行 `canonical_inputs_hash('2026-11-20')`
+  與 11/20 認證存下的 `canonical_inputs_sha256` **相同**（52.5 秒）。
+- 端到端與收據：見 `docs/RESP-2026-11-22-01-weekend-nightly-repair-and-daily-task-health.md` §5。

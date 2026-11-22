@@ -96,7 +96,10 @@ def main():
             data / 'watchlist-history.json',inputs['date'],run['nightly_id'])
         print('all_reports: watchlist history ready',flush=True)
         picks = [p for p in og.parse_watchlist(ps.PUBLIC / 'watchlist.html') if p['horizon'] != 'margin']
-        if {p['ticker'] for p in picks} != {p['ticker'] for p in run['picks']}:
+        run_picks = run.get('picks')
+        if not run_picks:
+            raise ValueError('Run state has no bound screen picks')
+        if {p['ticker'] for p in picks} != {p['ticker'] for p in run_picks}:
             raise ValueError('OG selected-pick identity mismatch')
         og.render_og(picks,data / 'og.png',inputs['date'])
         paths = ['sectors.html','chips.html','chips-advanced.html','concepts.html',

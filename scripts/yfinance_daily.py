@@ -104,14 +104,22 @@ def main():
         venue = yfb.refresh_market_map()
         venue_info = venue if isinstance(venue, dict) else {}
         coverage = cache_coverage(tickers, target_date)
-        coverage.update(nightly_id=os.environ.get('TW_NIGHTLY_ID', 'manual'),
+        nightly = os.environ.get('TW_NIGHTLY_ID')
+        coverage.update(nightly_id=nightly or 'manual',
                         checked_at=datetime.now().isoformat(),
                         status='ok' if coverage['fresh_tickers'] >= 1900 else 'failed',
                         venue_source=venue_info.get('source'),
                         venue_source_date=venue_info.get('source_date'))
-        ps.atomic_json(ps.RUNTIME / '_debug' / 'finance_fetch.json', coverage)
+        # Only the nightly's own run owns finance_fetch.json.  The standalone
+        # scheduled refresh must not overwrite it: on a non-trading day the
+        # target date has no session rows, so zero fresh tickers is the
+        # expected outcome rather than a provider failure.
+        filename = 'finance_fetch.json' if nightly else 'finance_refresh_latest.json'
+        ps.atomic_json(ps.RUNTIME / '_debug' / filename, coverage)
         logging.info('Non-trading session: preserved cache receipt %s/%s for %s',
                      coverage['fresh_tickers'], coverage['expected_tickers'], target_date)
+        if not nightly:
+            return 0
         return 0 if coverage['status'] == 'ok' else 2
     return refresh(tickers,target_date)
 

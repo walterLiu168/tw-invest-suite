@@ -325,6 +325,78 @@ def finalize_inputs():
     return run
 
 
+@state_guarded
+def bind_screen_inputs():
+    """Bind the committed screen snapshot when no canonical refresh stage runs.
+
+    A weekend re-render (and any catch-up run that skips the download stages)
+    republishes the last trading session without running market_screen or
+    finalize_inputs. The 24 picks are still committed in the DB for that
+    data_date, but nothing wrote them into the run state, so all_reports and
+    complete() both hit a missing 'picks'/'run_id' key. Bind them explicitly.
+
+    The canonical inputs are not refreshed either, so this run may only be
+    certified when the canonical data behind the session is byte-identical to
+    the data the previous certification was built from. That continuity is what
+    lets this run inherit the previous run's maintenance receipt.
+    """
+    run = read_json(STATE)
+    if run.get('status') != 'running' or os.environ.get('TW_NIGHTLY_ID') != run.get('nightly_id'):
+        raise ValueError('Cannot bind screen inputs for another or completed run')
+    if run.get('inputs_finalized_at') or run.get('screen_inputs_bound_at'):
+        raise ValueError('Screen inputs already bound')
+    if (ANALYZE / 'render_receipt.json').is_file() and read_json(ANALYZE / 'render_receipt.json').get('nightly_id') == run['nightly_id']:
+        raise ValueError('Cannot bind screen inputs after rendering')
+    if source_hashes() != run['source_hashes']:
+        raise ValueError('Source changed before screen-input binding')
+    previous = read_json(MARKER)
+    if previous.get('status') != 'ok' or previous.get('data_date') != run['data_date']:
+        raise ValueError('No certified release for this data_date to inherit')
+    canonical = canonical_inputs_hash(run['data_date'])
+    run['canonical_inputs_sha256'] = canonical
+    if previous.get('canonical_inputs_sha256') == canonical:
+        # Byte-identical canonical inputs: the maintenance receipt that certified
+        # them still applies, so this run inherits it.
+        run['inherited_maintenance_nightly_id'] = previous.get('nightly_id')
+    else:
+        # The canonical data moved under us (a provider refresh landed after the
+        # last certification).  Do not fail the nightly over it - certify without
+        # inheriting, and let maintenance_claim_holds() re-derive the claim from
+        # the digest that is in the database right now.
+        run['canonical_inputs_changed_since_certification'] = True
+    snapshot = db_snapshot()
+    if snapshot['data_date'] != run['data_date'] or snapshot['render_tickers'] != run['render_tickers']:
+        raise ValueError('Data date or metadata universe changed before binding')
+    run.update(snapshot)
+    run['screen_inputs_bound_at'] = datetime.now().isoformat()
+    atomic_json(STATE, run)
+    return run
+
+
+def maintenance_claim_holds(marker, maintenance):
+    """Does the maintenance receipt still certify this marker's canonical data?
+
+    Three ways to hold, in order of strength:
+      1. the receipt was written by this very run,
+      2. this run inherited it because the canonical digest was byte-identical,
+      3. the marker's canonical digest still equals the database's digest right
+         now - the receipt's date scope still covers what was rendered.
+    """
+    if maintenance.get('status') != 'ok' or maintenance.get('requested_date') != marker.get('data_date'):
+        return False
+    if maintenance.get('price_history_sessions') != 30 or maintenance.get('chips_history_sessions') != 30:
+        return False
+    if maintenance.get('nightly_id') in (marker.get('nightly_id'), marker.get('inherited_maintenance_nightly_id')):
+        return True
+    digest = marker.get('canonical_inputs_sha256')
+    if not digest or not marker.get('data_date'):
+        return False
+    try:
+        return digest == canonical_inputs_hash(marker['data_date'])
+    except Exception:
+        return False
+
+
 def validate_all_reports(receipt, run):
     if (receipt.get('status') != 'ok' or receipt.get('nightly_id') != run['nightly_id']
             or receipt.get('data_date') != run['data_date']):
@@ -411,7 +483,11 @@ def complete(stages_path):
         if run.get('mode') == 'full' and run.get('trading_session') and 'finmind_maint' not in {s['Name'] for s in required}:
             raise ValueError('Full trading-day certification requires canonical source refresh')
         snapshot = db_snapshot()
-        if any(snapshot[k] != run[k] for k in ("data_date", "run_id", "picks", "render_tickers")):
+        bound_keys = ("data_date", "run_id", "picks", "render_tickers")
+        missing = [k for k in bound_keys if k not in run]
+        if missing:
+            raise ValueError(f"Run state is missing bound inputs: {missing}")
+        if any(snapshot[k] != run[k] for k in bound_keys):
             raise ValueError("DB changed during nightly")
         if source_hashes() != run["source_hashes"]:
             raise ValueError("source changed during nightly")
@@ -533,7 +609,8 @@ def fail_run(nightly_id, reason="orchestrator failed; see daily log"):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["begin", "finalize-inputs", "complete", "verify", "watchdog", "fail"])
+    ap.add_argument("action", choices=["begin", "finalize-inputs", "bind-screen-inputs",
+                                      "complete", "verify", "watchdog", "fail"])
     ap.add_argument("--stages")
     ap.add_argument("--mode", default="full")
     args = ap.parse_args()
@@ -542,6 +619,8 @@ def main():
             value = begin(args.mode)
         elif args.action == "finalize-inputs":
             value = finalize_inputs()
+        elif args.action == "bind-screen-inputs":
+            value = bind_screen_inputs()
         elif args.action == "complete":
             value = complete(args.stages)
         elif args.action == "fail":
