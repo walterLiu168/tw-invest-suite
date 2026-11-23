@@ -25,6 +25,11 @@ try:
 except ImportError:  # package import in tests; never invent a weekday calendar
     from scripts.market_calendar import expected_session, is_session
 
+try:
+    import pipeline_state as ps
+except ImportError:  # package import in tests
+    from scripts import pipeline_state as ps
+
 
 EXIT_HEALTHY = 0
 EXIT_DEGRADED = 10
@@ -311,18 +316,18 @@ def db_snapshot(target: str) -> dict[str, Any]:
     return result
 
 
-def canonical_history_snapshot(cfg: AuditConfig, target: str, nightly_id: str | None,
-                               inherited_nightly_id: str | None = None) -> dict[str, Any]:
+def canonical_history_snapshot(cfg: AuditConfig, target: str, marker: dict[str, Any]) -> dict[str, Any]:
     """Read actual same-run source verification, never infer it from price counts."""
     receipt_path = json_path(cfg.runtime_root, "maintenance_fetch.json")
     receipt = load_json(receipt_path) or {}
     findings = []
-    # A weekend re-render inherits the previous run's maintenance receipt: it
-    # re-renders byte-identical canonical inputs without refreshing them, so the
-    # receipt that certified those inputs is still the right one.  Same rule as
-    # pipeline_state.maintenance_claim_holds().
-    accepted = {nightly_id, inherited_nightly_id} - {None, ""}
-    if not accepted or receipt.get("nightly_id") not in accepted or receipt.get("requested_date") != target:
+    # One rule, three consumers: the catch-up, the guard and this audit all ask
+    # pipeline_state.maintenance_claim_holds() whether the maintenance receipt
+    # still certifies this marker.  A weekend re-render inherits the receipt of
+    # the run that certified the same canonical inputs, and that inheritance can
+    # be several generations deep - so compare the canonical digest, not the
+    # nightly id alone.
+    if not ps.maintenance_claim_holds(marker, receipt):
         findings.append("canonical maintenance identity 不一致或缺失")
     six = {"price", "inst", "margin", "daytrade", "shareholding", "shares"}
     five = six - {"price"}
@@ -579,8 +584,7 @@ def audit(cfg: AuditConfig) -> dict[str, Any]:
     ai = ai_snapshot(cfg, target)
     nightly_id = artifacts.get("identity", {}).get("nightly_id")
     marker = load_json(json_path(cfg.runtime_root, "last_completed.json")) or {}
-    history = canonical_history_snapshot(cfg, target, nightly_id,
-                                         marker.get("inherited_maintenance_nightly_id"))
+    history = canonical_history_snapshot(cfg, target, marker)
     forward = load_json(cfg.ai_root / 'output' / 'forward_validation' / 'summary.json') or {}
     prediction = load_json(cfg.ai_root / 'output' / 'daily_prediction_refresh' / 'latest.json') or {}
     prediction_attempt = load_json(cfg.ai_root / 'output' / 'daily_prediction_refresh' / 'latest_attempt.json') or {}
