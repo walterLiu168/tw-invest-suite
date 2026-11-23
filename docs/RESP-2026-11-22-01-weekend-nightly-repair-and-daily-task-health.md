@@ -336,6 +336,22 @@ marker 內容：`run_id 119`、`picks 24`、`artifacts 2,037`、`render_count 1,
 但 publication 的 nightly_id 仍必須與 marker 相等、marker 的 data_date／marker_version／
 status 全部照舊。週末認證因此**不會**讓 hourly catchup 判定「未認證」而每小時重跑整條 nightly。
 
+**2026-11-23 補的洞**：21:30 那一輪的繼承鏈已經斷了一層——
+`inherited_maintenance_nightly_id` 只指到「上一輪的 nightly_id」，而維護收據的 nightly_id
+還在三代之前（37e9e86f → adbf6c6c → 0ddf225e → ba47dae5）。稽核若只比對「marker 或其直接
+上一輪」就會誤報 `canonical maintenance identity 不一致`（實際上 catchup 判定已認證）。
+已改成**三處共用同一個 `maintenance_claim_holds()`**：同一輪／繼承／**現存摘要相同**——
+第三路（marker 的 `canonical_inputs_sha256` 等於資料庫當下的摘要）不受世代影響。
+修正後：canonical 由 `unverified` 回到 **verified**，audit 只剩睡眠喚醒那一項。
+
+### 5.5 發佈到線上的實測（2026-11-23 13:50）
+
+`groovelab.dev/data/publish_manifest_2026-11-20.json` 與
+`walterliu168.github.io/tw-invest-suite/data/publish_manifest_2026-11-20.json`
+都回 `nightly_id = ba47dae5a916447e9d3288000bae1b6a`、2,037 個產物；
+`groovelab.dev/watchlist.html` 為 2026-11-20、2.18 MB、84 張 pick 卡；
+`git ls-remote origin gh-pages` 的 HEAD 與 `publication_result.json` 的 `status_commit` 一致。
+
 ### 5.5 其他排程的實測
 
 | 排程 | 實測 |
@@ -363,3 +379,35 @@ status 全部照舊。週末認證因此**不會**讓 hourly catchup 判定「�
     **不驗磁碟上的產物雜湊**。11/21 那次「render 已改寫 1,974 個檔、認證卻沒完成」的情況，
     catchup 完全沒有察覺（它到 11/22 15:00 都還回 ALREADY_CERTIFIED）。
     這是 manifest 漂移能持續兩天的原因，值得另案處理。
+
+---
+
+## §6.1 2026-11-23 的兩項決定與一個新發現
+
+**決定一：AI-Telegram 管線的鎖，先 pass（Walter，2026-11-23 13:49）。**
+
+`D:\CODEX\AI-Telegram\output\pipeline_state\scheduler.lock` 被一個 **2026-10-9 建立、
+Session 0、CPU 0 秒**的行程（PID 2976）握住，**45 天沒有釋放**。後果是每個
+`run_pipeline_scheduled.py` 都在 1 秒內退出 "another scheduler is already running"——
+AI-Telegram 的 18:00 canonical 下載、22:00 籌碼／FinFill、22:12 ranking、22:32 review、
+22:47／23:02 報告與策略調整、22:42 海外市場**全部沒有在跑**；owner 行程只是每分鐘寫一次
+心跳。該行程無提權殺不掉（Access denied），`Set-ScheduledTask -RunLevel Highest` 也被拒。
+
+- **不動它**（決定）。要復活只需把 `scheduler.lock` 改名，讓下一輪拿到新鎖（可逆）；
+  風險是萬一那隻僵屍醒來會有兩個 scheduler（它 45 天 CPU 0，機率極低）。
+- **影響範圍**：**tw-invest-suite 那條認證鏈不受影響**——它自己的 `finmind_maint` 會刷新
+  canonical 資料（11/22 21:30 的 nightly 全綠就是證據）。受影響的是 AI-Telegram 自己的
+  模型預測、ranking、review 與報告仍停在舊資料。
+- 註：watchdog 的「owner 活著」判斷只看心跳，所以它不會誤判也不會誤動；
+  但也代表**心跳活著不等於管線有做事**（這是 watchdog 目前的盲點）。
+
+**決定二：22:50 發佈的紅字，接受（Walter，2026-11-23 13:49，條件＝能發佈到 groovelab）。**
+
+`tw-invest-suite-publish` 11/22 22:50 → rc=1 且**沒有留下 publish log**（腳本在等待迴圈與
+`pipeline_state.py verify` 之後才建立日誌）→ 死在 publish 階段之前；`daily-report` 任務在
+00:09:55 正常結束（LastTaskResult=0），所以不是 deadline 路徑；剩下的唯一失敗點是當下
+`pipeline_state.py verify` 回非零，而現在跑是 exit 0 → 暫態／並行狀態，已不可重現。
+`TaskScheduler/Operational` 記錄未啟用，沒有可回放的證據。
+
+**接受理由**：發佈本身正常——catchup 的 publish-only 在 01:01／09:01／11:01／13:01
+四次全部 exit 0，且兩個線上站點都已在服務認證後的版本（§5.5）。因此不追這個紅字。
