@@ -142,6 +142,21 @@ Walter 的決定（2026-11-24）：**每個交易日都重算（1/3/5/10/20 日�
 - 模型視圖覆蓋 865／1,251（其餘留白，不用別的資料源補）
 - 維持率資料的來源與新鮮度（`maint_source` 與 `fetched_at` 都在表裡）
 
+## §7 給下一個加產物的人：認證產物是白名單制
+
+`validate_all_reports()` 會把收據的產物清單跟 `pipeline_state.py` 裡一個**固定的預期集合**比對
+（不符 → `All-report artifact set mismatch` → **整個認證與發佈被擋下**）。
+
+所以：
+
+- 新增任何認證產物，都要同時更新 `scripts/pipeline_state.py::validate_all_reports()` 的
+  `expected` 集合，並讓收據回報相應的清單欄位（例如 `danger_history_dates`）。
+- 每個 JSON 產物都要有 `date` 與 `nightly_id` 兩個欄位，且符合該產物的語意：
+  逐日帳本類（`chips-history/`、`danger-history/`）的 `date` 等於檔名，
+  `danger-history/` 因為是 append-only，**保留第一次發佈它的那一輪 nightly_id**（完整性由雜湊保護）。
+- 這條規則第一次被撞到就是 2026-11-24 12:05：11:00 的自癒重跑帶著危險頁去認證，
+  在這裡被擋下（線上站點繼續服務上一個已認證版本，沒有任何未認證產物被推上去 ✓）。
+
 ## §6 順帶證明的一件事：產物漂移自癒
 
 改了 8 頁的 nav → 磁碟上的產物與 marker 記錄的雜湊不再相符 →
