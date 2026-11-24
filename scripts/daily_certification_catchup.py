@@ -46,6 +46,32 @@ def read_json(path: Path) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def artifacts_intact(marker: dict) -> bool:
+    """Do the certified artifacts still match the hashes the marker recorded?
+
+    Without this, a nightly that rewrote the artifacts and then failed to
+    certify leaves a certified marker pointing at files that no longer match.
+    The receipts all still agree with each other, so the catch-up reported
+    ALREADY_CERTIFIED for two days while 1,978 artifacts had drifted.  The
+    chain audit sees the drift; this is what makes the catch-up act on it.
+    """
+    artifacts = marker.get("artifacts") or []
+    if not artifacts:
+        return False
+    for item in artifacts:
+        if not isinstance(item, dict):
+            return False
+        path = Path(str(item.get("abs_path") or ""))
+        if not path.is_file():
+            return False
+        try:
+            if ps.sha256(path) != item.get("sha256"):
+                return False
+        except OSError:
+            return False
+    return True
+
+
 def certified_for(data_date: str) -> bool:
     marker = read_json(MARKER)
     publication = read_json(PUBLICATION)
@@ -62,6 +88,7 @@ def certified_for(data_date: str) -> bool:
         and publication.get("report_status") == "verified"
         and publication.get("postflight_exit") == 0
         and ps.maintenance_claim_holds(marker, maintenance)
+        and artifacts_intact(marker)
     )
 
 

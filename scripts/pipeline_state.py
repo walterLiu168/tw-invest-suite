@@ -30,6 +30,9 @@ REPO_SOURCE_FILES = (
     'src/concept_stocks.py', 'src/render_concepts.py', 'src/render_chips_advanced.py',
     'src/industry_zh.py', 'src/generate_og.py', 'src/chip_push.py',
     'src/watchlist_history.py',
+    # The trading-day stage that refreshes features and the forward ledger is
+    # executed straight from the repo, so it belongs to the certified sources.
+    'scripts/stock_features_daily.py',
 )
 REPORT_FRONTEND_FILES = ('analyze.html','readme.html','chips-history.html','monitor.html',
                          'watchlist-history.html',
