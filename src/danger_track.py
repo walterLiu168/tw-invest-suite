@@ -209,7 +209,7 @@ def verdict(windows: dict) -> tuple[str, str]:
                        '這張篩選目前沒有鑑別力')
 
 
-def evaluate(public: Path) -> dict:
+def evaluate(public: Path, date: str = '', nightly_id: str = '') -> dict:
     live = live_record(public)
     backtest = backtest_record()
     # The live record only counts once it has enough sessions to mean anything;
@@ -218,6 +218,8 @@ def evaluate(public: Path) -> dict:
     source = live['windows'] if live_usable else backtest['windows']
     kind, note = verdict(source)
     track = {
+        'date': date,
+        'nightly_id': nightly_id,
         'updated_at': ps.datetime.now().isoformat(),
         'method': {
             'benchmark': '同一批交易日的等權全市場',

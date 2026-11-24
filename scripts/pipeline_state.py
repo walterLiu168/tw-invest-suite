@@ -415,11 +415,12 @@ def validate_all_reports(receipt, run):
         raise ValueError('All-report market coverage mismatch')
     if receipt.get('rank_tickers',0) < 1900 or receipt.get('advanced_tickers',0) <= 0:
         raise ValueError('All-report ranking/advanced coverage mismatch')
-    expected = {'sectors.html','chips.html','chips-advanced.html','concepts.html',
+    expected = {'sectors.html','chips.html','chips-advanced.html','concepts.html','danger.html',
         'data/sectors.json','data/chips.json','data/chips-advanced.json','data/concept-stocks.json',
         'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png',
-        'data/watchlist-history.json'}
+        'data/watchlist-history.json','data/danger.json','data/danger-track.json'}
     expected.update(f'data/chips-history/{day}.json' for day in dates)
+    expected.update(f'data/danger-history/{day}.json' for day in receipt.get('danger_history_dates', []))
     expected.update(REPORT_FRONTEND_FILES)
     artifacts = receipt.get('artifacts', [])
     if len(artifacts) != len(expected) or {a['gh_path'] for a in artifacts} != expected:
@@ -431,8 +432,16 @@ def validate_all_reports(receipt, run):
         if path.suffix == '.json' and path.name != 'manifest.json':
             value = read_json(path)
             if isinstance(value,dict):
-                expected_date = path.stem if path.parent.name == 'chips-history' else run['data_date']
-                if value.get('date') != expected_date or value.get('nightly_id') != run['nightly_id']:
+                if path.parent.name in ('chips-history', 'danger-history'):
+                    expected_date = path.stem
+                else:
+                    expected_date = run['data_date']
+                if value.get('date') != expected_date:
+                    raise ValueError('All-report JSON identity mismatch')
+                # The danger ledger is append-only: it keeps the nightly that first
+                # published it, so only its date is fixed.  Its integrity is
+                # covered by the recorded hash, same as every other artifact.
+                if path.parent.name != 'danger-history' and value.get('nightly_id') != run['nightly_id']:
                     raise ValueError('All-report JSON identity mismatch')
             elif path.name == 'tickers.json':
                 if sorted(v['ticker'] for v in value) != run['render_tickers'] or any(v.get('date') != run['data_date'] for v in value):

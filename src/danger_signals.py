@@ -503,7 +503,7 @@ def write(date: str, public: Path) -> dict:
     ps.atomic_json(data_dir / 'danger.json', payload)
     import danger_track
     danger_track.write_ledger(date, payload, public)
-    track = danger_track.evaluate(public)
+    track = danger_track.evaluate(public, date, payload.get('nightly_id') or '')
     payload['track'] = track
     (public / 'danger.html').write_text(render_html(payload), encoding='utf-8')
     return payload
