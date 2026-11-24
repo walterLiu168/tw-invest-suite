@@ -106,10 +106,13 @@ def main():
         danger = danger_signals.write(inputs['date'],ps.PUBLIC)
         print(f"all_reports: danger list ready candidates={danger['summary']['candidates']} "
               f"danger={danger['summary']['danger']}",flush=True)
+        history_dir = ps.PUBLIC / 'data' / 'danger-history'
+        danger_history = sorted(p.name for p in history_dir.glob('*.json')) if history_dir.is_dir() else []
         paths = ['sectors.html','chips.html','chips-advanced.html','concepts.html','danger.html',
             'data/sectors.json','data/chips.json','data/chips-advanced.json','data/concept-stocks.json',
             'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png',
-            'data/watchlist-history.json','data/danger.json']
+            'data/watchlist-history.json','data/danger.json','data/danger-track.json']
+        paths += [f'data/danger-history/{name}' for name in danger_history]
         paths += [f'data/chips-history/{day}.json' for day in dates]
         paths += list(ps.REPORT_FRONTEND_FILES)
         artifacts = [ps.artifact(ps.PUBLIC / relative,relative) for relative in paths]

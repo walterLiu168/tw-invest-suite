@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -178,6 +179,8 @@ def build(date: str) -> dict:
     }
     return {
         'date': date,
+        'nightly_id': (os.environ.get('TW_NIGHTLY_ID')
+                       or (ps.read_json(ps.STATE).get('nightly_id') if ps.STATE.is_file() else '') or ''),
         'generated_at': ps.datetime.now().isoformat(),
         'rules': {
             'hard_rule': '融資維持率 < 130%（斷頭風險）→ 危險',
@@ -219,6 +222,54 @@ def _cell(value, digits=2, suffix='', kind='dir'):
     css = _dir_class(value) if kind == 'dir' else ''
     text = f'{value:,.{digits}f}{suffix}'
     return f'<td class="num {css}">{text}</td>'
+
+
+def _windows_table(title: str, note: str, windows: dict) -> str:
+    if not windows:
+        return f'<div class="track-block"><h3>{html.escape(title)}</h3><p class="muted">{html.escape(note)}：尚無資料</p></div>'
+    head = ''.join(f'<th>{h} 日</th>' for h in ('1', '3', '5', '10', '20') if h in windows)
+    cells = []
+    for label, key, fmt in (('旗標籃子', 'basket', 'pct'), ('等權市場', 'market', 'pct'),
+                            ('超額', 'excess', 'pp'), ('贏過市場', 'beats_market', 'count')):
+        values = []
+        for h in ('1', '3', '5', '10', '20'):
+            if h not in windows:
+                continue
+            row = windows[h]
+            if fmt == 'pct':
+                values.append(f'<td class="num {"up" if row[key] > 0 else "down" if row[key] < 0 else ""}">{row[key]*100:.2f}%</td>')
+            elif fmt == 'pp':
+                values.append(f'<td class="num {"up" if row[key] > 0 else "down" if row[key] < 0 else ""}">{row[key]*100:+.2f}pp</td>')
+            else:
+                values.append(f'<td class="num">{row["beats_market"]}/{row["sessions"]}</td>')
+        cells.append(f'<tr><th class="rowhead">{label}</th>{"".join(values)}</tr>')
+    return (f'<div class="track-block"><h3>{html.escape(title)}</h3>'
+            f'<p class="muted">{html.escape(note)}</p>'
+            f'<table class="track-table"><tr><th class="rowhead"></th>{head}</tr>{"".join(cells)}</table></div>')
+
+
+def _track_section(track: dict) -> str:
+    if not track:
+        return ''
+    live = track.get('live') or {}
+    backtest = track.get('backtest') or {}
+    verdict = track.get('verdict') or 'unknown'
+    mark = {'has_edge': '✅', 'weak_edge': '⚠️', 'no_edge': '❌', 'unknown': '⚪'}.get(verdict, '⚪')
+    live_note = (f'已發佈 {live.get("sessions", 0)} 個交易日（{live.get("first_date", "")} → {live.get("last_date", "")}）'
+                 f'　規則版本 {", ".join(live.get("rule_versions") or []) or "—"}')
+    backtest_note = (f'把現行 130% 硬規則套回 {backtest.get("sessions", 0)} 個有維持率歷史的交易日'
+                     f'（{backtest.get("range", "")}）——這是回溯量測，不是 live 記錄')
+    return f"""
+<section class="track">
+  <h2>📊 這張表的成績</h2>
+  <p class="muted">方法：超額＝旗標籃子 − 同批交易日的等權全市場。硬規則每天會標到 27-47% 的全市場，
+  「被標的跌了」本身不構成訊息，所以只看超額與贏過市場的天數。</p>
+  <p class="verdict {verdict}">{mark} <b>{html.escape(track.get('verdict_note') or '')}</b></p>
+  <p class="caveat">⚠️ {html.escape(track.get('caveat') or '')}</p>
+  {_windows_table('回溯量測', backtest_note, backtest.get('windows') or {})}
+  {_windows_table('live 記錄', live_note, live.get('windows') or {})}
+</section>
+"""
 
 
 def render_html(payload: dict) -> str:
@@ -321,6 +372,23 @@ td.comment {{ color:var(--muted); max-width:16rem; overflow:hidden; text-overflo
 .down {{ color:var(--green); }}
 .muted {{ color:var(--muted); }}
 .empty {{ color:var(--muted); padding:26px; text-align:center; }}
+.track {{ background:var(--panel); border:1px solid var(--border); border-radius:12px;
+  padding:14px 16px; margin:0 0 16px; }}
+.track h2 {{ margin:0 0 6px; font-size:1.02rem; }}
+.track p {{ margin:0 0 8px; font-size:.82rem; }}
+.track-block {{ margin-top:12px; }}
+.track-block h3 {{ margin:0 0 2px; font-size:.88rem; color:var(--ink); }}
+.track-block p {{ margin:0 0 4px; font-size:.78rem; }}
+.track-table {{ width:auto; margin-top:4px; font-size:.8rem; }}
+.track-table th, .track-table td {{ padding:4px 10px; border-bottom:1px solid rgba(31,41,66,.5); }}
+.track-table th.rowhead {{ color:var(--muted); font-weight:500; text-align:left; }}
+.track-table thead th, .track-table tr:first-child th {{ background:transparent; position:static; }}
+.verdict {{ font-size:.9rem; }}
+.verdict.has_edge {{ color:var(--green); }}
+.verdict.weak_edge {{ color:var(--amber); }}
+.verdict.no_edge {{ color:var(--red); }}
+.verdict.unknown {{ color:var(--muted); }}
+.caveat {{ color:var(--amber); }}
 </style>
 </head>
 <body>
@@ -349,6 +417,7 @@ td.comment {{ color:var(--muted); max-width:16rem; overflow:hidden; text-overflo
 </div>
 <main>
   {legend}
+  {_track_section(payload.get('track') or {})}
   <div class="controls">
     <button class="active" data-filter="all">全部</button>
     <button data-filter="danger">⚠️ 危險</button>
@@ -432,6 +501,10 @@ def write(date: str, public: Path) -> dict:
     data_dir = public / 'data'
     data_dir.mkdir(parents=True, exist_ok=True)
     ps.atomic_json(data_dir / 'danger.json', payload)
+    import danger_track
+    danger_track.write_ledger(date, payload, public)
+    track = danger_track.evaluate(public)
+    payload['track'] = track
     (public / 'danger.html').write_text(render_html(payload), encoding='utf-8')
     return payload
 
