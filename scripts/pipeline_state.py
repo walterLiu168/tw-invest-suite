@@ -30,6 +30,9 @@ REPO_SOURCE_FILES = (
     'src/concept_stocks.py', 'src/render_concepts.py', 'src/render_chips_advanced.py',
     'src/industry_zh.py', 'src/generate_og.py', 'src/chip_push.py',
     'src/watchlist_history.py',
+    # The danger list and the AI ledger read the same rows; the page is part of
+    # the certified release, so its generator has to be hashed with it.
+    'src/danger_signals.py',
     # The trading-day stage that refreshes features and the forward ledger is
     # executed straight from the repo, so it belongs to the certified sources.
     'scripts/stock_features_daily.py',

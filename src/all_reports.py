@@ -102,16 +102,22 @@ def main():
         if {p['ticker'] for p in picks} != {p['ticker'] for p in run_picks}:
             raise ValueError('OG selected-pick identity mismatch')
         og.render_og(picks,data / 'og.png',inputs['date'])
-        paths = ['sectors.html','chips.html','chips-advanced.html','concepts.html',
+        import danger_signals
+        danger = danger_signals.write(inputs['date'],ps.PUBLIC)
+        print(f"all_reports: danger list ready candidates={danger['summary']['candidates']} "
+              f"danger={danger['summary']['danger']}",flush=True)
+        paths = ['sectors.html','chips.html','chips-advanced.html','concepts.html','danger.html',
             'data/sectors.json','data/chips.json','data/chips-advanced.json','data/concept-stocks.json',
             'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png',
-            'data/watchlist-history.json']
+            'data/watchlist-history.json','data/danger.json']
         paths += [f'data/chips-history/{day}.json' for day in dates]
         paths += list(ps.REPORT_FRONTEND_FILES)
         artifacts = [ps.artifact(ps.PUBLIC / relative,relative) for relative in paths]
         receipt.update(status='ok',source=inputs['source'],current_rows=inputs['current_rows'],
             metadata_tickers=len(metadata),rank_tickers=len(ranked),advanced_tickers=len(features),
-            advanced_excluded_incomplete_price=len(calendars)-len(features),history_dates=dates,artifacts=artifacts)
+            advanced_excluded_incomplete_price=len(calendars)-len(features),history_dates=dates,artifacts=artifacts,
+            danger_candidates=danger['summary']['candidates'],danger_rows=danger['summary']['danger'],
+            danger_alert=danger['summary']['alert'],danger_model_covered=danger['summary']['covered'])
         ps.atomic_json(receipt_path,receipt)
         print(f"all_reports: certified candidates={len(artifacts)} data_date={inputs['date']}",flush=True)
     except Exception as error:
