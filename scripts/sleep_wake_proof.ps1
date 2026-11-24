@@ -18,9 +18,10 @@
 #   * The first attempt used WM_SYSCOMMAND/SC_MONITORPOWER.  That is the
 #     "turn the monitor off" command, NOT sleep - the box stayed awake and the
 #     receipt only showed that the arm task had run.
-#   * SetSuspendState needs SeShutdownPrivilege.  `whoami /priv` shows the
-#     privilege IS in this token but Disabled, so an unelevated process can
-#     enable it with AdjustTokenPrivileges - no elevation required.
+#   * SetSuspendState needs SeShutdownPrivilege.  The privilege is in this
+#     token but disabled, and AdjustTokenPrivileges refuses it on a UAC
+#     filtered token - so the arm task is registered with "Run with highest
+#     privileges" instead, where the privilege is enabled by default.
 #   * powercfg /devicequery wake_armed lists both Intel I210 NICs, so the box
 #     can also be woken by a wake-on-LAN magic packet.
 #
@@ -36,6 +37,7 @@ $ErrorActionPreference = 'Stop'
 $OutDir = Join-Path $PSScriptRoot '_debug'
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $Stamp = Join-Path $OutDir 'sleep_wake_proof.json'
+$SuspendResult = Join-Path $OutDir 'sleep_wake_suspend_result.json'
 $ArmMarker = Join-Path $OutDir 'sleep_wake_proof.armed'
 
 # Shared native helpers: token privilege enabling plus the real suspend call.
@@ -56,6 +58,35 @@ namespace Win32 {
     public static extern bool AdjustTokenPrivileges(IntPtr t, bool disableAll, ref TOKEN_PRIVILEGES newState, uint bufferLength, IntPtr previousState, IntPtr returnLength);
     [DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();
     [DllImport("powrprof.dll")] public static extern bool SetSuspendState(bool hibernate, bool force, bool wakeDisabled);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    public static extern bool GetTokenInformation(IntPtr t, int cls, IntPtr info, uint len, out uint ret);
+
+    // GetLastError must be read inside the native call: the managed runtime
+    // overwrites the thread's last error, so an out-of-band read lies.
+    public static int AdjustAndReport(IntPtr token, ref TOKEN_PRIVILEGES state) {
+      bool ok = AdjustTokenPrivileges(token, false, ref state, 0, IntPtr.Zero, IntPtr.Zero);
+      return ok ? 0 : Marshal.GetLastWin32Error();
+    }
+    // 1 = present and enabled, 2 = present but disabled, 0 = absent
+    public static int PrivilegeState(IntPtr token, LUID luid) {
+      IntPtr buf = Marshal.AllocHGlobal(8192);
+      try {
+        uint len;
+        if (!GetTokenInformation(token, 3, buf, 8192, out len)) return 0;
+        int count = Marshal.ReadInt32(buf, 0);
+        int off = 4;
+        for (int i = 0; i < count; i++) {
+          uint lp = (uint)Marshal.ReadInt32(buf, off);
+          int hp = Marshal.ReadInt32(buf, off + 4);
+          int attr = Marshal.ReadInt32(buf, off + 8);
+          if (lp == luid.LowPart && hp == luid.HighPart) {
+            return (attr & 2) != 0 ? 1 : 2;
+          }
+          off += 12;
+        }
+        return 0;
+      } finally { Marshal.FreeHGlobal(buf); }
+    }
   }
 }
 "@
@@ -68,23 +99,26 @@ function Write-Receipt($payload) {
 function Enable-ShutdownPrivilege {
     Add-Type -TypeDefinition $NativeCode -ErrorAction SilentlyContinue
     $h = [IntPtr]::Zero
-    if (-not [Win32.P]::OpenProcessToken([Win32.P]::GetCurrentProcess(), 0x0008, [ref]$h)) {
+    # TOKEN_ADJUST_PRIVILEGES (0x08) | TOKEN_QUERY (0x02) - AdjustTokenPrivileges
+    # needs both; asking for only the first returns ERROR_ACCESS_DENIED.
+    if (-not [Win32.P]::OpenProcessToken([Win32.P]::GetCurrentProcess(), 0x000A, [ref]$h)) {
         return "OpenProcessToken failed: $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())"
     }
     $luid = New-Object Win32.LUID
     if (-not [Win32.P]::LookupPrivilegeValue($null, 'SeShutdownPrivilege', [ref]$luid)) {
-        return "LookupPrivilegeValue failed: $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+        return "LookupPrivilegeValue failed"
     }
-    # SE_PRIVILEGE_ENABLED = 2
     $state = New-Object Win32.TOKEN_PRIVILEGES
     $state.PrivilegeCount = 1
     $state.Luid = $luid
     $state.Attributes = 2
-    $ok = [Win32.P]::AdjustTokenPrivileges($h, $false, [ref]$state, 0, [IntPtr]::Zero, [IntPtr]::Zero)
-    $err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-    if ($err -ne 0) { return "AdjustTokenPrivileges failed: win32=$err" }
-    if (-not $ok) { return "AdjustTokenPrivileges returned false (win32=$err)" }
-    return 'enabled'
+    $err = [Win32.P]::AdjustAndReport($h, [ref]$state)
+    if ($err -eq 0) { return 'enabled' }
+    # An elevated token already carries the privilege enabled; AdjustTokenPrivileges
+    # can still refuse, and then it is not needed.
+    $present = [Win32.P]::PrivilegeState($h, $luid)
+    if ($present -eq 1) { return 'enabled' }
+    return "AdjustTokenPrivileges failed: win32=$err (privilege present but disabled)"
 }
 
 function Get-PowerEvents {
@@ -187,8 +221,14 @@ if ($Mode -eq 'arm') {
         power_events_before = (Get-PowerEvents)
     }
     Write-Receipt $pre
+    # One-shot: the marker is consumed here, so an approved test never repeats
+    # on its own and the box can never fall asleep nightly by accident.
+    Remove-Item -LiteralPath $ArmMarker -ErrorAction SilentlyContinue
     # Detach, then suspend the box for real: SetSuspendState(FALSE, TRUE, FALSE)
-    # asks for S3 and does not disable wake events.
+    # asks for S3 and does not disable wake events.  The result is written after
+    # the resume, so the receipt says whether the suspend actually happened -
+    # the 2026-11-20 attempt wrote its receipt before suspending and therefore
+    # could not tell "did not sleep" from "slept".
     Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', @"
 `$ErrorActionPreference = 'SilentlyContinue'
@@ -196,15 +236,25 @@ Start-Sleep -Seconds 5
 $NativeCode
 Add-Type -TypeDefinition `$NativeCode
 `$h = [IntPtr]::Zero
-[Win32.P]::OpenProcessToken([Win32.P]::GetCurrentProcess(), 0x0008, [ref]`$h) | Out-Null
+[Win32.P]::OpenProcessToken([Win32.P]::GetCurrentProcess(), 0x000A, [ref]`$h) | Out-Null
 `$luid = New-Object Win32.LUID
 [Win32.P]::LookupPrivilegeValue(`$null, 'SeShutdownPrivilege', [ref]`$luid) | Out-Null
 `$state = New-Object Win32.TOKEN_PRIVILEGES
 `$state.PrivilegeCount = 1
 `$state.Luid = `$luid
 `$state.Attributes = 2
-[Win32.P]::AdjustTokenPrivileges(`$h, `$false, [ref]`$state, 0, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
-[Win32.P]::SetSuspendState(`$false, `$true, `$false) | Out-Null
+`$adjErr = [Win32.P]::AdjustAndReport(`$h, [ref]`$state)
+`$privState = [Win32.P]::PrivilegeState(`$h, `$luid)
+`$ok = [Win32.P]::SetSuspendState(`$false, `$true, `$false)
+`$result = [ordered]@{{
+  suspended_at = (Get-Date).ToString('o')
+  set_suspend_state_return = `$ok
+  set_suspend_state_error = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+  adjust_token_privileges_error = `$adjErr
+  privilege_state = `$privState
+  privilege_meaning = @{{ 1 = 'present and enabled'; 2 = 'present but disabled'; 0 = 'absent' }}[`$privState]
+}}
+`$result | ConvertTo-Json | Set-Content -LiteralPath '$SuspendResult' -Encoding UTF8
 "@) | Out-Null
     Start-Sleep -Seconds 25
     exit 0

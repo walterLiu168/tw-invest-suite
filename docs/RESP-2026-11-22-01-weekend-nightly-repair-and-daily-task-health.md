@@ -254,27 +254,38 @@ source_hashes OK: 72 files
 
 ### 4.4 實體睡眠喚醒：上次的真因找到了，但這台機器做不到
 
-上次的 arm 任務（11/21 23:35）寫了收據卻**沒有真的睡**。真因有兩個：
+上次的 arm 任務（11/21 23:35）寫了收據卻**沒有真的睡**。真因有三層，前兩層是我的錯，第三層是環境事實：
 
 1. **用錯 API**。原腳本廣播 `WM_SYSCOMMAND` / `SC_MONITORPOWER`（0xF170）——
    那是「**關螢幕**」指令，不是休眠。已改成真正的
    `SetSuspendState(FALSE, TRUE, FALSE)`（S3）。
-2. **權杖被 UAC 過濾**。`whoami /priv` 顯示 `SeShutdownPrivilege` 存在但 Disabled，
-   但 `AdjustTokenPrivileges` 回 **win32=5（ACCESS DENIED）**——
-   非提升權杖是 UAC 過濾權杖（`BUILTIN\Administrators` = *deny only*），
-   這個權限啟用不了。`Set-ScheduledTask -RunLevel Highest` 也回 **Access is denied**。
+2. **權杖存取遮罩錯了**。`AdjustTokenPrivileges` 需要
+   `TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY`，只開前者會回 ERROR_ACCESS_DENIED。
+   另外 `GetLastError` 必須在原生呼叫內部讀取（受控執行階段會覆寫執行緒的 last error，
+   在外面讀會拿到 203 這種假值）。兩處都已修。
+3. **真正的阻擋：這個權杖啟用不了 SeShutdownPrivilege。**
+   `GetTokenInformation(TokenPrivileges)` 的實測：權杖裡 SeShutdownPrivilege **存在**
+   （luid 19:0）但 **attributes = 0x0**（未啟用）；`AdjustTokenPrivileges` 回
+   **ERROR_ACCESS_DENIED**，且調整後權杖清單**完全沒變**。
+   這在**升權權杖裡一樣**（`IsInRole(Administrator)=True`、arm／wake 兩個排程都已改成
+   `Run with highest privileges`），所以不是 UAC 過濾造成的。
 
-⇒ **受控休眠需要提權的排程**，這台 session 做不到。
+⇒ **這台機器用 API 無法被 suspend**。`shutdown /h`、`SetSuspendState`、
+`NtSetSystemPowerState` 全都要求同一個權限。剩下的可能只有：
+(a) 帳號的「關閉系統 / Shut down the system」使用者權限被拒（`secpol.msc` →
+使用��權限指派 → 檢查「拒絕關閉系統」）；(b) 由**人**從開始選單送一次睡眠
+（使用者介面路徑不經過使用者的權杖），然後靠 `WakeToRun` 的排程喚醒。
+
 喚醒能力本身是備妥的：`powercfg /devicequery wake_armed` 列出兩張 **Intel I210 網卡**
 （wake-on-LAN 已啟用）、`powercfg /a` 有 S3 與休眠；缺的是「誰來按下休眠」。
 
-腳本已改成會**大聲失敗**而不是靜默假成功：`-Mode verify` 直接回報權杖能不能用，
-arm 任務在沒有核准的測試時回 0（正常狀態，不是紅字），有核准但提權不足時寫
-`status: suspend_unavailable` 並回 4。
+腳本已改成會**大聲失敗**而不是靜默假成功：`-Mode verify` 回報權杖能不能用，
+arm 任務在沒有核准的測試時回 0（正常狀態，不是紅字），有核准但權限不足時寫
+`status: suspend_unavailable` 並附上真實 win32 碼。2026-11-24 09:32 以升權 arm 任務
+實跑的結果就是上面那一行——**畫面沒有黑、機器沒有睡，收據說明了原因**。
 
-**待 Walter 決定**：在有提權權限的 session 裡把 arm 任務改成「使用最高權限執行」，
-就能做真正的受控睡眠 → 喚醒 → 證明。若不升權，本機的實體睡眠喚醒**維持未證明**，
-這是誠實的現況，不是缺陷。
+**待 Walter 決定**：是否查帳號的「關閉系統」權限（或以人工睡眠 + WakeToRun 排程做一次
+有人盯著的受控測試）。在此之前本機的實體睡眠喚醒**維持未證明**，這是誠實的現況。
 
 ---
 
