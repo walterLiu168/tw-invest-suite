@@ -1,5 +1,5 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-24T00:05:14
+**Generated**: 2026-11-24T09:07:43
 **OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-11-23
@@ -8,8 +8,8 @@
 **Nightly**: fb8390a6ba7f4486b9ebdfc68f217f8e
 **Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-11-23
-**Verified at**: 2026-11-23T23:39:30.197445
-**Published commit**: 92ae4217e49416a151b182c14adea6c35353e2f5
+**Verified at**: 2026-11-24T09:07:21.339267
+**Published commit**: 2e49740a024fb13df1057f084843fd0e4bc00542
 
 ## Action items
 - 🟡 34 個股資料不完整，頁面已標示；fresh=1940 ／ rendered=1974
@@ -25,7 +25,7 @@
 | tw-invest-suite-sync-legacy | Ready | 2026-11-23T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-11-23T23:55:55.0000000+08:00 | 0 |
 | tw-invest-suite-publish | Ready | 2026-11-23T22:50:50.0000000+08:00 | 0 |
-| tw-invest-suite-postflight | Running | 2026-11-24T00:05:05.0000000+08:00 | 267009 |
+| tw-invest-suite-postflight | Ready | 2026-11-24T00:05:05.0000000+08:00 | 0 |
 
 ## Scope
 - Nightly: analyze pages、watchlist、patterns；日期與 SHA 均由完成標記驗證。
