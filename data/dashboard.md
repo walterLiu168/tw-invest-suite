@@ -1,30 +1,30 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-25T17:07:46
+**Generated**: 2026-11-25T23:39:41
 **OVERALL**: 🟡 WARNING
 
-**Data date**: 2026-11-24
-**DB picks**: 24 active; run_id=125
+**Data date**: 2026-11-25
+**DB picks**: 24 active; run_id=129
 **OHLCV coverage**: 1963 rows ／ 1963 tickers
-**Nightly**: 13d2e87f81094d91bae4eac3fee42ed7
+**Nightly**: 2b95f3b76c5b4d61a14faf96c192e891
 **Optional degraded**: 0
-**Publication**: verified ／ data_date=2026-11-24
-**Verified at**: 2026-11-25T17:07:26.768031
-**Published commit**: 138dc921156c22feb61c556eeb2a1883b9cec1cf
+**Publication**: verified ／ data_date=2026-11-25
+**Verified at**: 2026-11-25T23:39:17.748084
+**Published commit**: 0773c1cf6db5e45f7555c4659e6879b031b84fe4
 
 ## Action items
-- 🟡 18 個股資料不完整，頁面已標示；fresh=1956 ／ rendered=1974
+- 🟡 42 個股資料不完整，頁面已標示；fresh=1932 ／ rendered=1974
 
 ## Cron results
 | Task | State | LastRun | RC |
 |---|---|---|---|
-| tw-invest-suite-daily-report | Ready | 2026-11-24T21:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-market-screen | Ready | 2026-11-24T18:20:20.0000000+08:00 | 0 |
-| tw-invest-suite-yfinance | Ready | 2026-11-24T22:30:30.0000000+08:00 | 0 |
-| tw-invest-suite-health-check | Ready | 2026-11-24T23:00:00.0000000+08:00 | 0 |
-| tw-invest-suite-company-refresh | Ready | 2026-11-24T23:25:25.0000000+08:00 | 0 |
-| tw-invest-suite-sync-legacy | Ready | 2026-11-24T23:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-daily-report | Ready | 2026-11-25T21:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-market-screen | Ready | 2026-11-25T18:20:20.0000000+08:00 | 0 |
+| tw-invest-suite-yfinance | Ready | 2026-11-25T22:30:30.0000000+08:00 | 0 |
+| tw-invest-suite-health-check | Ready | 2026-11-25T23:00:00.0000000+08:00 | 0 |
+| tw-invest-suite-company-refresh | Ready | 2026-11-25T23:25:25.0000000+08:00 | 0 |
+| tw-invest-suite-sync-legacy | Ready | 2026-11-25T23:30:30.0000000+08:00 | 0 |
 | tw-invest-suite-marker-watchdog | Ready | 2026-11-24T23:55:55.0000000+08:00 | 0 |
-| tw-invest-suite-publish | Ready | 2026-11-24T22:50:50.0000000+08:00 | 0 |
+| tw-invest-suite-publish | Running | 2026-11-25T22:50:50.0000000+08:00 | 267009 |
 | tw-invest-suite-postflight | Ready | 2026-11-25T00:05:05.0000000+08:00 | 0 |
 
 ## Scope
