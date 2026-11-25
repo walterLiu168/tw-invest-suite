@@ -395,6 +395,7 @@ td.comment {{ color:var(--muted); max-width:16rem; overflow:hidden; text-overflo
 <nav class="module-tabs">
   <a class="mod-tab" href="readme.html">🏠 首頁</a>
   <a class="mod-tab active" href="danger.html">⚠️ 危險名單</a>
+  <a class="mod-tab" href="ai-ledger.html">🧾 AI 帳</a>
   <a class="mod-tab" href="watchlist.html">📊 24 檔精選</a>
   <a class="mod-tab" href="watchlist-history.html">📜 精選歷史</a>
   <a class="mod-tab" href="sectors.html">🌊 板塊輪動</a>

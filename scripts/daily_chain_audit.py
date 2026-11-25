@@ -448,8 +448,14 @@ def ai_snapshot(cfg: AuditConfig, target: str) -> dict[str, Any]:
     message_id = chip_result.get("message_id")
     if chip_result.get("status") not in {"sent", "already_sent", "verified"} or type(message_id) is not int or message_id <= 0:
         findings.append("chips Telegram receipt 無正整數 message_id")
+    # A receipt may legitimately name an earlier run: the chips summary is sent
+    # once per session, so a re-run of the same session reuses the delivery.  The
+    # reuse has to be explicit (reused_for_nightly_id), otherwise a receipt that
+    # simply claims the wrong run is the same failure.
+    identity_ok = (chip_result.get("nightly_id") == marker.get("nightly_id")
+                   or chip_result.get("reused_for_nightly_id") == marker.get("nightly_id"))
     if (chip_result.get("data_date") != target or not marker.get("nightly_id")
-            or chip_result.get("nightly_id") != marker.get("nightly_id")):
+            or not identity_ok):
         findings.append("chips Telegram receipt 日期或批次不一致")
     key = f"{target}:{chip_result.get('chat_hash', '')}"
     entry = ledger.get(key) if isinstance(ledger, dict) else None
@@ -459,8 +465,17 @@ def ai_snapshot(cfg: AuditConfig, target: str) -> dict[str, Any]:
     # the run that actually sent it; the receipt names the run that observed the
     # existing delivery.  Every other delivery identity field still has to match.
     compare = [k for k in fields if k != "nightly_id" or not chip_result.get("already_sent")]
+
+    def agrees(field):
+        # The ledger is keyed by date, so an entry written before the receipt grew
+        # a data_date field still agrees with the receipt about that date.
+        if not isinstance(entry, dict):
+            return False
+        value = entry.get(field, chip_result.get(field))
+        return bool(chip_result.get(field)) and value == chip_result.get(field)
+
     if (not isinstance(entry, dict) or entry.get("status") != "sent"
-            or any(not chip_result.get(k) or entry.get(k) != chip_result.get(k) for k in compare)):
+            or any(not agrees(k) for k in compare)):
         findings.append("chips ledger 缺失或與 receipt 不一致（不重送）")
     return {"gate": {"path": str(gate_path) if gate_path else None, "value": gate}, "reports": len(four), "chips_summary": chips.is_file(), "chip_result": chip_result, "ledger": ledger, "delivery_state_entries": len(state) if isinstance(state, dict) else 0, "findings": findings}
 

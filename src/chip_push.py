@@ -87,8 +87,16 @@ def deliver(marker, token, chat, message):
         ledger = ps.read_json(LEDGER) if LEDGER.exists() else {}
         old = ledger.get(key, {})
         if old.get('status') == 'sent':
-            receipt = {**old,'status':'sent','already_sent':True,'nightly_id':marker['nightly_id']}
-            ps.atomic_json(RESULT,receipt)
+            # The message was sent by an earlier run for this session.  Keep the
+            # identity of the run that actually sent it and state the reuse
+            # explicitly: a receipt must never claim this run sent a message it
+            # did not send, and the ledger must not be rewritten to make the
+            # check green.
+            receipt = {**old, 'status': 'sent', 'already_sent': True,
+                       'data_date': marker['data_date'],
+                       'nightly_id': old.get('nightly_id'),
+                       'reused_for_nightly_id': marker['nightly_id']}
+            ps.atomic_json(RESULT, receipt)
             return receipt
         if old.get('status') in ('sending','unknown'):
             raise ValueError('Prior Telegram delivery uncertain; manual receipt check required to avoid duplicates')
