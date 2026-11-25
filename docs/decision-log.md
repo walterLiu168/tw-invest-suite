@@ -1278,8 +1278,17 @@ Walter 指出關鍵事實：**300 萬放存款，利息就能付 MiniMax 費用*
    - `model_predictions_daily` 最新寫入 **2026-11-24 22:24**（56,356 列）→ 主預測新鮮
    - 11/24 整條鏈跑到 23:02（strategy_adjustment 22:37／telegram_delivery 22:52／night_markets 22:42）
    - owner 心跳 11-25 17:15 仍更新；watchdog 排程 lastResult=0；其他 4 支任務 lastResult=0
-   - 真正卡住的是**主排程實例**（state=Running、lastResult 0x800710E0）＋
-     僵屍 PID 2976 握著 `output/pipeline_state/scheduler.lock`（mtime 10/09、檔案被鎖連讀都讀不到）
+   - 真正卡住的是**主排程實例**（state=Running、lastResult 0x800710E0＝排程拒絕啟動第二個實例）。
+     `output/pipeline_state/scheduler.lock` 被 PID 2976 握著（mtime 10/09 13:52、檔案被鎖連讀都讀不到）；
+     該 PID 為 Session 0 的 python.exe、建立於 2026-10-09 13:52:21（與鎖 mtime 相差 1 秒）、
+     父行程 40864 已不存在（孤兒）。**其命令列因 Session 0 權限無法讀取**。
+   - ⚠️ **不要殺 PID 2976**（2026-11-25 複驗後修正）：owner 心跳每輪仍在更新
+     （17:25、17:28 實測）、watchdog lastResult=0；且「CPU 0 秒」是**讀不到屬性**而非真的 0。
+     → PID 2976 **很可能就是自 10/09 起持續在跑、握著鎖的 owner 本體**，
+     殺掉會直接弄壞 AI-Telegram 的每日 stage。
+     「排程註冊顯示 0x800710E0」其實是**鎖在正常運作**（擋住第二個 scheduler 實例），
+     不是故障。每日 stage 由各獨立排程（`tw-invest-suite-finmind-download`、
+     `AI-Telegram Daily Report 22-47` 等）與 owner 迴圈分擔，不依賴該鎖。
    - 另有四張**輔助／舊表**停止寫入：`daily2_prediction_bands_daily`（08-01）、
      `prediction_eval_daily`（07-06）、`skis_aigo_prediction_latest`（07-10）、
      `moonread_predictions_v1`（01-04）→ 屬既有資料債，不是管線死掉
