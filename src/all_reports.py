@@ -106,13 +106,21 @@ def main():
         danger = danger_signals.write(inputs['date'],ps.PUBLIC)
         print(f"all_reports: danger list ready candidates={danger['summary']['candidates']} "
               f"danger={danger['summary']['danger']}",flush=True)
+        import ai_ledger
+        ledger = ai_ledger.write(inputs['date'],ps.PUBLIC)
+        print(f"all_reports: ai ledger ready net={ledger['metrics'].get('net_return',0)*100:+.2f}% "
+              f"excess={ledger['metrics'].get('excess',0)*100:+.2f}pp "
+              f"positions={ledger['metrics'].get('positions',0)}",flush=True)
         history_dir = ps.PUBLIC / 'data' / 'danger-history'
         danger_history = sorted(p.name for p in history_dir.glob('*.json')) if history_dir.is_dir() else []
-        paths = ['sectors.html','chips.html','chips-advanced.html','concepts.html','danger.html',
+        ledger_dir = ps.PUBLIC / 'data' / 'ai-ledger-history'
+        ledger_history = sorted(p.name for p in ledger_dir.glob('*.json')) if ledger_dir.is_dir() else []
+        paths = ['sectors.html','chips.html','chips-advanced.html','concepts.html','danger.html','ai-ledger.html',
             'data/sectors.json','data/chips.json','data/chips-advanced.json','data/concept-stocks.json',
             'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png',
-            'data/watchlist-history.json','data/danger.json','data/danger-track.json']
+            'data/watchlist-history.json','data/danger.json','data/danger-track.json','data/ai-ledger.json']
         paths += [f'data/danger-history/{name}' for name in danger_history]
+        paths += [f'data/ai-ledger-history/{name}' for name in ledger_history]
         paths += [f'data/chips-history/{day}.json' for day in dates]
         paths += list(ps.REPORT_FRONTEND_FILES)
         artifacts = [ps.artifact(ps.PUBLIC / relative,relative) for relative in paths]
@@ -120,6 +128,10 @@ def main():
             metadata_tickers=len(metadata),rank_tickers=len(ranked),advanced_tickers=len(features),
             advanced_excluded_incomplete_price=len(calendars)-len(features),history_dates=dates,artifacts=artifacts,
             danger_history_dates=[name[:-5] for name in danger_history],
+            ai_ledger_history_dates=[name[:-5] for name in ledger_history],
+            ai_ledger_net=ledger['metrics'].get('net_return'),
+            ai_ledger_excess=ledger['metrics'].get('excess'),
+            ai_ledger_verdict=ledger.get('verdict'),
             danger_candidates=danger['summary']['candidates'],danger_rows=danger['summary']['danger'],
             danger_alert=danger['summary']['alert'],danger_model_covered=danger['summary']['covered'])
         ps.atomic_json(receipt_path,receipt)

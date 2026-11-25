@@ -34,6 +34,7 @@ REPO_SOURCE_FILES = (
     # the certified release, so its generator has to be hashed with it.
     'src/danger_signals.py',
     'src/danger_track.py',
+    'src/ai_ledger.py',
     # The trading-day stage that refreshes features and the forward ledger is
     # executed straight from the repo, so it belongs to the certified sources.
     'scripts/stock_features_daily.py',
@@ -415,12 +416,13 @@ def validate_all_reports(receipt, run):
         raise ValueError('All-report market coverage mismatch')
     if receipt.get('rank_tickers',0) < 1900 or receipt.get('advanced_tickers',0) <= 0:
         raise ValueError('All-report ranking/advanced coverage mismatch')
-    expected = {'sectors.html','chips.html','chips-advanced.html','concepts.html','danger.html',
+    expected = {'sectors.html','chips.html','chips-advanced.html','concepts.html','danger.html','ai-ledger.html',
         'data/sectors.json','data/chips.json','data/chips-advanced.json','data/concept-stocks.json',
         'data/tw-industry.json','data/tickers.json','data/chips-history-index.json','data/og.png',
-        'data/watchlist-history.json','data/danger.json','data/danger-track.json'}
+        'data/watchlist-history.json','data/danger.json','data/danger-track.json','data/ai-ledger.json'}
     expected.update(f'data/chips-history/{day}.json' for day in dates)
     expected.update(f'data/danger-history/{day}.json' for day in receipt.get('danger_history_dates', []))
+    expected.update(f'data/ai-ledger-history/{day}.json' for day in receipt.get('ai_ledger_history_dates', []))
     expected.update(REPORT_FRONTEND_FILES)
     artifacts = receipt.get('artifacts', [])
     if len(artifacts) != len(expected) or {a['gh_path'] for a in artifacts} != expected:
@@ -432,16 +434,17 @@ def validate_all_reports(receipt, run):
         if path.suffix == '.json' and path.name != 'manifest.json':
             value = read_json(path)
             if isinstance(value,dict):
-                if path.parent.name in ('chips-history', 'danger-history'):
+                if path.parent.name in ('chips-history', 'danger-history', 'ai-ledger-history'):
                     expected_date = path.stem
                 else:
                     expected_date = run['data_date']
                 if value.get('date') != expected_date:
                     raise ValueError('All-report JSON identity mismatch')
-                # The danger ledger is append-only: it keeps the nightly that first
-                # published it, so only its date is fixed.  Its integrity is
+                # The ledgers are append-only: they keep the nightly that first
+                # published them, so only their date is fixed.  Their integrity is
                 # covered by the recorded hash, same as every other artifact.
-                if path.parent.name != 'danger-history' and value.get('nightly_id') != run['nightly_id']:
+                if path.parent.name not in ('danger-history', 'ai-ledger-history') \
+                        and value.get('nightly_id') != run['nightly_id']:
                     raise ValueError('All-report JSON identity mismatch')
             elif path.name == 'tickers.json':
                 if sorted(v['ticker'] for v in value) != run['render_tickers'] or any(v.get('date') != run['data_date'] for v in value):
