@@ -796,7 +796,16 @@ LIVE_START = '2026-11-25'   # the first session traded under the frozen rules
 
 
 def mean_reversion(pick) -> bool:
-    """The shadow rule: long-term strong (e240 > 0) and short-term weak (e60 < 0).
+    """The shadow rule: 240-day price up (e240 > 0), 60-day price down (e60 < 0).
+
+    The two published feature columns are named excess_return_240d /
+    excess_return_60d for compatibility with older reports and the DB, but
+    they are NOT benchmark excess returns and NOT dividend-adjusted total
+    returns: they are calendar-day raw PRICE returns
+    (db_client.RETURN_DEFINITION = 'calendar_day_raw_price_return_v1').
+    Read as a sentence, the rule is "buy the stock that is up over 240
+    calendar days but down over the last 60" - buying a pullback inside an
+    uptrend.  "超額" may only be used for the account against the benchmark.
 
     On the 70-session sample the two halves are NOT independent: every
     published pick with e60 < 0 also has e240 > 0 (0 of 684 pick-days have
@@ -1051,7 +1060,7 @@ def build(date: str) -> dict:
                                     ('AIV2（2026-11-26 起）', POLICIES['AIV2'])):
         for pool_label, entry_filter, scope in (
                 ('live 進場規則（代號升序）', None, 'policy'),
-                ('H3 影子帳（e240>0 且 e60<0）', mean_reversion, 'live-segment')):
+                ('H3 影子帳（240 日價格漲、60 日價格跌）', mean_reversion, 'live-segment')):
             for mode, mode_label in ((None, '關閉（未實作）'),
                                      ('counter', '計數器式：連續 3 窗不達線→停止新進場，任一窗達線→歸零恢復'),
                                      ('never', '一旦觸發就永不恢復')):
@@ -1084,7 +1093,7 @@ def build(date: str) -> dict:
     # this table measures the execution layer, not the protection.
     grid_rows = []
     for pool_label, entry_filter in (('live 進場規則（代號升序）', None),
-                                     ('H3 影子帳（e240>0 且 e60<0）', mean_reversion)):
+                                     ('H3 影子帳（240 日價格漲、60 日價格跌）', mean_reversion)):
         for lot_mode in ('odd', 'whole'):
             for fill_model in ('FILL-CLOSE', 'FILL-NEXT-OPEN'):
                 for n in (6, 8, 10, 12):
@@ -1178,7 +1187,7 @@ def build(date: str) -> dict:
         },
         'shadow_track': {
             'version': SHADOW_VERSION,
-            'rule': ('進場池＝已發佈精選中「60 日超額報酬為負（e60 < 0）」的 long；'
+            'rule': ('進場池＝已發佈精選中「60 日價格報酬為負（e60 < 0）」的 long；'
                      '引擎實作仍是 e240>0 且 e60<0，'
                      '但在這段母體裡兩者完全等價（684 個 pick-days 中 e60<0 且 e240≤0 ＝ 0）'),
             'status': '影子帳：不交易、不進 live，只記錄',
@@ -1196,8 +1205,12 @@ def build(date: str) -> dict:
                 f'只有 {shadow_summary["buys"]} 筆買進、{shadow_summary["distinct_names"]} 檔標的、'
                 f'平均曝險 {shadow_summary["avg_exposure"]*100:.1f}%。',
                 '條件拆解：在這段母體裡 e240>0 從不 binding（每個 e60<0 的精選都同時 e240>0），'
-                '所以這條規則實際上只等於「買 60 日超額報酬為負的那一檔」；'
+                '所以這條規則實際上只等於「買 60 日價格報酬為負的那一檔」；'
                 '單獨用 e240>0 則與隨機無異（曝險配對 −4.12pp）。',
+                '**用語**：e60／e240 這兩個欄位名是相容用舊名（excess_return_60d／240d），'
+                '實際是「以日曆日計算的原始價格報酬」——未還原權值、未含息、不是相對基準的報酬。'
+                '這條規則讀成一句話是「在上升趨勢裡買回檔」：過去 240 個日曆日價格上漲、'
+                '但過去 60 個日曆日價格下跌。「超額」只能用在本帳戶對基準市場的比較上。',
                 '對照組的方法：這條規則的進場池比部位名額小，'
                 '「打亂順序」會重現規則自己——必須用「每天挑同樣數量的隨機檔」當對照組。',
                 f'零股解除了「買不起」的限制（同一條規則在「只能整股」的 300 萬口徑下平均曝險只有 '
@@ -1423,6 +1436,14 @@ def render_html(payload: dict) -> str:
         '<tr><th class="rowhead">6</th><td><strong>130% 出場規則無法在長樣本驗證</strong>：'
         '維持率資料只從 2026-08-07 起，比帳本的回溯期短；'
         '在這段樣本裡這條規則實際只觸發過 1～4 筆交易。</td></tr>'
+        '<tr><th class="rowhead">7</th><td><strong>用語：e60／e240 不是「超額報酬」</strong>：'
+        '這兩個欄位名是相容用舊名（excess_return_60d／excess_return_240d），'
+        '實際是<strong>以日曆日計算的原始價格報酬</strong>——未還原權值、未含息、'
+        '不是相對基準的報酬（來源：<code>db_client.RETURN_DEFINITION = '
+        'calendar_day_raw_price_return_v1</code>）。'
+        '讀成一句話：e240&gt;0 且 e60&lt;0 ＝「過去 240 個日曆日價格上漲、但過去 60 個日曆日價格下跌」'
+        '＝在上升趨勢裡買回檔。<strong>「超額」這個詞只能用在本帳戶對基準市場的比較上</strong>，'
+        '不得用在 e60／e240 上。</td></tr>'
         '</tbody></table></section>')
 
     live_block = ''
