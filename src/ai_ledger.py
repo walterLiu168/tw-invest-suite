@@ -53,7 +53,19 @@ RULES = {
     'max_drawdown': 0.25,
     'kill_switch_periods': 3,
     'lot_size': 1000,
+    'rolling_max_drawdown': 0.25,
 }
+
+# The benchmark is the equal-weight universe, chained by DAILY RETURN.
+# The old one averaged price LEVELS, which is not a return series at all: it
+# does not compound, and it let the most expensive stocks dominate the average.
+# It is kept only as `benchmark_curve_level_legacy` so the page can show what
+# it used to report instead of pretending the numbers never moved.
+BENCHMARK_VERSION = 'BENCH-v2'
+LEGACY_BENCHMARK_VERSION = 'BENCH-v1'
+# Five-bank average one-year time deposit (2026-11-25): 1.70% a year.  This is
+# the line the account has to clear to beat doing nothing with the money.
+SAVINGS_RATE = 0.017
 
 RULE_TEXT = [
     ('R1', '每個交易日在收盤後做決策，買賣成交價一律為當日收盤價'),
@@ -63,7 +75,7 @@ RULE_TEXT = [
     ('R5', '出場（先到先算）：跌出 24 檔／維持率破 130%／持有滿 20 個交易日／自成本價 −12%'),
     ('R6', f'成本：買賣各手續費 {RULES["commission"]*100:.4f}%（最低 {RULES["commission_min"]:.0f} 元）、賣出證交稅 {RULES["tax_sell"]*100:.1f}%'),
     ('R7', '現金會計：部位成本含攤提費用，每日以收盤價重估，權益＝現金＋部位市值'),
-    ('R8', '基準＝同一批交易日的等權全市場（與危險頁同一套方法）'),
+    ('R8', f'基準＝同一批交易日的等權全市場（{BENCHMARK_VERSION}：等權日報酬鏈接，母體＝與選股同一個篩選後 universe）'),
     ('R9', f'判定線：滾動 {RULES["survive_window"]} 個交易日，淨報酬 > 0 且超額 > 0 且最大回撤 < {RULES["max_drawdown"]*100:.0f}%；連續 {RULES["kill_switch_periods"]} 個週期不達線 → 停止新進場'),
 ]
 
@@ -117,9 +129,19 @@ def maintenance_flags(cur, dates: list[str]) -> dict[str, set[str]]:
 
 
 def load_closes(cur, first_date: str) -> tuple[list[str], dict]:
+    """Sessions and closes from the screener's universe.
+
+    `Close > 0` is not cosmetic.  daily_data2_full keeps rows with a 0 close
+    for names that stopped trading (1,749 rows over 76 dates in the 2026-08
+    window, about 20 a day).  An unfiltered equal-weight benchmark turns every
+    one of them into a -100% day, which is how the old benchmark ended up
+    reporting a market that fell 48% when the same market fell 14%.  Filtering
+    also stops a zero close from wiping out a position's value.
+    """
     cur.execute("SELECT DISTINCT Date FROM daily_data2_full WHERE Date >= %s ORDER BY Date", (first_date,))
     sessions = [str(r['Date']) for r in cur.fetchall()]
-    cur.execute("SELECT Ticker, Date, Close FROM daily_data2_full WHERE Date >= %s", (first_date,))
+    cur.execute("""SELECT Ticker, Date, Close FROM daily_data2_full
+                   WHERE Date >= %s AND Close > 0""", (first_date,))
     closes = {}
     for row in cur.fetchall():
         closes[(str(row['Ticker']), str(row['Date']))] = float(row['Close'])
@@ -246,7 +268,46 @@ def equity_value(cash: float, positions: dict, closes: dict, date: str) -> float
 
 
 def benchmark_curve(sessions, closes) -> list[dict]:
-    """Equal-weight universe, same sessions."""
+    """Equal-weight universe, chained by daily return (BENCH-v2).
+
+    Each session the benchmark is the equal-weight average of the daily return
+    of every ticker that has both a previous close and this close; the series
+    is that average compounded day by day.  A session with no usable data is
+    reported as unknown (level None) - never as 0, because 0 would silently
+    claim the market did not move.
+    """
+    by_date: dict[str, dict[str, float]] = {}
+    for (ticker, date), close in closes.items():
+        by_date.setdefault(date, {})[ticker] = close
+    curve = []
+    previous: dict[str, float] = {}
+    level = 1.0
+    for date in sessions:
+        prices = by_date.get(date) or {}
+        if not prices:
+            curve.append({'date': date, 'level': None, 'daily_return': None, 'constituents': 0})
+            continue
+        returns = [prices[t] / previous[t] - 1.0 for t in prices
+                   if t in previous and previous[t] > 0]
+        if not returns:
+            # No previous close to compare with: the market's move that day is
+            # unknown, so the level is unknown too.  The chain resumes from the
+            # last known level on the next session.
+            curve.append({'date': date, 'level': None, 'daily_return': None,
+                          'constituents': len(prices)})
+            previous = prices
+            continue
+        daily = sum(returns) / len(returns)
+        level *= (1 + daily)
+        curve.append({'date': date, 'level': level, 'daily_return': daily,
+                      'constituents': len(returns)})
+        previous = prices
+    return curve
+
+
+def benchmark_curve_level_legacy(sessions, closes) -> list[dict]:
+    """The old benchmark: average price LEVEL, normalised.  Kept for the
+    old/new comparison on the page; it is not a return series."""
     by_date: dict[str, list[float]] = {}
     for (ticker, date), close in closes.items():
         by_date.setdefault(date, []).append(close)
@@ -263,25 +324,42 @@ def benchmark_curve(sessions, closes) -> list[dict]:
     return curve
 
 
+def benchmark_level_before(benchmark, date) -> float | None:
+    """The benchmark level of the last session before `date` (1.0 if none)."""
+    level = None
+    for point in benchmark:
+        if point['date'] < date:
+            level = point['level']
+        else:
+            break
+    return level
+
+
 def metrics(equity: list[dict], benchmark: list[dict]) -> dict:
     if not equity:
         return {}
     start = RULES['initial_capital']
     end = equity[-1]['equity']
     net = end / start - 1
-    bench = benchmark[-1]['level'] - 1 if benchmark else 0.0
+    bench_level = None
+    for point in benchmark:
+        if point.get('level') is not None:
+            bench_level = point['level']
+    bench = (bench_level - 1) if bench_level is not None else None
     peak = start
     drawdown = 0.0
     for point in equity:
         peak = max(peak, point['equity'])
         drawdown = min(drawdown, point['equity'] / peak - 1)
+    excess = (net - bench) if bench is not None else None
     return {
         'sessions': len(equity),
         'start_date': equity[0]['date'],
         'end_date': equity[-1]['date'],
         'net_return': net,
         'benchmark_return': bench,
-        'excess': net - bench,
+        'excess': excess,
+        'excess_vs_savings': net - SAVINGS_RATE,
         'max_drawdown': drawdown,
         'final_equity': end,
         'cash': equity[-1]['cash'],
@@ -290,18 +368,42 @@ def metrics(equity: list[dict], benchmark: list[dict]) -> dict:
 
 
 def rolling(equity: list[dict], benchmark: list[dict], window: int) -> dict:
-    """The survive line over a rolling window of sessions."""
+    """The survive line over a rolling window of sessions.
+
+    Both sides of the comparison are measured over the SAME window: the
+    account's return from the session before the window to its last session,
+    and the market's return over the same span.  (The old code compared a
+    20-session window against the market's return since inception, which made
+    the gate far stricter than R9 describes.)  The drawdown clause R9 prints
+    is enforced here too.  An unknown benchmark is never read as 0.
+    """
     if len(equity) < window:
         return {}
-    bench_by_date = {b['date']: b['level'] for b in benchmark}
+    bench_by_date = {b['date']: b.get('level') for b in benchmark}
     results = []
     for i in range(window - 1, len(equity)):
         chunk = equity[i - window + 1: i + 1]
         start = equity[i - window]['equity'] if i - window >= 0 else RULES['initial_capital']
         net = chunk[-1]['equity'] / start - 1
-        bench = bench_by_date.get(chunk[-1]['date'], 1.0) - 1
-        results.append({'end': chunk[-1]['date'], 'net': net, 'excess': net - bench,
-                        'passed': net > 0 and (net - bench) > 0})
+        end_level = bench_by_date.get(chunk[-1]['date'])
+        if i - window >= 0:
+            base_level = bench_by_date.get(equity[i - window]['date'])
+        else:
+            base_level = benchmark_level_before(benchmark, chunk[0]['date'])
+        if end_level is None or not base_level:
+            bench = None
+        else:
+            bench = end_level / base_level - 1
+        peak = start
+        drawdown = 0.0
+        for point in chunk:
+            peak = max(peak, point['equity'])
+            drawdown = min(drawdown, point['equity'] / peak - 1)
+        excess = (net - bench) if bench is not None else None
+        passed = (excess is not None and net > 0 and excess > 0
+                  and abs(drawdown) < RULES['rolling_max_drawdown'])
+        results.append({'end': chunk[-1]['date'], 'net': net, 'excess': excess,
+                        'bench': bench, 'max_drawdown': drawdown, 'passed': passed})
     if not results:
         return {}
     passed = sum(1 for r in results if r['passed'])
@@ -313,6 +415,8 @@ def rolling(equity: list[dict], benchmark: list[dict], window: int) -> dict:
         'pass_rate': passed / len(results),
         'latest_net': latest['net'],
         'latest_excess': latest['excess'],
+        'latest_bench': latest['bench'],
+        'latest_max_drawdown': latest['max_drawdown'],
         'ok': latest['passed'],
     }
 
@@ -323,6 +427,8 @@ def verdict_line(metrics_row: dict, rolling_row: dict) -> tuple[str, str]:
     if rolling_row and not rolling_row.get('ok'):
         return 'no_edge', (f'最近 {rolling_row["window"]} 個交易日：淨報酬 {rolling_row["latest_net"]*100:+.2f}%、'
                            f'超額 {rolling_row["latest_excess"]*100:+.2f}pp → 未通過')
+    if metrics_row.get('excess') is None:
+        return 'unknown', '基準未知，這一期的超額無法計算'
     if metrics_row['excess'] <= 0:
         return 'no_edge', (f'累計超額 {metrics_row["excess"]*100:+.2f}pp → 沒有超額')
     return 'has_edge', (f'累計超額 {metrics_row["excess"]*100:+.2f}pp、'
@@ -345,22 +451,32 @@ def build(date: str) -> dict:
     benchmark = benchmark_curve(sessions, closes)
     equity = result['equity']
     total = metrics(equity, benchmark)
+    legacy_total = metrics(equity, benchmark_curve_level_legacy(sessions, closes))
 
     live = [p for p in equity if p['date'] >= LIVE_START]
     live_bench = [b for b in benchmark if b['date'] >= LIVE_START]
     live_total = {}
     if live and live_bench:
         start_equity = equity[equity.index(live[0]) - 1]['equity'] if equity.index(live[0]) else RULES['initial_capital']
-        bench_base = live_bench[0]['level']
+        # The live segment inherits the backtest's base: the market is measured
+        # from the last session before live started, not from a fresh base of 1
+        # on live day one (which made the live benchmark 0 by construction).
+        bench_base = benchmark_level_before(benchmark, live[0]['date'])
         live_net = live[-1]['equity'] / start_equity - 1
-        live_bench_return = live_bench[-1]['level'] / bench_base - 1
+        live_level = live_bench[-1].get('level')
+        if live_level is None or not bench_base:
+            live_bench_return = None
+        else:
+            live_bench_return = live_level / bench_base - 1
+        live_excess = (live_net - live_bench_return) if live_bench_return is not None else None
         live_total = {
             'sessions': len(live),
             'start_date': live[0]['date'],
             'end_date': live[-1]['date'],
             'net_return': live_net,
             'benchmark_return': live_bench_return,
-            'excess': live_net - live_bench_return,
+            'excess': live_excess,
+            'excess_vs_savings': live_net - SAVINGS_RATE,
             'max_drawdown': min((p['equity'] / max(x['equity'] for x in live[:i + 1]) - 1)
                                 for i, p in enumerate(live)),
             'final_equity': live[-1]['equity'],
@@ -374,10 +490,13 @@ def build(date: str) -> dict:
         'date': date,
         'nightly_id': (ps.read_json(ps.STATE).get('nightly_id') if ps.STATE.is_file() else ''),
         'rule_version': RULES['version'],
+        'benchmark_version': BENCHMARK_VERSION,
+        'savings_rate': SAVINGS_RATE,
         'live_start': LIVE_START,
         'rules': RULES,
         'rule_text': [{'id': rid, 'text': text} for rid, text in RULE_TEXT],
         'metrics': total,
+        'metrics_legacy': legacy_total,
         'live_metrics': live_total,
         'rolling': rolling_row,
         'verdict': kind,
@@ -488,18 +607,20 @@ def render_html(payload: dict) -> str:
             '</tr>')
 
     curve = payload.get('equity') or []
-    bench_by_date = {b['date']: b['level'] for b in payload.get('benchmark') or []}
+    bench_by_date = {b['date']: b.get('level') for b in payload.get('benchmark') or []}
     polyline = ''
     benchmark_line = ''
     if len(curve) > 1:
         width, height = 960, 180
         first_equity = curve[0]['equity']
-        base = bench_by_date.get(curve[0]['date'], 1.0)
+        base = bench_by_date.get(curve[0]['date']) or 1.0
         equity_points, bench_points = [], []
         for index, point in enumerate(curve):
             x = 10 + index * (width - 20) / (len(curve) - 1)
             equity_points.append((x, point['equity'] / first_equity))
-            bench_points.append((x, bench_by_date.get(point['date'], 1.0) / base))
+            level = bench_by_date.get(point['date'])
+            if level is not None and base:
+                bench_points.append((x, level / base))
         all_values = [v for _, v in equity_points] + [v for _, v in bench_points]
         low, high = min(all_values), max(all_values)
         span = (high - low) or 1.0
@@ -512,6 +633,31 @@ def render_html(payload: dict) -> str:
             return ' '.join(out)
         polyline = to_xy(equity_points)
         benchmark_line = to_xy(bench_points)
+
+    # ---- the old benchmark, side by side, so the change is visible
+    legacy = payload.get('metrics_legacy') or {}
+    legacy_row = ''
+    if legacy:
+        legacy_row = (
+            '<tr><th class="rowhead">舊口徑（價格水位平均）</th>'
+            f'<td class="num">{_pct(legacy.get("benchmark_return"))}</td>'
+            f'<td class="num {_dir(legacy.get("excess"))}">{_pp(legacy.get("excess"))}</td>'
+            '<td class="num muted">已被取代</td></tr>')
+    benchmark_note = (
+        f'基準口徑已於 {html.escape(payload.get("benchmark_version") or BENCHMARK_VERSION)}  更換：'
+        '舊口徑是「每日收盤價格水位平均」（不是報酬），且把 <code>Close = 0</code> 的停牌列算成 −100%，'
+        '讓市場看起來跌了 48%；新口徑是「等權日報酬鏈接」，母體與選股相同。')
+
+    disclosures = (
+        '<section><h2>必須知道的三件事（揭露，不是辯護）</h2>'
+        '<table><tbody>'
+        '<tr><th class="rowhead">1</th><td>帳本寫「同時最多 6 檔、等權」，但實務上大部分交易日只有 5 檔，'
+        '而且 10–16% 的資金是常駐現金（買不起下一檔或被規則擋住）。</td></tr>'
+        '<tr><th class="rowhead">2</th><td>進場順序＝已發佈清單的「代號升序」，不是依分數、'
+        'e240 或 e60 排序 → 選股依據其實是代號順序。</td></tr>'
+        '<tr><th class="rowhead">3</th><td>頁面列出的精選清單裡，大部分標的在 300 萬本金、只做整股'
+        '（1 張 1000 股）的限制下買不起（每檔預算 50 萬 → 單價上限 500 元）。</td></tr>'
+        '</tbody></table></section>')
 
     live_block = ''
     if live:
@@ -602,8 +748,10 @@ th.rowhead {{ color:var(--muted); font-weight:500; }}
     <div class="pill">📦 部位 <b>{total.get("positions", 0)}</b></div>
     <div class="pill">📈 淨報酬 <b class="{_dir(total.get("net_return"))}">{_pct(total.get("net_return"))}</b></div>
     <div class="pill">⚖️ 超額 <b class="{_dir(total.get("excess"))}">{_pp(total.get("excess"))}</b></div>
+    <div class="pill">🏦 超額 vs 存款 <b class="{_dir(total.get("excess_vs_savings"))}">{_pp(total.get("excess_vs_savings"))}</b></div>
     <div class="pill">🔻 最大回撤 <b>{_pct(total.get("max_drawdown"))}</b></div>
     <div class="pill">🧭 規則版本 <b>{html.escape(payload["rule_version"])}</b></div>
+    <div class="pill">📏 基準口徑 <b>{html.escape(payload.get("benchmark_version") or BENCHMARK_VERSION)}</b></div>
   </div>
 </div>
 <main>
@@ -612,9 +760,22 @@ th.rowhead {{ color:var(--muted); font-weight:500; }}
   <p class="verdict {verdict}">{mark} <b>{html.escape(payload.get("verdict_note") or "")}</b></p>
   <p class="caveat">⚠️ 這一頁是帳本的自我審計，不是績效保證。規則是在看過資料之後定的，
   所以 {html.escape(payload["live_start"])} 之前那段是回溯（含事後偏差），之後才是乾淨的前瞻紀錄。
-  進場規則目前沒有被證明有效——同一段期間危險規則（維持率破 130%）的超額反而是正的。</p>
+  進場規則至今沒有被證明有效——帳本只是把市場的漲跌用同一套規則重演一遍。</p>
+  <table>
+    <thead><tr><th class="rowhead">口徑</th><th>市場基準</th><th>超額</th>
+    <th>超額 vs 存款 {payload.get("savings_rate", SAVINGS_RATE)*100:.1f}%/年</th></tr></thead>
+    <tbody>
+      <tr><th class="rowhead">{html.escape(payload.get("benchmark_version") or BENCHMARK_VERSION)}（現行）</th>
+      <td class="num {_dir(total.get("benchmark_return"))}">{_pct(total.get("benchmark_return"))}</td>
+      <td class="num {_dir(total.get("excess"))}">{_pp(total.get("excess"))}</td>
+      <td class="num {_dir(total.get("excess_vs_savings"))}">{_pp(total.get("excess_vs_savings"))}</td></tr>
+      {legacy_row}
+    </tbody>
+  </table>
+  <p class="caveat">{benchmark_note}</p>
   {live_block}
 </section>
+{disclosures}
 <section>
   <h2>規則（帳本每筆都記錄這個版本）</h2>
   <table><tbody>{rules_rows}</tbody></table>
