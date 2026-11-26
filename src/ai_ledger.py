@@ -279,6 +279,13 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
       'live-segment' - the counter is fresh from live_start.  The shadow track
                        uses this: it is a research track, not Walter's account,
                        and its job is a clean forward comparison.
+      'policy'       - the counter belongs to the RULE VERSION: it carries
+                       over inside one version and resets when the version
+                       changes.  This is the account's rule from 2026-11-26:
+                       a new rule version has not failed anything yet, so it
+                       must not inherit the old version's failing windows -
+                       otherwise the forward record would start life already
+                       blocked and could never measure anything.
 
     The fill model comes from the policy in effect on that session:
     FILL-CLOSE fills at the session's close, FILL-NEXT-OPEN fills at the next
@@ -389,7 +396,7 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
         # last completed rolling window), so it never reads a session that has
         # not finished yet.
         #
-        # Two scopes:
+        # Three scopes:
         #   'account'      - the counter belongs to the account and never
         #                    resets inside this run.  The live segment
         #                    inherits the backtest's failures (resetting there
@@ -398,6 +405,11 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
         #                    version is in force.
         #   'live-segment' - the counter is fresh from live_start (the shadow
         #                    track: a research track, not the live account).
+        #   'policy'       - the counter belongs to the rule version: it
+        #                    carries over inside one version and resets when
+        #                    the version changes.  A new version has not
+        #                    failed anything yet, so it must not inherit the
+        #                    old version's failing windows.
         mode = policy.get('kill_switch')
         blocked = False
         if mode is None:
@@ -409,6 +421,8 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
             if kill_scope == 'live-segment':
                 segment_key = (policy['version'],
                                'live' if date >= LIVE_START else 'backtest')
+            elif kill_scope == 'policy':
+                segment_key = policy['version']
             else:
                 segment_key = 'account'
             if kill['segment'] != segment_key:
@@ -900,11 +914,13 @@ def build(date: str) -> dict:
     def fixed(policy):
         return lambda _date, p=policy: p
 
-    def run_sim(policy, capital=None, entry_filter=None, published_days_only=False):
+    def run_sim(policy, capital=None, entry_filter=None, published_days_only=False,
+                kill_scope='account'):
         return simulate(sessions, runs_by_date, flags, closes, opens,
                         policy_for_date=fixed(policy), capital=capital,
                         entry_filter=entry_filter,
                         benchmark=benchmark,
+                        kill_scope=kill_scope,
                         published_days_only=published_days_only)
 
     def summarise(sim_result, capital=None):
@@ -937,7 +953,11 @@ def build(date: str) -> dict:
         }
 
     # ---- canonical: every session judged by the version in force that day
-    result = simulate(sessions, runs_by_date, flags, closes, opens, benchmark=benchmark)
+    # The kill counter belongs to the rule version ('policy'): it carries over
+    # inside a version and resets when the version changes, so a new version
+    # never starts life already blocked by the old version's failures.
+    result = simulate(sessions, runs_by_date, flags, closes, opens, benchmark=benchmark,
+                      kill_scope='policy')
     equity = result['equity']
     total = metrics(equity, benchmark)
     legacy_total = metrics(equity, legacy_benchmark)
@@ -970,7 +990,8 @@ def build(date: str) -> dict:
     aiv2_open = summarise(run_sim(POLICIES['AIV2']))
 
     # ---- Walter's real account: 300萬, odd lots, next-open fills, 6 positions
-    walter_result = run_sim(POLICIES['AIV2'], capital=WALTER_CAPITAL)
+    walter_result = run_sim(POLICIES['AIV2'], capital=WALTER_CAPITAL,
+                            kill_scope='policy')
     walter = summarise(walter_result, WALTER_CAPITAL)
     # the same rule with whole lots only (the constraint Walter lifted)
     walter_whole = summarise(
@@ -1029,7 +1050,7 @@ def build(date: str) -> dict:
     for base_label, base_policy in (('live 條款（AIV1）', POLICIES['AIV1']),
                                     ('AIV2（2026-11-26 起）', POLICIES['AIV2'])):
         for pool_label, entry_filter, scope in (
-                ('live 進場規則（代號升序）', None, 'account'),
+                ('live 進場規則（代號升序）', None, 'policy'),
                 ('H3 影子帳（e240>0 且 e60<0）', mean_reversion, 'live-segment')):
             for mode, mode_label in ((None, '關閉（未實作）'),
                                      ('counter', '計數器式：連續 3 窗不達線→停止新進場，任一窗達線→歸零恢復'),
@@ -1737,6 +1758,9 @@ th.rowhead {{ color:var(--muted); font-weight:500; }}
   連續 {html.escape(str(ai_ledger_periods))} 窗不達線才會動作。live 段的交易日數還不夠，
   所以「目前計數器 = 0、停止進場天數 = 0、最後觸發日 = 無」是真的：
   <strong>它還沒有機會動作，不代表它動作過</strong>。</p>
+  <p class="caveat">⚠️ <strong>計數器的歸零規則：同一個規則版本內承繼；規則版本一變更就歸零。</strong>
+  新版本還沒失敗過任何東西，所以不該背著舊版本的失敗視窗出發——否則前瞻紀錄會一開始就停在
+  「停止進場」，量不到任何東西。影子帳是另一回事：它是研究軌，計數器從 live_start 重新起算。</p>
   <h3>對照：若這個保護從記錄第一天就在運作（同一段母體、同一個基準、300 萬口徑）</h3>
   <table>
     <thead><tr><th class="rowhead">條款</th><th>進場池</th><th>kill switch</th>
