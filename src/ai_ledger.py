@@ -1440,6 +1440,27 @@ BROKEN_NUMBER_PATTERNS = (
     'None 個', 'None 筆', 'None 個部位', 'NaN%', 'nan%', 'Infinity%',
 )
 
+# A number can be present and still be impossible: an exposure above 100%,
+# a return below -100%, a market cap ratio below zero.  Those are not "missing
+# measurements" - they are wrong ones, and they must not reach a public page.
+SANITY_RANGES = {
+    'metrics.net_return': (-1.0, 10.0),
+    'metrics.max_drawdown': (-1.0, 0.0),
+    'metrics.final_equity': (0.0, None),
+    'metrics.excess_vs_savings': (-11.0, 10.0),
+    'live_metrics.net_return': (-1.0, 10.0),
+    'live_metrics.max_drawdown': (-1.0, 0.0),
+    'walter_account.market_cap_profile.median_cap_ratio': (0.0, None),
+    'walter_account.market_cap_profile.held_in_top10pct': (0.0, 1.0),
+    'walter_account.market_cap_profile.held_in_top50pct': (0.0, 1.0),
+    'walter_account.market_cap_profile.held_in_top10_names': (0.0, 1.0),
+    'walter_account.market_cap_profile.held_in_top50_names': (0.0, 1.0),
+    'shadow_track.market_cap_profile.median_cap_ratio': (0.0, None),
+    'shadow_track.market_cap_profile.held_in_top10_names': (0.0, 1.0),
+    'shadow_track.random_cap_profile.median_cap_ratio': (0.0, None),
+    'shadow_track.random_cap_profile.held_in_top10_names': (0.0, 1.0),
+}
+
 
 def _is_broken_number(value) -> bool:
     """True when a value must not reach the page."""
@@ -1516,6 +1537,16 @@ def check_page_numbers(payload: dict) -> list[str]:
         if value is not None and _is_broken_number(value):
             raise RenderAssertionError(
                 f'{name} is {value!r} - the page must not print it')
+    for name, value in list(required.items()) + list(optional.items()):
+        low, high = SANITY_RANGES.get(name, (None, None))
+        if value is None or low is None:
+            continue
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        if value < low or (high is not None and value > high):
+            raise RenderAssertionError(
+                f'{name} is {value!r} - outside the sanity range '
+                f'[{low}, {high}] - the page must not print it')
     return checked
 
 
@@ -1744,6 +1775,19 @@ def render_html(payload: dict) -> str:
         '（2026-11-26 以前 AIV1、以後 AIV2）實際持有部位的統計，'
         '不是把某一個版本套到整段歷史的假設；'
         '市值＝當日 Close × 當日 SharesOutstanding_shares（point-in-time）。</td></tr>'
+        '<tr><th class="rowhead">9</th><td><strong>「跌最深」那個池子本身是賺的</strong>：'
+        '2024 年（242 個交易日）把整個通過池（<code>e240 &gt; 0</code> 且 <code>e60 &lt; 0</code>）'
+        '等權持有、不挑任何個股，報酬是 <strong>+16.02%</strong>（買進持有）、'
+        '<strong>+13.21%</strong>（每月再平衡）、<strong>+3.86%</strong>（每季再平衡）、'
+        '<strong>+3.32%</strong>（每日再平衡）。'
+        '同期間「每天從池裡隨機抽 6 檔」的對照組是 <strong>−64.08%</strong>——'
+        '但它平均只持有 <strong>1.0 天</strong>、年化換手 <strong>115 倍</strong>、'
+        '<strong>成本吃掉本金 66.87%</strong>。'
+        '→ <strong>那個對照組的虧損幾乎全部是交易成本，不是池子有毒。</strong>'
+        '這是 2026-11-26 的一次獨立量測（不是每次建頁重算），'
+        '母體分類 <code>CLEAN - price only</code>；'
+        '它的意思是「待在這個池子裡」本身有價值，至於「在池子裡怎麼挑」是另一個問題。'
+        '</td></tr>'
         '</tbody></table></section>')
 
     live_block = ''
