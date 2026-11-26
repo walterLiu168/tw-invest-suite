@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import html
 import json
+import statistics
 import sys
 from collections import Counter
 from pathlib import Path
@@ -908,6 +909,115 @@ def market_at_exposure(benchmark: list[dict], x: float, dates=None) -> float:
     return level - 1
 
 
+def market_cap_profile(sessions, trades, closes, caps_by_date) -> dict:
+    """The market-cap profile of what the account actually holds.
+
+    The entry order is the published list's ticker order, so the page used to
+    say "the entry basis is just the ticker number".  That is only half true:
+    the published long list is itself a market-cap weighted ranking, so the
+    account inherits a large-cap tilt.  This measures it.
+
+    `caps_by_date` is {date: {ticker: market cap}} for the whole daily
+    universe (close x that day's shares outstanding).
+    """
+    positions: dict[str, float] = {}
+    by_day: dict[str, list] = {}
+    for t in trades:
+        by_day.setdefault(t['date'], []).append(t)
+    med_ratio: list[float] = []
+    top10_pct: list[bool] = []
+    top50_pct: list[bool] = []
+    in_top10: list[bool] = []
+    in_top50: list[bool] = []
+    days = 0
+    for date in sessions:
+        for t in by_day.get(date, []):
+            if t['action'] == 'buy':
+                positions[t['ticker']] = t['shares']
+            else:
+                positions.pop(t['ticker'], None)
+        if not positions:
+            continue
+        uni = caps_by_date.get(date) or {}
+        if not uni:
+            continue
+        days += 1
+        uni_median = statistics.median(uni.values())
+        order = {tk: i + 1 for i, (tk, _) in
+                 enumerate(sorted(uni.items(), key=lambda kv: kv[1], reverse=True))}
+        n_uni = len(order)
+        caps = []
+        for tk in positions:
+            cap = uni.get(tk)
+            if cap is None or cap <= 0:
+                continue
+            caps.append(cap)
+            rank = order.get(tk)
+            if rank is None:
+                continue
+            top10_pct.append(rank / n_uni <= 0.10)
+            top50_pct.append(rank / n_uni <= 0.50)
+            in_top10.append(rank <= 10)
+            in_top50.append(rank <= 50)
+        if caps and uni_median > 0:
+            med_ratio.append(statistics.median(caps) / uni_median)
+    return {
+        'days_with_positions': days,
+        'positions_measured': len(top10_pct),
+        'universe_median_size': (round(statistics.median(
+            [len(v) for v in caps_by_date.values()]), 0) if caps_by_date else None),
+        'median_cap_ratio': (round(statistics.median(med_ratio), 1) if med_ratio else None),
+        'held_in_top10pct': (round(sum(top10_pct) / len(top10_pct), 4) if top10_pct else None),
+        'held_in_top50pct': (round(sum(top50_pct) / len(top50_pct), 4) if top50_pct else None),
+        'held_in_top10_names': (round(sum(in_top10) / len(in_top10), 4) if in_top10 else None),
+        'held_in_top50_names': (round(sum(in_top50) / len(in_top50), 4) if in_top50 else None),
+    }
+
+
+def random_cap_profile(caps_by_date, sessions, n_positions, draws=20, seed=20261126) -> dict:
+    """The same measurement for a random draw of n names - the null."""
+    import random as _random
+    rng = _random.Random(seed)
+    ratios: list[float] = []
+    top10: list[bool] = []
+    top50: list[bool] = []
+    t10: list[bool] = []
+    t50: list[bool] = []
+    for _ in range(draws):
+        local_ratios: list[float] = []
+        for date in sessions:
+            uni = caps_by_date.get(date) or {}
+            if len(uni) < n_positions:
+                continue
+            names = sorted(uni)
+            chosen = rng.sample(names, n_positions)
+            uni_median = statistics.median(uni.values())
+            order = {tk: i + 1 for i, (tk, _) in
+                     enumerate(sorted(uni.items(), key=lambda kv: kv[1], reverse=True))}
+            n_uni = len(order)
+            caps = [uni[tk] for tk in chosen]
+            if caps and uni_median > 0:
+                local_ratios.append(statistics.median(caps) / uni_median)
+            for tk in chosen:
+                rank = order.get(tk)
+                if rank is None:
+                    continue
+                top10.append(rank / n_uni <= 0.10)
+                top50.append(rank / n_uni <= 0.50)
+                t10.append(rank <= 10)
+                t50.append(rank <= 50)
+        if local_ratios:
+            ratios.append(statistics.median(local_ratios))
+    return {
+        'median_cap_ratio': (round(statistics.median(ratios), 2) if ratios else None),
+        'held_in_top10pct': (round(sum(top10) / len(top10), 4) if top10 else None),
+        'held_in_top50pct': (round(sum(top50) / len(top50), 4) if top50 else None),
+        'held_in_top10_names': (round(sum(t10) / len(t10), 4) if t10 else None),
+        'held_in_top50_names': (round(sum(t50) / len(t50), 4) if t50 else None),
+        'draws': draws,
+    }
+
+
 def build(date: str) -> dict:
     import db_client as db
     with db.get_cursor() as cur:
@@ -919,6 +1029,30 @@ def build(date: str) -> dict:
     runs_by_date = {r['date']: r for r in runs}
     benchmark = benchmark_curve(sessions, closes)
     legacy_benchmark = benchmark_curve_level_legacy(sessions, closes)
+
+    # The market cap of every name in every session's universe (close x that
+    # day's shares outstanding).  Used to show what the account actually
+    # holds - the entry order is the ticker order, but the published long
+    # list is market-cap weighted, so the account inherits a large-cap tilt.
+    caps_by_date: dict[str, dict[str, float]] = {}
+    with db.get_cursor() as cur:
+        cur.execute("""SELECT Date, Ticker, SharesOutstanding_shares
+                       FROM daily_data2_full
+                       WHERE Date BETWEEN %s AND %s
+                         AND Ticker REGEXP '^[0-9]{4}$|^[0-9]{4}[A-Z]$'""",
+                    (sessions[0], sessions[-1]))
+        for r in cur.fetchall():
+            sh = r['SharesOutstanding_shares']
+            if sh is None:
+                continue
+            date = str(r['Date'])
+            ticker = str(r['Ticker'])
+            close = closes.get((ticker, date))
+            if not close:
+                continue
+            cap = close * float(sh)
+            if cap > 0:
+                caps_by_date.setdefault(date, {})[ticker] = cap
 
     def fixed(policy):
         return lambda _date, p=policy: p
@@ -1030,6 +1164,20 @@ def build(date: str) -> dict:
 
     kind, note = verdict_line(total, rolling_row)
     live_kind, live_note = verdict_line(live_total, {})
+
+    # ---- what the account actually holds: the market-cap profile.
+    # The entry order is the ticker order, but the published long list is a
+    # market-cap weighted ranking, so the account is really a large-cap
+    # exposure.  The random draw is the null.
+    # The canonical result is used on purpose: it is what the account really
+    # held (the version in force on each session).  AIV2 with the kill switch
+    # forced on would stop entering long before the sample ends and would
+    # show an EMPTY account - that is the hypothetical, not the record.
+    walter_cap_profile = market_cap_profile(sessions, result['trades'],
+                                            closes, caps_by_date)
+    shadow_cap_profile = market_cap_profile(sessions, shadow_result['trades'],
+                                             closes, caps_by_date)
+    random_cap = random_cap_profile(caps_by_date, sessions, RULES['max_positions'])
 
     # ---- the kill switch: the state of the version in force today, and what
     # the switch would have done over the same sample if it had been running.
@@ -1184,9 +1332,12 @@ def build(date: str) -> dict:
             'whole_lots': walter_whole,
             'note': ('Walter 的實際帳戶口徑：300 萬、只做零股、每檔 equity/6、次日開盤成交。'
                      '「整股」那一列是同一條規則在「只能整股」限制下的樣子，對照用。'),
+            'market_cap_profile': walter_cap_profile,
         },
         'shadow_track': {
             'version': SHADOW_VERSION,
+            'market_cap_profile': shadow_cap_profile,
+            'random_cap_profile': random_cap,
             'rule': ('進場池＝已發佈精選中「60 日價格報酬為負（e60 < 0）」的 long；'
                      '引擎實作仍是 e240>0 且 e60<0，'
                      '但在這段母體裡兩者完全等價（684 個 pick-days 中 e60<0 且 e240≤0 ＝ 0）'),
@@ -1263,6 +1414,16 @@ def _pct(value, digits=2, dash='—') -> str:
     return f'{value * 100:.{digits}f}%'
 
 
+def _num(value, dash='—') -> str:
+    """A number for the page.  Never prints 'None' - a missing measurement is
+    a missing measurement, and 'None 倍' would read as a broken page."""
+    if value is None:
+        return dash
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return f'{value:,}'
+
+
 def _pp(value, digits=2, dash='—') -> str:
     if value is None:
         return dash
@@ -1280,6 +1441,9 @@ def render_html(payload: dict) -> str:
     live = payload.get('live_metrics') or {}
     positions = payload.get('positions') or {}
     trades = payload.get('trades') or []
+    cap_prof = (payload.get('walter_account') or {}).get('market_cap_profile') or {}
+    shadow_prof = (payload.get('shadow_track') or {}).get('market_cap_profile') or {}
+    rand_prof = (payload.get('shadow_track') or {}).get('random_cap_profile') or {}
     date = payload['date']
     verdict = payload.get('verdict', 'unknown')
     mark = {'has_edge': '✅', 'weak_edge': '⚠️', 'no_edge': '❌', 'unknown': '⚪'}.get(verdict, '⚪')
@@ -1444,6 +1608,26 @@ def render_html(payload: dict) -> str:
         '讀成一句話：e240&gt;0 且 e60&lt;0 ＝「過去 240 個日曆日價格上漲、但過去 60 個日曆日價格下跌」'
         '＝在上升趨勢裡買回檔。<strong>「超額」這個詞只能用在本帳戶對基準市場的比較上</strong>，'
         '不得用在 e60／e240 上。</td></tr>'
+        '<tr><th class="rowhead">8</th><td><strong>這個帳戶本質上是大型權值股的曝險</strong>：'
+        f'live 帳戶持有部位的市值中位數是當日 universe 市值中位數的 '
+        f'<strong>{_num(cap_prof.get("median_cap_ratio"))} 倍</strong>'
+        f'（{_num(cap_prof.get("days_with_positions"))} 個有部位的日子、'
+        f'{_num(cap_prof.get("positions_measured"))} 個部位；'
+        f'universe 中位數 {_num(cap_prof.get("universe_median_size"))} 檔）；'
+        f'<strong>{_pct(cap_prof.get("held_in_top10pct"), 1)}</strong> 的部位落在 universe 市值前 10%，'
+        f'{_pct(cap_prof.get("held_in_top10_names"), 1)} 在市值前 10 名、'
+        f'{_pct(cap_prof.get("held_in_top50_names"), 1)} 在前 50 名。'
+        f'影子帳 H3 也一樣（中位數 {_num(shadow_prof.get("median_cap_ratio"))} 倍、'
+        f'前 10 名 {_pct(shadow_prof.get("held_in_top10_names"), 1)}）；'
+        f'隨機抽 6 檔的對照組是 {_num(rand_prof.get("median_cap_ratio"))} 倍、'
+        f'前 10 名 {_pct(rand_prof.get("held_in_top10_names"), 1)}。'
+        '<strong>所以「進場順序＝代號升序、沒有選股依據」這句話只對了一半</strong>：'
+        '順序確實是代號，但<strong>進場池是市值加權篩出來的</strong>，帳戶拿到的是大型權值股的曝險——'
+        '2020 上半年大賺、2026 空頭段大輸，是同一個曝險的兩面。'
+        '<strong>口徑提醒</strong>：這裡的「live 帳戶」是<strong>每一個交易日當時生效的規則版本</strong>'
+        '（2026-11-26 以前 AIV1、以後 AIV2）實際持有部位的統計，'
+        '不是把某一個版本套到整段歷史的假設；'
+        '市值＝當日 Close × 當日 SharesOutstanding_shares（point-in-time）。</td></tr>'
         '</tbody></table></section>')
 
     live_block = ''
@@ -1782,6 +1966,12 @@ th.rowhead {{ color:var(--muted); font-weight:500; }}
   <p class="caveat">⚠️ <strong>計數器的歸零規則：同一個規則版本內承繼；規則版本一變更就歸零。</strong>
   新版本還沒失敗過任何東西，所以不該背著舊版本的失敗視窗出發——否則前瞻紀錄會一開始就停在
   「停止進場」，量不到任何東西。影子帳是另一回事：它是研究軌，計數器從 live_start 重新起算。</p>
+  <p class="caveat">⚠️ <strong>kill switch 不是免費午餐：它賭的是「策略自己會變差」，不是「市場會變差」。</strong>
+  在這段空頭母體上它把 live 進場規則從 <strong>−20.15%</strong> 救到 <strong>−0.33%</strong>；
+  但同一套機制在 <strong>2020 上半年的多頭母體</strong>（重建母體，116 個交易日）把同一條規則從
+  <strong>+30.69% 變成 −9.10%</strong>——20 個交易日的滾動視窗判定不達線，116 天裡擋掉 94 天。
+  <strong>在多頭 regime 裡它是負面的。</strong>要採用它，就必須把它的歷史行為（含這個反例）一起揭露，
+  不能只報空頭段那個好看的數字。</p>
   <h3>對照：若這個保護從記錄第一天就在運作（同一段母體、同一個基準、300 萬口徑）</h3>
   <table>
     <thead><tr><th class="rowhead">條款</th><th>進場池</th><th>kill switch</th>
