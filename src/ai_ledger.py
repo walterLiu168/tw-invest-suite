@@ -782,7 +782,14 @@ LIVE_START = '2026-11-25'   # the first session traded under the frozen rules
 
 
 def mean_reversion(pick) -> bool:
-    """The shadow rule: long-term strong (e240 > 0) and short-term weak (e60 < 0)."""
+    """The shadow rule: long-term strong (e240 > 0) and short-term weak (e60 < 0).
+
+    On the 70-session sample the two halves are NOT independent: every
+    published pick with e60 < 0 also has e240 > 0 (0 of 684 pick-days have
+    e60 < 0 with e240 <= 0), so this rule trades exactly the same names as
+    "e60 < 0" alone.  The filter is kept as it was - it is the frozen shadow
+    track - but the page must not sell it as a two-condition rule.
+    """
     e60, e240 = pick.get('e60'), pick.get('e240')
     return e60 is not None and e240 is not None and e240 > 0 and e60 < 0
 
@@ -1150,7 +1157,9 @@ def build(date: str) -> dict:
         },
         'shadow_track': {
             'version': SHADOW_VERSION,
-            'rule': '進場池＝24 檔精選中「e240 > 0 且 e60 < 0」的 long（均值回歸）',
+            'rule': ('進場池＝已發佈精選中「60 日超額報酬為負（e60 < 0）」的 long；'
+                     '引擎實作仍是 e240>0 且 e60<0，'
+                     '但在這段母體裡兩者完全等價（684 個 pick-days 中 e60<0 且 e240≤0 ＝ 0）'),
             'status': '影子帳：不交易、不進 live，只記錄',
             'metrics': shadow_total,
             'live_metrics': shadow_live_total,
@@ -1165,11 +1174,16 @@ def build(date: str) -> dict:
                 f'未驗證：這條規則是 14 個變體裡在同一段資料上挑出來的最大值（in-sample）。',
                 f'只有 {shadow_summary["buys"]} 筆買進、{shadow_summary["distinct_names"]} 檔標的、'
                 f'平均曝險 {shadow_summary["avg_exposure"]*100:.1f}%。',
+                '條件拆解：在這段母體裡 e240>0 從不 binding（每個 e60<0 的精選都同時 e240>0），'
+                '所以這條規則實際上只等於「買 60 日超額報酬為負的那一檔」；'
+                '單獨用 e240>0 則與隨機無異（曝險配對 −4.12pp）。',
+                '對照組的方法：這條規則的進場池比部位名額小，'
+                '「打亂順序」會重現規則自己——必須用「每天挑同樣數量的隨機檔」當對照組。',
                 f'零股解除了「買不起」的限制（同一條規則在「只能整股」的 300 萬口徑下平均曝險只有 '
                 f'{shadow_whole["avg_exposure"]*100:.1f}%），所以「H3 與執行約束互斥」這條結論已經不成立。',
                 '但樣本只有 2026-08～11 一段 70 個交易日（其中 8、9 月其實是上漲的），跨 regime 未驗證；'
                 '而且成交假設會左右正負號（FILL-CLOSE 與 FILL-NEXT-OPEN 的結果不同）——'
-                '21 筆已平倉交易、前 3 筆貢獻 159% 的實現損益，這是噪音不是 edge。',
+                '21 筆已平倉交易、前 3 筆貢獻 293% 的實現損益，這是噪音不是 edge。',
             ],
         },
         'equity': equity,
