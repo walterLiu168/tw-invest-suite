@@ -89,17 +89,23 @@ POLICIES = {
         'mdd_tolerance': 0.25,
         'fill_model': 'FILL-CLOSE',
         'lot_mode': 'odd',
+        'kill_switch': None,
         'effective_from': None,
-        'note': '原始規則（2026-11-25 live 起用）',
+        'note': '原始規則（2026-11-25 live 起用）；kill switch 未實作',
     },
     'AIV2': {
         'version': 'AIV2',
-        'stop_loss': -0.20,
+        'stop_loss': -0.12,
         'mdd_tolerance': 0.40,
         'fill_model': 'FILL-NEXT-OPEN',
         'lot_mode': 'odd',
+        'kill_switch': 'counter',
         'effective_from': AIV2_START,
-        'note': 'Walter 2026-11-26：MDD 容忍 25%→40%、停損 −12%→−20%、成交改為次日開盤；其餘條款不變',
+        'note': 'Walter 2026-11-26：MDD 容忍 25%→40%、成交改為次日開盤；'
+                '停損 −20%→−12%（2026-11-26 第十一輪：70 天引擎的停損軸顯示 −12% 在'
+                '四個組合裡全部最好，−20% 是比較差的那一半，回到 R9 預登記的預設值）；'
+                'kill switch 實作（計數器式：連續 3 個滾動視窗不達線 → 停止新進場，'
+                '任一視窗達線 → 歸零恢復）',
     },
 }
 DEFAULT_POLICY = POLICIES['AIV1']
@@ -144,7 +150,8 @@ RULE_TEXT = [
            f'**該窗口內**最大回撤 < {POLICIES["AIV1"]["mdd_tolerance"]*100:.0f}%（AIV1）／'
            f'< {POLICIES["AIV2"]["mdd_tolerance"]*100:.0f}%（AIV2）；'
            f'連續 {RULES["kill_switch_periods"]} 個週期不達線 → 停止新進場'
-           f'（**此條尚未實作**：AIV1／AIV2 的 live 段都沒有接上這個保護）'),
+           f'（**AIV2 已實作**：計數器式，任一視窗達線即歸零恢復；'
+           f'**AIV1 尚未實作**——那是凍結紀錄，從來沒有這個保護）'),
     ('R10', '零股（1～999 股）：盤中 9:00–13:30、限價 ROD、僅電子單、'
             '不得融資融券與借券賣出、**零股成交價不作為開盤／收盤價**；'
             '單筆最低手續費 20 元 → 小部位實際費率遠高於 0.1425%'),
@@ -239,7 +246,8 @@ def _commission(amount: float) -> float:
 
 def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
              policy_for_date=None, entry_filter=None, capital=None,
-             max_positions=None, weight=None,
+             max_positions=None, weight=None, benchmark=None,
+             kill_scope='account',
              published_days_only=False) -> dict:
     """Run the rules over the sessions and return the trades and the equity curve.
 
@@ -262,6 +270,16 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
     A pick that fails it stays published, so the "dropped out of the 24" exit
     test still sees it - filtering must not quietly change the exit rules.
 
+    `kill_scope` decides whose counter the kill switch is:
+      'account'      - the counter and the rolling window belong to the
+                       account.  Nothing resets them inside this run: the live
+                       segment inherits the backtest's failures, because
+                       resetting at live_start would hide them and make the
+                       forward record look better than the account is.
+      'live-segment' - the counter is fresh from live_start.  The shadow track
+                       uses this: it is a research track, not Walter's account,
+                       and its job is a clean forward comparison.
+
     The fill model comes from the policy in effect on that session:
     FILL-CLOSE fills at the session's close, FILL-NEXT-OPEN fills at the next
     session's open.  A position sized for a next-open fill uses the equity
@@ -280,6 +298,18 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
     weight = weight if weight is not None else RULES['weight']
     max_positions = max_positions if max_positions is not None else RULES['max_positions']
     state = {'cash': cash}
+    # ---- the kill switch (AIV2 and later; AIV1 is a frozen record and does
+    # not have it).  Counter style: three consecutive failing rolling windows
+    # stop new entries, and any window that passes resets the counter and
+    # trading resumes.  The counter is judged on the LAST COMPLETED window -
+    # the one that closed before today - so it never uses a session that has
+    # not finished yet.  The counter restarts with every rule version, so the
+    # live record does not inherit the backtest's failures.
+    kill = {'mode': None, 'counter': 0, 'segment': None, 'equity': [],
+            'blocked_days': [], 'last_trigger': None, 'first_trigger': None,
+            'triggered': False, 'base_equity': None,
+            'windows': 0, 'passed_windows': 0}
+    bench_by_date = {b['date']: b.get('level') for b in benchmark} if benchmark else {}
 
     def sell(ticker, date, price, reason, policy):
         position = positions.pop(ticker)
@@ -353,6 +383,74 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
         traded_today: set[str] = set()
         next_open = policy['fill_model'] == 'FILL-NEXT-OPEN'
 
+        # ---- 0. the kill switch, judged on the last COMPLETED window
+        #
+        # The counter is judged on the window that closed BEFORE today (the
+        # last completed rolling window), so it never reads a session that has
+        # not finished yet.
+        #
+        # Two scopes:
+        #   'account'      - the counter belongs to the account and never
+        #                    resets inside this run.  The live segment
+        #                    inherits the backtest's failures (resetting there
+        #                    would hide them), and the rolling window is the
+        #                    account's trailing 20 sessions, whichever rule
+        #                    version is in force.
+        #   'live-segment' - the counter is fresh from live_start (the shadow
+        #                    track: a research track, not the live account).
+        mode = policy.get('kill_switch')
+        blocked = False
+        if mode is None:
+            # the switch is off for this version (AIV1 is the frozen record).
+            # The account's equity history keeps growing anyway - the window is
+            # the account's trailing sessions, not the switch's.
+            kill['mode'] = None
+        else:
+            if kill_scope == 'live-segment':
+                segment_key = (policy['version'],
+                               'live' if date >= LIVE_START else 'backtest')
+            else:
+                segment_key = 'account'
+            if kill['segment'] != segment_key:
+                kill['segment'] = segment_key
+                kill['counter'] = 0
+                kill['equity'] = []
+                kill['base_equity'] = known_equity
+            kill['mode'] = mode
+            segment = kill['equity']
+            if len(segment) >= RULES['survive_window']:
+                # the window's base is the equity one point before the window
+                # starts; for the FIRST window of a segment that is the
+                # segment's own starting equity (the live segment inherits the
+                # account's equity, it does not restart at the initial capital)
+                base = (segment[-RULES['survive_window'] - 1]['equity']
+                        if len(segment) > RULES['survive_window']
+                        else kill['base_equity'])
+                verdict = window_verdict(
+                    segment, benchmark or [], bench_by_date, len(segment) - 1,
+                    RULES['survive_window'], capital, policy['mdd_tolerance'],
+                    base=base)
+                if verdict is not None:
+                    kill['windows'] += 1
+                    if verdict['passed']:
+                        kill['passed_windows'] += 1
+                        # any window that reaches the line resets the counter
+                        # and trading resumes
+                        kill['counter'] = 0
+                    else:
+                        kill['counter'] += 1
+                        if kill['counter'] >= RULES['kill_switch_periods'] and not kill['triggered']:
+                            kill['triggered'] = True
+                            kill['first_trigger'] = date
+            if mode == 'never':
+                # once triggered it never resumes, whatever the later windows say
+                blocked = kill['triggered']
+            else:
+                blocked = kill['counter'] >= RULES['kill_switch_periods']
+            if blocked:
+                kill['blocked_days'].append(date)
+                kill['last_trigger'] = date
+
         # ---- 1. execute what the previous session decided (at this open)
         for order in pending_sells:
             ticker = order['ticker']
@@ -364,6 +462,11 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
             sell(ticker, date, price, order['reason'], policy)
             traded_today.add(ticker)
         for order in pending_buys:
+            if blocked:
+                # the kill switch stops NEW entries: an order decided at the
+                # previous close but not yet filled is cancelled while the
+                # switch is on.  Pending SELLS still execute - exits always run.
+                continue
             ticker = order['ticker']
             if ticker in positions or ticker in traded_today or len(positions) >= max_positions:
                 continue
@@ -402,6 +505,10 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
         for pick in picks:
             if len(positions) >= max_positions:
                 break
+            if blocked:
+                # the kill switch stops NEW entries only: positions are still
+                # marked to market and all four exit conditions still apply
+                break
             ticker = pick['ticker']
             if pick['horizon'] != 'long' or ticker in positions or ticker in traded_today:
                 continue
@@ -424,10 +531,15 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
         equity.append({'date': date, 'equity': value, 'cash': state['cash'],
                        'positions': len(positions),
                        'trades': len([t for t in trades if t['date'] == date]),
-                       'rule_version': policy['version']})
+                       'rule_version': policy['version'],
+                       'entries_blocked': blocked})
         known_equity = value
+        # the account's equity history: the rolling window is the account's
+        # trailing sessions, so it is kept even on days the switch is off
+        kill['equity'].append(equity[-1])
 
-    return {'trades': trades, 'equity': equity, 'cash': state['cash'], 'positions': positions}
+    return {'trades': trades, 'equity': equity, 'cash': state['cash'],
+            'positions': positions, 'kill_switch': kill}
 
 
 EXIT_TEXT = {
@@ -572,6 +684,40 @@ def metrics(equity: list[dict], benchmark: list[dict], capital: float | None = N
     }
 
 
+def window_verdict(equity, benchmark, bench_by_date, i, window, capital, mdd_tol,
+                   base=None):
+    """The R9 verdict of the window that ENDS at equity[i].
+
+    Returns None when the window cannot be judged (not enough points, or the
+    market's level for that span is unknown - an unknown benchmark is never
+    read as 0).  `base` overrides the equity the window's return is measured
+    from, which is how a segment (the live record) inherits its own start.
+    """
+    chunk = equity[i - window + 1: i + 1]
+    if len(chunk) < window:
+        return None
+    if base is None:
+        base = equity[i - window]['equity'] if i - window >= 0 else capital
+    net = chunk[-1]['equity'] / base - 1
+    end_level = bench_by_date.get(chunk[-1]['date'])
+    if i - window >= 0:
+        base_level = bench_by_date.get(equity[i - window]['date'])
+    else:
+        base_level = benchmark_level_before(benchmark, chunk[0]['date'])
+    if end_level is None or not base_level:
+        bench = None
+    else:
+        bench = end_level / base_level - 1
+    peak, dd = base, 0.0
+    for point in chunk:
+        peak = max(peak, point['equity'])
+        dd = min(dd, point['equity'] / peak - 1)
+    excess = (net - bench) if bench is not None else None
+    passed = (excess is not None and net > 0 and excess > 0 and abs(dd) < mdd_tol)
+    return {'end': chunk[-1]['date'], 'net': net, 'excess': excess, 'bench': bench,
+            'max_drawdown': dd, 'passed': passed, 'mdd_tolerance': mdd_tol}
+
+
 def rolling(equity: list[dict], benchmark: list[dict], window: int,
             capital: float | None = None,
             policy_for_date=None) -> dict:
@@ -594,31 +740,12 @@ def rolling(equity: list[dict], benchmark: list[dict], window: int,
     bench_by_date = {b['date']: b.get('level') for b in benchmark}
     results = []
     for i in range(window - 1, len(equity)):
-        chunk = equity[i - window + 1: i + 1]
-        start = equity[i - window]['equity'] if i - window >= 0 else base_capital
-        net = chunk[-1]['equity'] / start - 1
-        end_level = bench_by_date.get(chunk[-1]['date'])
-        if i - window >= 0:
-            base_level = bench_by_date.get(equity[i - window]['date'])
-        else:
-            base_level = benchmark_level_before(benchmark, chunk[0]['date'])
-        if end_level is None or not base_level:
-            bench = None
-        else:
-            bench = end_level / base_level - 1
-        peak = start
-        drawdown = 0.0
-        for point in chunk:
-            peak = max(peak, point['equity'])
-            drawdown = min(drawdown, point['equity'] / peak - 1)
-        excess = (net - bench) if bench is not None else None
-        policy = (policy_for_date(chunk[-1]['date']) if policy_for_date else POLICIES['AIV1'])
-        tolerance = policy['mdd_tolerance']
-        passed = (excess is not None and net > 0 and excess > 0
-                  and abs(drawdown) < tolerance)
-        results.append({'end': chunk[-1]['date'], 'net': net, 'excess': excess,
-                        'bench': bench, 'max_drawdown': drawdown, 'passed': passed,
-                        'mdd_tolerance': tolerance})
+        policy = (policy_for_date(equity[i]['date']) if policy_for_date else POLICIES['AIV1'])
+        row = window_verdict(equity, benchmark, bench_by_date, i, window,
+                             base_capital, policy['mdd_tolerance'])
+        if row is None:
+            continue
+        results.append(row)
     if not results:
         return {}
     passed = sum(1 for r in results if r['passed'])
@@ -708,6 +835,32 @@ def segment_metrics(equity: list[dict], benchmark: list[dict], live: list[dict])
     }
 
 
+def kill_summary(kill: dict) -> dict:
+    """The kill switch's state, as the page shows it.
+
+    `counter` is the number of consecutive failing windows right now (it is
+    reset to 0 by any window that reaches the line).  `blocked_days` counts
+    the sessions on which new entries were stopped.  `implemented` is False
+    for AIV1: that record is frozen and never had the switch.
+    """
+    mode = kill.get('mode')
+    return {
+        'implemented': mode is not None,
+        'mode': mode,
+        'counter': kill.get('counter') or 0,
+        'counter_max': RULES['kill_switch_periods'],
+        'blocked_days': len(kill.get('blocked_days') or []),
+        'blocked_dates': list(kill.get('blocked_days') or []),
+        'last_trigger': kill.get('last_trigger'),
+        'first_trigger': kill.get('first_trigger'),
+        'triggered': bool(kill.get('triggered')),
+        'windows_judged': kill.get('windows') or 0,
+        'windows_passed': kill.get('passed_windows') or 0,
+        'segment': kill.get('segment'),
+        'window': RULES['survive_window'],
+    }
+
+
 def market_at_exposure(benchmark: list[dict], x: float, dates=None) -> float:
     """The equal-weight market held at a constant exposure x.
 
@@ -744,6 +897,7 @@ def build(date: str) -> dict:
         return simulate(sessions, runs_by_date, flags, closes, opens,
                         policy_for_date=fixed(policy), capital=capital,
                         entry_filter=entry_filter,
+                        benchmark=benchmark,
                         published_days_only=published_days_only)
 
     def summarise(sim_result, capital=None):
@@ -756,6 +910,7 @@ def build(date: str) -> dict:
         rates = [t['effective_rate'] for t in sim_result['trades'] if t.get('effective_rate')]
         paired = market_at_exposure(benchmark, avg_exposure)
         m = metrics(eq, benchmark, capital)
+        kill = sim_result.get('kill_switch') or {}
         return {
             'metrics': m,
             'rolling': rolling(eq, benchmark, RULES['survive_window'], capital),
@@ -771,10 +926,11 @@ def build(date: str) -> dict:
             'market_at_same_exposure': paired,
             'excess_vs_exposure_paired': (m.get('net_return') - paired) if m.get('net_return') is not None else None,
             'exits': dict(Counter(t['reason'] for t in sim_result['trades'] if t['action'] == 'sell')),
+            'kill_switch': kill_summary(kill),
         }
 
     # ---- canonical: every session judged by the version in force that day
-    result = simulate(sessions, runs_by_date, flags, closes, opens)
+    result = simulate(sessions, runs_by_date, flags, closes, opens, benchmark=benchmark)
     equity = result['equity']
     total = metrics(equity, benchmark)
     legacy_total = metrics(equity, legacy_benchmark)
@@ -794,7 +950,7 @@ def build(date: str) -> dict:
 
     # ---- the old rule calendar (exits evaluated only on published days)
     old_result = simulate(sessions, runs_by_date, flags, closes,
-                          published_days_only=True)
+                          published_days_only=True, benchmark=benchmark)
     old_total = metrics(old_result['equity'], benchmark)
     old_rolling = rolling(old_result['equity'], benchmark, RULES['survive_window'])
     old_live = [p for p in old_result['equity'] if p['date'] >= LIVE_START]
@@ -814,9 +970,12 @@ def build(date: str) -> dict:
         run_sim({**POLICIES['AIV2'], 'lot_mode': 'whole'}, capital=WALTER_CAPITAL),
         WALTER_CAPITAL)
 
-    # ---- the shadow track: same rules, narrower entry pool, never traded
+    # ---- the shadow track: same rules, narrower entry pool, never traded.
+    # Its kill switch counter is fresh from live_start: it is a research
+    # track, not Walter's account, and its job is a clean forward comparison.
     shadow_result = simulate(sessions, runs_by_date, flags, closes, opens,
-                             entry_filter=mean_reversion)
+                             entry_filter=mean_reversion, benchmark=benchmark,
+                             kill_scope='live-segment')
     shadow_equity = shadow_result['equity']
     shadow_total = metrics(shadow_equity, benchmark)
     shadow_live = [p for p in shadow_equity if p['date'] >= LIVE_START]
@@ -827,11 +986,104 @@ def build(date: str) -> dict:
         simulate(sessions, runs_by_date, flags, closes, opens,
                  policy_for_date=fixed({**POLICIES['AIV2'], 'lot_mode': 'whole'}),
                  entry_filter=mean_reversion,
+                 benchmark=benchmark,
+                 kill_scope='live-segment',
                  capital=WALTER_CAPITAL),
         WALTER_CAPITAL)
 
     kind, note = verdict_line(total, rolling_row)
     live_kind, live_note = verdict_line(live_total, {})
+
+    # ---- the kill switch: the state of the version in force today, and what
+    # the switch would have done over the same sample if it had been running.
+    today_policy = policy_for(date)
+
+    def kill_status(policy, kill, equity_curve):
+        row = kill_summary(kill or {})
+        sessions_in_version = len([p for p in equity_curve
+                                   if p['date'] >= LIVE_START
+                                   and p.get('rule_version') == policy['version']])
+        row.update({
+            'rule_version': policy['version'],
+            'implemented': policy.get('kill_switch') is not None,
+            'mode': policy.get('kill_switch'),
+            'segment_sessions': sessions_in_version,
+            'needs_window': RULES['survive_window'],
+            'periods': RULES['kill_switch_periods'],
+            'effective_from': policy.get('effective_from'),
+        })
+        return row
+
+    def kill_rows_for(equity_curve, kill_state):
+        return [kill_status(POLICIES[version], kill_state, equity_curve)
+                for version in ('AIV1', 'AIV2')]
+
+    kill_rows = []
+    for base_label, base_policy in (('live 條款（AIV1）', POLICIES['AIV1']),
+                                    ('AIV2（2026-11-26 起）', POLICIES['AIV2'])):
+        for pool_label, entry_filter, scope in (
+                ('live 進場規則（代號升序）', None, 'account'),
+                ('H3 影子帳（e240>0 且 e60<0）', mean_reversion, 'live-segment')):
+            for mode, mode_label in ((None, '關閉（未實作）'),
+                                     ('counter', '計數器式：連續 3 窗不達線→停止新進場，任一窗達線→歸零恢復'),
+                                     ('never', '一旦觸發就永不恢復')):
+                policy = {**base_policy, 'kill_switch': mode}
+                res = simulate(sessions, runs_by_date, flags, closes, opens,
+                               policy_for_date=fixed(policy),
+                               entry_filter=entry_filter, benchmark=benchmark,
+                               kill_scope=scope,
+                               capital=WALTER_CAPITAL,
+                               max_positions=RULES['max_positions'], weight=RULES['weight'])
+                s = summarise(res, WALTER_CAPITAL)
+                live_points = [p for p in res['equity'] if p['date'] >= LIVE_START]
+                live_row = segment_metrics(res['equity'], benchmark, live_points)
+                kill_rows.append({
+                    'base': base_label, 'pool': pool_label, 'mode': mode_label,
+                    'scope': scope,
+                    'net': s['metrics'].get('net_return'),
+                    'exposure': s['avg_exposure'],
+                    'vs_paired': s['excess_vs_exposure_paired'],
+                    'mdd': s['metrics'].get('max_drawdown'),
+                    'buys': s['buys'],
+                    'kill': s['kill_switch'],
+                    'live_net': live_row.get('net_return'),
+                    'live_excess': live_row.get('excess'),
+                    'live_sessions': live_row.get('sessions'),
+                })
+
+    # ---- the 32 execution combinations (2 pools x 2 lot modes x 2 fill
+    # models x 4 position counts).  The kill switch is off here on purpose:
+    # this table measures the execution layer, not the protection.
+    grid_rows = []
+    for pool_label, entry_filter in (('live 進場規則（代號升序）', None),
+                                     ('H3 影子帳（e240>0 且 e60<0）', mean_reversion)):
+        for lot_mode in ('odd', 'whole'):
+            for fill_model in ('FILL-CLOSE', 'FILL-NEXT-OPEN'):
+                for n in (6, 8, 10, 12):
+                    policy = {**POLICIES['AIV2'], 'kill_switch': None,
+                              'lot_mode': lot_mode, 'fill_model': fill_model}
+                    res = simulate(sessions, runs_by_date, flags, closes, opens,
+                                   policy_for_date=fixed(policy),
+                                   entry_filter=entry_filter, benchmark=benchmark,
+                                   capital=WALTER_CAPITAL, max_positions=n,
+                                   weight=1.0 / n)
+                    s = summarise(res, WALTER_CAPITAL)
+                    grid_rows.append({
+                        'pool': pool_label, 'lot': lot_mode, 'fill': fill_model, 'n': n,
+                        'net': s['metrics'].get('net_return'),
+                        'exposure': s['avg_exposure'],
+                        'vs_paired': s['excess_vs_exposure_paired'],
+                        'mdd': s['metrics'].get('max_drawdown'),
+                        'buys': s['buys'],
+                    })
+    live_cells = [r for r in grid_rows if r['pool'].startswith('live')]
+    grid_note = (
+        f'同一段母體（{len(sessions)} 個交易日）、同一個基準（BENCH-v2）、同一個 300 萬口徑、'
+        f'kill switch 關閉。live 進場規則的 {len(live_cells)} 格裡，'
+        f'沒有一格的淨報酬是正的（最好的一格是 '
+        f'{max(r["net"] for r in live_cells)*100:+.2f}%）；'
+        f'有正訊號的格子全部在 H3 影子帳，而 H3 不會下單。')
+
     return {
         'date': date,
         'nightly_id': (ps.read_json(ps.STATE).get('nightly_id') if ps.STATE.is_file() else ''),
@@ -856,6 +1108,26 @@ def build(date: str) -> dict:
         'verdict_note': note,
         'live_verdict': live_kind,
         'live_verdict_note': live_note,
+        'kill_switch': {
+            'version_in_force': today_policy['version'],
+            'live_account': kill_rows_for(equity, result.get('kill_switch')),
+            'shadow_account': kill_rows_for(shadow_equity, shadow_result.get('kill_switch')),
+            'comparison': kill_rows,
+            'note': ('計數器式：連續 3 個滾動視窗不達線 → 停止新進場；任一視窗達線 → 計數器歸零、恢復進場。'
+                     '判定只用「上一個已完成的滾動視窗」，不看當日未收盤的資料。'
+                     '觸發期間部位照常重估、四個出場條件照常執行，只是不再新進場'
+                     '（已排定但尚未成交的買單也會取消；賣單照常執行）。'
+                     '<strong>live 帳戶的計數器承繼回溯期</strong>：帳戶層級的規則語意，'
+                     'live 段不重置（重置等於用「過去的失敗不算」美化前瞻紀錄）；'
+                     '<strong>影子帳的計數器從 live_start 重新起算</strong>'
+                     '（它是研究軌，不是 Walter 的帳戶，要的是乾淨的前瞻比較）。'
+                     '下表是「若這個保護從記錄第一天就在運作」的對照，不是實際發生過的事。'),
+        },
+        'execution_grid': {
+            'rows': grid_rows,
+            'note': grid_note,
+            'capital': WALTER_CAPITAL,
+        },
         'rule_comparison': {
             'AIV1_FILL-CLOSE': aiv1_close,
             'AIV1_FILL-NEXT-OPEN': aiv1_open,
@@ -1107,8 +1379,12 @@ def render_html(payload: dict) -> str:
         '限價 ROD、僅電子單、不得融資融券與借券賣出、'
         '<strong>零股成交價不作為開盤／收盤價</strong> → 「收盤決策、收盤成交」在零股下做不到，'
         '所以 live 段改用「收盤後決策、次一交易日開盤成交」。</td></tr>'
-        '<tr><th class="rowhead">5</th><td><strong>kill switch 尚未實作</strong>：R9 寫「連續 3 個週期不達線 → '
-        '停止新進場」，但引擎沒有實作這條，AIV1 與 AIV2 的 live 段都沒有這個保護。</td></tr>'
+        '<tr><th class="rowhead">5</th><td><strong>kill switch：AIV2 已實作、AIV1 沒有</strong>：'
+        'R9 寫「連續 3 個週期不達線 → 停止新進場」。AIV2（2026-11-26 起）把它做成計數器式：'
+        '連續 3 個滾動視窗不達線就停止新進場，任一視窗達線就歸零恢復；'
+        '判定只看上一個已完成的視窗。'
+        '<strong>AIV1 是凍結紀錄，從來沒有這個保護</strong>——'
+        '所以 2026-11-25 以前那段帳本裡不存在這個機制。</td></tr>'
         '<tr><th class="rowhead">6</th><td><strong>130% 出場規則無法在長樣本驗證</strong>：'
         '維持率資料只從 2026-08-07 起，比帳本的回溯期短；'
         '在這段樣本裡這條規則實際只觸發過 1～4 筆交易。</td></tr>'
@@ -1192,6 +1468,97 @@ def render_html(payload: dict) -> str:
             f'<td class="num {_dir(m.get("max_drawdown"))}">{_pct(m.get("max_drawdown"))}</td>'
             f'<td class="num">{block.get("buys", 0)}</td>'
             f'<td class="num muted">{html.escape(executable)}</td></tr>')
+
+    # ---- the kill switch: the state right now, and what it would have done
+    kill = payload.get('kill_switch') or {}
+    # the live account's first live day under the counterfactual: it did not
+    # trade at all, so its "0.00%" is not a strategy result
+    kill_live_day = {}
+    for row in kill.get('comparison') or []:
+        if (row.get('base') or '').startswith('AIV2') and row.get('pool', '').startswith('live'):
+            k = row.get('kill') or {}
+            kill_live_day = {
+                'mode': row.get('mode'),
+                'first_trigger': k.get('first_trigger'),
+                'blocked_days': k.get('blocked_days'),
+                'live_net': row.get('live_net'),
+                'live_excess': row.get('live_excess'),
+                'live_sessions': row.get('live_sessions'),
+            }
+    kill_first_caveat = ''
+    if kill_live_day:
+        live_market = (live.get('benchmark_return')
+                       if isinstance(live, dict) else None)
+        kill_first_caveat = (
+            '⚠️ <strong>kill switch 開啟時，live 帳戶自 '
+            f'{html.escape(str(kill_live_day.get("first_trigger") or "—"))} 起就停止進場</strong>'
+            f'（{html.escape(str(kill_live_day.get("mode") or ""))} 模式）；'
+            'live 段第一天的 '
+            f'<strong>{_pct(kill_live_day.get("live_net"))} 是「沒有下單」，不是策略賺到</strong>'
+            f'（同期市場 {_pct(live_market)}，那 {_pp(kill_live_day.get("live_excess"))} 的表面超額全部來自空倉）。'
+            f'70 個交易日裡有 <strong>{kill_live_day.get("blocked_days", 0)} 天</strong>停止進場。'
+            '<strong>這是 Walter 照單下單前必須知道的事：他的帳戶初期可能整段不交易。</strong>')
+    kill_status_rows = ''
+    for account, rows in (('live 帳戶', kill.get('live_account') or []),
+                          ('影子帳 H3', kill.get('shadow_account') or [])):
+        for row in rows:
+            implemented = '✅ 已實作' if row.get('implemented') else '❌ 尚未實作（凍結紀錄）'
+            kill_status_rows += (
+                f'<tr><th class="rowhead">{html.escape(account)}</th>'
+                f'<td>{html.escape(str(row.get("rule_version") or ""))}</td>'
+                f'<td>{implemented}</td>'
+                f'<td class="num">{row.get("segment_sessions", 0)}</td>'
+                f'<td class="num">{row.get("windows_judged", 0)}／{row.get("windows_passed", 0)}</td>'
+                f'<td class="num">{row.get("counter", 0)}／{row.get("counter_max", 3)}</td>'
+                f'<td class="num">{row.get("blocked_days", 0)}</td>'
+                f'<td class="num">{html.escape(str(row.get("last_trigger") or "—"))}</td></tr>')
+    kill_compare_rows = ''
+    for row in kill.get('comparison') or []:
+        k = row.get('kill') or {}
+        kill_compare_rows += (
+            f'<tr><th class="rowhead">{html.escape(str(row.get("base") or ""))}</th>'
+            f'<td>{html.escape(str(row.get("pool") or ""))}</td>'
+            f'<td>{html.escape(str(row.get("mode") or ""))}</td>'
+            f'<td class="num {_dir(row.get("net"))}">{_pct(row.get("net"))}</td>'
+            f'<td class="num">{_pct(row.get("exposure"), 1)}</td>'
+            f'<td class="num {_dir(row.get("vs_paired"))}">{_pp(row.get("vs_paired"))}</td>'
+            f'<td class="num">{_pct(row.get("mdd"))}</td>'
+            f'<td class="num">{row.get("buys", 0)}</td>'
+            f'<td class="num">{k.get("blocked_days", 0)}</td>'
+            f'<td class="num">{html.escape(str(k.get("first_trigger") or "—"))}</td>'
+            f'<td class="num">{html.escape(str(k.get("last_trigger") or "—"))}</td>'
+            f'<td class="num {_dir(row.get("live_net"))}">{_pct(row.get("live_net"))}</td></tr>')
+
+    # ---- the 32 execution combinations
+    grid = payload.get('execution_grid') or {}
+    grid_rows = ''
+    for row in grid.get('rows') or []:
+        grid_rows += (
+            f'<tr><th class="rowhead">{html.escape(str(row.get("pool") or ""))}</th>'
+            f'<td>{html.escape(str(row.get("lot") or ""))}</td>'
+            f'<td>{html.escape(str(row.get("fill") or ""))}</td>'
+            f'<td class="num">{row.get("n", 0)}</td>'
+            f'<td class="num {_dir(row.get("net"))}">{_pct(row.get("net"))}</td>'
+            f'<td class="num">{_pct(row.get("exposure"), 1)}</td>'
+            f'<td class="num {_dir(row.get("vs_paired"))}">{_pp(row.get("vs_paired"))}</td>'
+            f'<td class="num">{_pct(row.get("mdd"))}</td>'
+            f'<td class="num">{row.get("buys", 0)}</td></tr>')
+    grid_note = html.escape(str(grid.get('note') or ''))
+    ai_ledger_window = RULES['survive_window']
+    ai_ledger_periods = RULES['kill_switch_periods']
+    bench_level = None
+    for point in reversed(payload.get('benchmark') or []):
+        if point.get('level') is not None:
+            bench_level = point['level']
+            break
+    grid_market = f'{((bench_level or 1.0) - 1) * 100:+.2f}%'
+    live_cells = [r for r in grid.get('rows') or [] if str(r.get('pool') or '').startswith('live')]
+    h3_cells = [r for r in grid.get('rows') or [] if str(r.get('pool') or '').startswith('H3')]
+    best_live = max((r.get('net') or 0 for r in live_cells), default=0.0)
+    grid_split = (
+        f'精確地說：{len(grid.get("rows") or [])} 格裡有 {len(live_cells)} 格是 live 進場規則'
+        f'（全部為負，最好的一格 {best_live*100:+.2f}%）、'
+        f'另外 {len(h3_cells)} 格是 H3 影子帳（{sum(1 for r in h3_cells if (r.get("net") or 0) > 0)} 格為正）。')
 
     # ---- Walter's own account: 300萬, odd lots
     walter = payload.get('walter_account') or {}
@@ -1306,6 +1673,12 @@ th.rowhead {{ color:var(--muted); font-weight:500; }}
   <p class="caveat">⚠️ 這一頁是帳本的自我審計，不是績效保證。規則是在看過資料之後定的，
   所以 {html.escape(payload["live_start"])} 之前那段是回溯（含事後偏差），之後才是乾淨的前瞻紀錄。
   進場規則至今沒有被證明有效——帳本只是把市場的漲跌用同一套規則重演一遍。</p>
+  <p class="caveat">{kill_first_caveat}</p>
+  <p class="caveat">⚠️ <strong>live 帳戶跑的進場規則，在 32 個執行組合裡沒有一格是正的</strong>；
+  唯一有正訊號的 H3 在影子帳裡、不會下單。
+  {grid_split}
+  換句話說：這套進場規則在這段母體上沒有可用的 edge，
+  而唯一看起來賺錢的那幾格，架構上就不會成交。</p>
   <table>
     <thead><tr><th class="rowhead">口徑</th><th>市場基準</th><th>超額</th>
     <th>同期存款 {payload.get("savings_rate", SAVINGS_RATE)*100:.1f}%/年</th>
@@ -1336,6 +1709,40 @@ th.rowhead {{ color:var(--muted); font-weight:500; }}
   </table>
   <p class="caveat">⚠️ 曝險配對對照組＝同一段期間、同一個曝險率的等權市場（{html.escape(payload.get("benchmark_version") or BENCHMARK_VERSION)}）。
   一條規則如果只是「少做、留現金」，在下跌段看起來會贏；只有跟同曝險的市場比，才能分出有沒有選股能力。</p>
+</section>
+<section>
+  <h2>kill switch（R9 的保護）</h2>
+  <p class="muted">{html.escape(str(kill.get("note") or ""))}</p>
+  <table>
+    <thead><tr><th class="rowhead">帳戶</th><th>規則版本</th><th>是否實作</th>
+    <th>live 段交易日</th><th>已判定／達線視窗</th><th>目前計數器</th>
+    <th>停止進場天數</th><th>最後觸發日</th></tr></thead>
+    <tbody>{kill_status_rows}</tbody>
+  </table>
+  <p class="caveat">⚠️ 一個滾動視窗要 {html.escape(str(ai_ledger_window))} 個交易日才判定得出來，
+  連續 {html.escape(str(ai_ledger_periods))} 窗不達線才會動作。live 段的交易日數還不夠，
+  所以「目前計數器 = 0、停止進場天數 = 0、最後觸發日 = 無」是真的：
+  <strong>它還沒有機會動作，不代表它動作過</strong>。</p>
+  <h3>對照：若這個保護從記錄第一天就在運作（同一段母體、同一個基準、300 萬口徑）</h3>
+  <table>
+    <thead><tr><th class="rowhead">條款</th><th>進場池</th><th>kill switch</th>
+    <th>淨報酬</th><th>平均曝險</th><th>vs 曝險配對市場</th><th>最大回撤</th><th>買進</th>
+    <th>停止進場天數</th><th>首次觸發</th><th>最後觸發</th>
+    <th>live 段第 1 天</th></tr></thead>
+    <tbody>{kill_compare_rows}</tbody>
+  </table>
+  <p class="caveat">⚠️ 這是「如果」的數字，不是發生過的事。而且它和「少做、留現金」高度綁定：
+  樣本期間市場是 {html.escape(str(grid_market))}，一個把曝險從 93% 降到 40% 的規則在下跌段本來就會贏。
+  唯一能分出「選股能力」與「只是少做」的，是「vs 曝險配對市場」那一欄。</p>
+</section>
+<section>
+  <h2>執行組合（32 格）</h2>
+  <p class="muted">{grid_note}</p>
+  <table>
+    <thead><tr><th class="rowhead">進場池</th><th>零股/整股</th><th>成交模型</th><th>同時持有</th>
+    <th>淨報酬</th><th>平均曝險</th><th>vs 曝險配對市場</th><th>最大回撤</th><th>買進</th></tr></thead>
+    <tbody>{grid_rows}</tbody>
+  </table>
 </section>
 <section>
   <h2>Walter 的帳戶口徑（300 萬）</h2>
