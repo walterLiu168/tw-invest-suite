@@ -159,10 +159,12 @@ RULE_TEXT = [
     ('R9', f'判定線：滾動 {RULES["survive_window"]} 個交易日，淨報酬 > 0 且超額 > 0 且'
            f'**該窗口內**最大回撤 < {POLICIES["AIV1"]["mdd_tolerance"]*100:.0f}%（AIV1）／'
            f'< {POLICIES["AIV2"]["mdd_tolerance"]*100:.0f}%（AIV2）；'
-           f'連續 {RULES["kill_switch_periods"]} 個週期不達線 → **停止新進場**；'
-           f'停止期間計數器凍結、不判定視窗；'
-           f'滿 {RULES["circuit_cooldown_days"]} 個交易日後以全新計數器重新嘗試（半開狀態）；'
-           f'再失敗 {RULES["kill_switch_periods"]} 次則再次停止'
+           f'**每 {RULES["survive_window"]} 個交易日完成一個視窗、判定一次**（counter 的單位是「視窗」不是「天」）；'
+           f'連續 {RULES["kill_switch_periods"]} 個視窗不達線 → **停止新進場**；'
+           f'停止期間計數器凍結、**不判定視窗**；'
+           f'滿 {RULES["circuit_cooldown_days"]} 個交易日 → 半開：'
+           f'**先累積 {RULES["survive_window"]} 個新交易日的暖身期**、再以全新計數器重新嘗試；'
+           f'再失敗 {RULES["kill_switch_periods"]} 個視窗則再次停止'
            f'（**AIV2 已實作為熔斷器 CLOSED／OPEN／HALF-OPEN**；'
            f'**AIV1 尚未實作**——那是凍結紀錄，從來沒有這個保護）'),
     ('R10', '零股（1～999 股）：盤中 9:00–13:30、限價 ROD、僅電子單、'
@@ -341,6 +343,14 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
             'state': 'CLOSED', 'open_days': 0, 'open_since': None,
             'next_half_open': None, 'half_opens': 0, 'resumes': 0,
             'transitions': [], 'timeline': [],
+            # D043: the counter counts WINDOWS, not days.  A window is judged
+            # when it completes - every `survive_window` sessions of the
+            # segment - so "three failing windows" means three completed
+            # 20-session windows, not three consecutive trading days.
+            'judge_at': RULES['survive_window'],
+            # the share of sessions in which the account could actually
+            # enter: the direct measure of "is the account doing anything"
+            'tradable_days': 0, 'segment_tradable_days': 0, 'breaker_sessions': 0,
             'cooldown_days': RULES['circuit_cooldown_days']}
     bench_by_date = {b['date']: b.get('level') for b in benchmark} if benchmark else {}
     # the position of every session in the account's calendar - used to work
@@ -476,6 +486,11 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
                 kill['open_days'] = 0
                 kill['open_since'] = None
                 kill['next_half_open'] = None
+                # a new segment starts its own window cadence: the first
+                # verdict comes when the first window completes
+                kill['judge_at'] = RULES['survive_window']
+                kill['segment_tradable_days'] = 0
+                kill['breaker_sessions'] = 0
             kill['mode'] = mode
             segment = kill['equity']
 
@@ -493,12 +508,25 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
                     kill['state'] = 'HALF-OPEN'
                     kill['counter'] = 0
                     kill['half_opens'] += 1
+                    # the warm-up (D043): the trial has to accumulate one
+                    # full window of NEW trading before anything is judged -
+                    # otherwise the first verdict is diluted by the flat days
+                    # of the cooldown and the breaker trips again at once
+                    kill['judge_at'] = len(segment) + RULES['survive_window']
                     kill['transitions'].append({'date': date, 'from': 'OPEN',
                                                 'to': 'HALF-OPEN'})
             state_before = kill['state']
 
-            # ---- 0b. the window verdict, judged on the last COMPLETED window
-            if kill['state'] != 'OPEN' and len(segment) >= RULES['survive_window']:
+            # ---- 0b. the window verdict, judged when a window COMPLETES
+            #
+            # D043: the counter counts windows, not days.  A verdict happens
+            # only when a 20-session window of the segment has finished, i.e.
+            # at the segment's 20th, 40th, 60th... session.  The window that
+            # is judged is the one that closed BEFORE today, so the switch
+            # never reads a session that has not finished yet.
+            if (kill['state'] != 'OPEN'
+                    and len(segment) >= RULES['survive_window']
+                    and len(segment) >= kill['judge_at']):
                 # the window's base is the equity one point before the window
                 # starts; for the FIRST window of a segment that is the
                 # segment's own starting equity (the live segment inherits the
@@ -512,6 +540,8 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
                     base=base)
                 if verdict is not None:
                     kill['windows'] += 1
+                    # the next verdict comes when the NEXT window completes
+                    kill['judge_at'] = len(segment) + RULES['survive_window']
                     if verdict['passed']:
                         kill['passed_windows'] += 1
                         # any window that reaches the line resets the counter
@@ -543,8 +573,18 @@ def simulate(sessions, runs_by_date, flags, closes, opens=None, *,
             if blocked:
                 kill['blocked_days'].append(date)
                 kill['last_trigger'] = date
-            kill['timeline'].append({'date': date, 'counter': kill['counter'],
-                                     'state': kill['state'], 'blocked': blocked})
+
+        # ---- the tradable-day share: how many sessions the account could
+        # actually enter.  This is the direct measure of "is the account
+        # doing anything" - a rule that only lets the account trade 17% of
+        # the time is not a rule anybody should pay for.
+        kill['breaker_sessions'] += 1
+        if not blocked:
+            kill['tradable_days'] += 1
+            kill['segment_tradable_days'] += 1
+        kill['timeline'].append({'date': date, 'counter': kill['counter'],
+                                 'state': kill['state'], 'blocked': blocked,
+                                 'windows': kill['windows']})
 
         # ---- 1. execute what the previous session decided (at this open)
         for order in pending_sells:
@@ -979,6 +1019,13 @@ def kill_summary(kill: dict) -> dict:
         'transitions': list(kill.get('transitions') or []),
         'cooldown_days': RULES['circuit_cooldown_days'],
         'days_in_state': days_in_state(kill.get('timeline')),
+        # D043: the share of sessions in which the account could enter
+        'tradable_days': kill.get('tradable_days') or 0,
+        'segment_tradable_days': kill.get('segment_tradable_days') or 0,
+        'breaker_sessions': kill.get('breaker_sessions') or 0,
+        'tradable_ratio': (kill.get('segment_tradable_days') / kill['breaker_sessions']
+                           if kill.get('breaker_sessions') else None),
+        'judge_every_sessions': RULES['survive_window'],
     }
 
 
@@ -1400,12 +1447,17 @@ def build(date: str) -> dict:
             'live_account': kill_rows_for(equity, result.get('kill_switch')),
             'shadow_account': kill_rows_for(shadow_equity, shadow_result.get('kill_switch')),
             'comparison': kill_rows,
-            'note': (f'熔斷器（CLOSED／OPEN／HALF-OPEN）：連續 {RULES["kill_switch_periods"]} 個滾動視窗不達線 → '
+            'note': (f'熔斷器（CLOSED／OPEN／HALF-OPEN）：'
+                     f'**每 {RULES["survive_window"]} 個交易日完成一個視窗、判定一次**'
+                     f'（counter 的單位是「視窗」不是「天」）；'
+                     f'連續 {RULES["kill_switch_periods"]} 個視窗不達線 → '
                      f'<strong>OPEN</strong>：停止新進場、計數器凍結、<strong>不判定視窗</strong>；'
                      f'滿 {RULES["circuit_cooldown_days"]} 個交易日 → <strong>HALF-OPEN</strong>：'
-                     f'計數器歸零、重新嘗試進場；再失敗 {RULES["kill_switch_periods"]} 次回到 OPEN。'
+                     f'計數器歸零、<strong>先累積 {RULES["survive_window"]} 個新交易日的暖身期</strong>'
+                     f'（讓視窗不含空倉日），之後才重新嘗試進場；'
+                     f'再失敗 {RULES["kill_switch_periods"]} 個視窗回到 OPEN。'
                      '判定線本身不動（淨 > 0、超額 > 0、回撤 < 容許）。'
-                     '判定只用「上一個已完成的滾動視窗」，不看當日未收盤的資料。'
+                     '判定只用「已完成的視窗」，不看當日未收盤的資料。'
                      '觸發期間部位照常重估、四個出場條件照常執行，只是不再新進場'
                      '（已排定但尚未成交的買單也會取消；賣單照常執行）。'
                      '<strong>live 帳戶的計數器承繼回溯期</strong>：帳戶層級的規則語意，'
@@ -1431,27 +1483,39 @@ def build(date: str) -> dict:
                     {'id': 'HALF-OPEN', 'label': 'HALF-OPEN（重新嘗試）',
                      'entries': '恢復新進場',
                      'counter': '歸零（給一次全新的試用期）',
-                     'verdict': '照常判定',
+                     'verdict': f'先累積 {RULES["survive_window"]} 個新交易日的暖身期（讓視窗不含空倉日），之後才開始判定',
                      'exit': f'counter 再累積到 {RULES["kill_switch_periods"]} → 回 OPEN（冷卻重新計時）'},
                 ],
                 'verdict_line': (f'滾動 {RULES["survive_window"]} 個交易日：淨報酬 > 0 且超額 > 0 '
-                                 f'且回撤 < 容許（AIV1 25%／AIV2 40%）'),
+                                 f'且回撤 < 容許（AIV1 25%／AIV2 40%）；'
+                                 f'每 {RULES["survive_window"]} 個交易日完成一個視窗、判定一次'),
                 'old_defect': ('舊版實作（純計數器）在帳戶部位全部出場後會陷入死鎖——空帳戶的報酬恆為 0、'
                                '`net > 0` 永不成立、視窗永不通過、計數器永不歸零 → 帳戶會永久停止交易。'
                                '實測：2024 熱計數器情境 242／242 天全被擋、報酬 0.00%、0 筆買進。'
                                'AIV2 已改成熔斷器＋半開，不會再死鎖。'),
+                'old_defect_hard': ('<strong>kill switch 的「保護」在舊版其實是「帳戶死亡」</strong>：'
+                                    '空帳戶的報酬恆為 0，而達線需要 net&gt;0 → 永不達線 → 永不恢復 → '
+                                    '帳戶永久停止交易。'
+                                    '熔斷器修正後帳戶會真的重新進場，而<strong>真實的策略結果是負的</strong>'
+                                    '（2024 −15.32%～−56.49%）。'
+                                    '<strong>規則文字與實作不一致的期間（2026-11-26 之前）產生的所有 '
+                                    'kill switch 數字都不可信</strong>——包括那些「kill switch 把 −20% '
+                                    '救成 −0.33%」的說法：那個 −0.33% 是帳戶假死造成的幻覺，'
+                                    '不是策略賺到。'),
                 'disclosure': ('熔斷器只決定「何時恢復進場」，不放寬判定線，也不讓帳本變綠；'
                                '判定線仍是 R9 原文。'),
                 'measured_2024': ('2026-11-26 獨立量測（熱計數器：規則自 2023-01-02 起跑、量 2024 這一段；'
                                   '母體 CLEAN - price only）：'
-                                  '<strong>舊版 242／242 天全被擋、報酬 0.00%、0 曝險、0 筆買進</strong>（死鎖）；'
-                                  '<strong>新版買進 95～155 筆、曝險 12～42%、報酬 −32.92%／−22.03%／−6.67%／−14.52%</strong>'
-                                  '（半開 34～35 次，仍被擋 176～200／242 天）。'
+                                  '<strong>舊版 242／242 天全被擋、報酬 0.00%、0 曝險、0 筆買進</strong>'
+                                  '（死鎖；可交易天數占比 0%）。'
+                                  '<strong>新版買進 209／300／241／800 筆、曝險 63.5%～80.1%、'
+                                  '報酬 −41.91%／−20.88%／−15.32%／−56.49%</strong>'
+                                  '（可交易天數占比 87.5%～91.7%、半開 4～6 次、判定視窗 21～22 個）。'
                                   '→ 死鎖解開了，數字變難看，但那才是真實的策略結果。'
-                                  '<strong>殘留限制</strong>：半開之後計數器立刻從 0 重新累積，'
-                                  '而 20 個交易日的判定視窗仍含空倉日 → 帳戶的「可交易時間」只有約 17～27%，'
-                                  '視窗幾乎永遠不可能反映純新交易 → 帳戶長期處於低曝險的半開半停狀態。'
-                                  '要真正恢復，需要決定是否加上「半開後先累積 20 個新交易日再開始判定」的暖身期。'),
+                                  '<strong>2026-11-26（D043）修正前</strong>，同一個母體上新版只讓帳戶在 '
+                                  '17～27% 的日子可交易（半開後視窗仍含空倉日、立刻又被擋回去）；'
+                                  '<strong>加入「半開後 20 個新交易日的暖身期」＋「counter 的單位改成視窗」'
+                                  '之後，可交易天數占比回到 87.5%～91.7%</strong>。'),
             },
         },
         'execution_grid': {
@@ -1681,8 +1745,10 @@ def check_page_numbers(payload: dict) -> list[str]:
         for row in rows or []:
             version = row.get('rule_version')
             for key in ('state', 'counter', 'counter_max', 'blocked_days',
-                        'windows_judged', 'windows_passed', 'cooldown_days'):
+                        'windows_judged', 'windows_passed', 'cooldown_days',
+                        'tradable_days', 'segment_tradable_days', 'breaker_sessions'):
                 required[f'kill_switch.{account}.{version}.{key}'] = row.get(key)
+            optional[f'kill_switch.{account}.{version}.tradable_ratio'] = row.get('tradable_ratio')
 
     checked = []
     # the circuit breaker's own counters: a counter above its own maximum, a
@@ -1703,12 +1769,22 @@ def check_page_numbers(payload: dict) -> list[str]:
                     f'kill_switch.{account}.{version}.counter is {counter!r} '
                     f'- above its own maximum {counter_max}')
             for key in ('blocked_days', 'windows_judged', 'windows_passed',
-                        'open_days', 'half_opens', 'resumes'):
+                        'open_days', 'half_opens', 'resumes', 'tradable_days',
+                        'segment_tradable_days', 'breaker_sessions'):
                 value = row.get(key)
                 if isinstance(value, (int, float)) and value < 0:
                     raise RenderAssertionError(
                         f'kill_switch.{account}.{version}.{key} is {value!r} '
                         f'- a count cannot be negative')
+            ratio = row.get('tradable_ratio')
+            if isinstance(ratio, (int, float)) and not (0.0 <= ratio <= 1.0):
+                raise RenderAssertionError(
+                    f'kill_switch.{account}.{version}.tradable_ratio is {ratio!r} '
+                    f'- a share of days must be between 0 and 1')
+            if (row.get('segment_tradable_days') or 0) > (row.get('breaker_sessions') or 0):
+                raise RenderAssertionError(
+                    f'kill_switch.{account}.{version}: more tradable days than '
+                    f'sessions - the counters disagree')
     for name, value in required.items():
         checked.append(name)
         if _is_broken_number(value):
@@ -1922,11 +1998,20 @@ def render_html(payload: dict) -> str:
         '所以 live 段改用「收盤後決策、次一交易日開盤成交」。</td></tr>'
         '<tr><th class="rowhead">5</th><td><strong>kill switch：AIV2 已實作、AIV1 沒有</strong>：'
         'R9 寫「連續 3 個週期不達線 → 停止新進場」。AIV2（2026-11-26 起）把它做成'
-        '<strong>熔斷器（CLOSED／OPEN／HALF-OPEN）</strong>：計數器達 3 → OPEN（停止新進場、'
-        '計數器凍結、不判定視窗）；冷卻 10 個交易日 → HALF-OPEN（計數器歸零、重新嘗試進場）；'
-        '再失敗 3 次回到 OPEN。判定線本身不動。'
+        '<strong>熔斷器（CLOSED／OPEN／HALF-OPEN）</strong>：'
+        f'每 {RULES["survive_window"]} 個交易日完成一個視窗、判定一次（counter 的單位是「視窗」不是「天」）；'
+        f'連續 {RULES["kill_switch_periods"]} 個視窗不達線 → OPEN（停止新進場、計數器凍結、不判定視窗）；'
+        f'冷卻 {RULES["circuit_cooldown_days"]} 個交易日 → HALF-OPEN（計數器歸零、'
+        f'先累積 {RULES["survive_window"]} 個新交易日的暖身期再重新嘗試）；'
+        f'再失敗 {RULES["kill_switch_periods"]} 個視窗回到 OPEN。判定線本身不動。'
         '<strong>舊版純計數器實作會死鎖</strong>（帳戶空倉時報酬恆為 0 → 視窗永不達線 → '
         '永久停止交易），已修正。'
+        '<strong>更關鍵的是：舊版的「保護」其實是「帳戶死亡」</strong>——'
+        '空帳戶的報酬恆為 0、達線需要 net&gt;0 → 永不達線 → 永不恢復；'
+        '熔斷器修正後帳戶會真的重新進場，而<strong>真實的策略結果是負的</strong>'
+        '（2024 −15.32%～−56.49%）。'
+        '<strong>規則文字與實作不一致的期間（2026-11-26 之前）產生的所有 kill switch 數字都不可信</strong>'
+        '——包含那些「kill switch 把 −20% 救成 −0.33%」的說法：那個 −0.33% 是帳戶假死造成的幻覺。'
         '<strong>AIV1 是凍結紀錄，從來沒有這個保護</strong>——'
         '所以 2026-11-25 以前那段帳本裡不存在這個機制。</td></tr>'
         '<tr><th class="rowhead">6</th><td><strong>130% 出場規則無法在長樣本驗證</strong>：'
@@ -2123,7 +2208,8 @@ def render_html(payload: dict) -> str:
             f'<td class="num">{k.get("blocked_days", 0)}</td>'
             f'<td class="num">{html.escape(str(k.get("first_trigger") or "—"))}</td>'
             f'<td class="num">{html.escape(str(k.get("last_trigger") or "—"))}</td>'
-            f'<td class="num {_dir(row.get("live_net"))}">{_pct(row.get("live_net"))}</td></tr>')
+            f'<td class="num {_dir(row.get("live_net"))}">{_pct(row.get("live_net"))}</td>'
+            f'<td class="num">{_pct(k.get("tradable_ratio"), 1)}</td></tr>')
 
     # ---- the circuit breaker: the state machine, and where it stands now
     circuit = kill.get('circuit') or {}
@@ -2158,6 +2244,10 @@ def render_html(payload: dict) -> str:
             ('各狀態天數', '／'.join(
                 f'{k} {(circuit_now_row.get("days_in_state") or {}).get(k, 0)}'
                 for k in ('CLOSED', 'OPEN', 'HALF-OPEN'))),
+            ('可交易天數占比（帳戶能進場的天數／segment 天數）',
+             f'{circuit_now_row.get("segment_tradable_days", 0)}／{circuit_now_row.get("breaker_sessions", 0)}'
+             f'＝{_pct(circuit_now_row.get("tradable_ratio"), 1)}'),
+            ('判定頻率', f'每 {circuit_now_row.get("judge_every_sessions", RULES["survive_window"])} 個交易日完成一個視窗、判定一次'),
             ('已判定／達線視窗', f'{circuit_now_row.get("windows_judged", 0)}／{circuit_now_row.get("windows_passed", 0)}')):
         circuit_now_rows += (
             f'<tr><th class="rowhead">{html.escape(label)}</th>'
@@ -2201,8 +2291,8 @@ def render_html(payload: dict) -> str:
             '那是帳戶被凍結成空倉後的 0 曝險結果；'
             '舊版純計數器在 2024 熱計數器情境就是這樣：242／242 天全被擋、報酬 0.00%、0 筆買進。'
             '<strong>新版熔斷器把那個空帳戶變成會重新進場的帳戶，數字因此變難看</strong>'
-            '（2024 熱計數器實測：新版四個準則 −32.92%／−22.03%／−6.67%／−14.52%，'
-            '買進 95～155 筆、曝險 12～42%）——'
+            '（2024 熱計數器實測：新版四個準則 −41.91%／−20.88%／−15.32%／−56.49%，'
+            '買進 209～800 筆、曝險 63.5%～80.1%、可交易天數占比 87.5%～91.7%）——'
             '<strong>但那才是真實的策略結果</strong>。')
 
     # ---- the 32 execution combinations
@@ -2409,14 +2499,17 @@ th.rowhead {{ color:var(--muted); font-weight:500; }}
   <p class="muted">狀態轉換紀錄：{html.escape(transition_text)}</p>
   <p class="caveat">⚠️ <strong>誠實揭露：舊版實作（純計數器）會死鎖。</strong>
   {html.escape(str(circuit.get("old_defect") or ""))}</p>
+  <p class="caveat">⚠️ {str(circuit.get("old_defect_hard") or "")}</p>
   <p class="caveat">⚠️ <strong>熔斷器只決定「何時恢復進場」，不放寬判定、也不讓帳本變綠。</strong>
   判定線仍是 R9 原文：淨 &gt; 0、超額 &gt; 0、回撤 &lt; 容許。
   OPEN 期間「不判定視窗」的理由是：帳戶空倉時報酬恆為 0，那個視窗不是策略表現的證據；
   若照舊版繼續判定，空帳戶就永遠達不到線 → 永久停止交易。</p>
   <p class="caveat">⚠️ <strong>實測（不是模擬）：</strong>
   {str(circuit.get("measured_2024") or "")}</p>
-  <p class="caveat">⚠️ 一個滾動視窗要 {html.escape(str(ai_ledger_window))} 個交易日才判定得出來，
-  連續 {html.escape(str(ai_ledger_periods))} 窗不達線才會動作。live 段的交易日數還不夠，
+  <p class="caveat">⚠️ 一個視窗要 {html.escape(str(ai_ledger_window))} 個交易日才完成，
+  <strong>每完成一個視窗才判定一次</strong>（counter 的單位是「視窗」不是「天」），
+  連續 {html.escape(str(ai_ledger_periods))} 個視窗不達線才會動作。
+  live 段的交易日數還不夠，
   所以「目前計數器 = 0、停止進場天數 = 0、最後觸發日 = 無」是真的：
   <strong>它還沒有機會動作，不代表它動作過</strong>。</p>
   <p class="caveat">⚠️ <strong>計數器的歸零規則：同一個規則版本內承繼；規則版本一變更就歸零。</strong>
@@ -2436,7 +2529,7 @@ th.rowhead {{ color:var(--muted); font-weight:500; }}
     <thead><tr><th class="rowhead">條款</th><th>進場池</th><th>kill switch</th>
     <th>淨報酬</th><th>平均曝險</th><th>vs 曝險配對市場</th><th>最大回撤</th><th>買進</th>
     <th>停止進場天數</th><th>首次觸發</th><th>最後觸發</th>
-    <th>live 段第 1 天</th></tr></thead>
+    <th>live 段第 1 天</th><th>可交易天數占比</th></tr></thead>
     <tbody>{kill_compare_rows}</tbody>
   </table>
   <p class="caveat">⚠️ 這是「如果」的數字，不是發生過的事。而且它和「少做、留現金」高度綁定：
