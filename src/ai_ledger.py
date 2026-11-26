@@ -2013,7 +2013,10 @@ def render_html(payload: dict) -> str:
         '<strong>規則文字與實作不一致的期間（2026-11-26 之前）產生的所有 kill switch 數字都不可信</strong>'
         '——包含那些「kill switch 把 −20% 救成 −0.33%」的說法：那個 −0.33% 是帳戶假死造成的幻覺。'
         '<strong>AIV1 是凍結紀錄，從來沒有這個保護</strong>——'
-        '所以 2026-11-25 以前那段帳本裡不存在這個機制。</td></tr>'
+        '所以 2026-11-25 以前那段帳本裡不存在這個機制。'
+        '<strong>它的真實定位是「小幅風險降低器」，不是「救命保護」</strong>：'
+        '同一段母體上熔斷器相對 kill OFF 的增益只有 +3.1／+0.03／+2.8／+5.3pp（四個準則）'
+        '→ <strong>它救不了沒有 edge 的策略，只能少賺一點點虧損</strong>。</td></tr>'
         '<tr><th class="rowhead">6</th><td><strong>130% 出場規則無法在長樣本驗證</strong>：'
         '維持率資料只從 2026-08-07 起，比帳本的回溯期短；'
         '在這段樣本裡這條規則實際只觸發過 1～4 筆交易。</td></tr>'
@@ -2293,7 +2296,10 @@ def render_html(payload: dict) -> str:
             '<strong>新版熔斷器把那個空帳戶變成會重新進場的帳戶，數字因此變難看</strong>'
             '（2024 熱計數器實測：新版四個準則 −41.91%／−20.88%／−15.32%／−56.49%，'
             '買進 209～800 筆、曝險 63.5%～80.1%、可交易天數占比 87.5%～91.7%）——'
-            '<strong>但那才是真實的策略結果</strong>。')
+            '<strong>但那才是真實的策略結果</strong>。'
+            '<strong>它的真實定位是「小幅風險降低器」，不是「救命保護」</strong>：'
+            '同一段母體上，熔斷器相對 kill OFF 的增益只有 <strong>+3.1／+0.03／+2.8／+5.3pp</strong>'
+            '（四個準則）——<strong>它不能救一個沒有 edge 的策略，只能少賺一點點虧損</strong>。')
 
     # ---- the 32 execution combinations
     grid = payload.get('execution_grid') or {}
@@ -2477,7 +2483,7 @@ th.rowhead {{ color:var(--muted); font-weight:500; }}
   一條規則如果只是「少做、留現金」，在下跌段看起來會贏；只有跟同曝險的市場比，才能分出有沒有選股能力。</p>
 </section>
 <section>
-  <h2>kill switch（R9 的保護）</h2>
+  <h2>kill switch（R9 的保護機制：<strong>小幅風險降低器</strong>，不是救命符）</h2>
   <p class="muted">{str(kill.get("note") or "")}</p>
   <table>
     <thead><tr><th class="rowhead">帳戶</th><th>規則版本</th><th>是否實作</th>
