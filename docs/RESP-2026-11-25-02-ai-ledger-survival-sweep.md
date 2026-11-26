@@ -1087,6 +1087,30 @@ H3 影子帳 375.8 倍／162 個部位／61.7%／100%。
     但 payload 的 key 是 `walter_account` → 第一次 render 出現「None 倍／None 個部位」。
     已修正為 `payload['walter_account']`，並加 `_num()` 讓缺值一律印「—」而不是「None」。
     驗證：render 後第 8 條＝434.3 倍／386 個部位／100% 前 10%／66.1% 前 10 名。
+- **2026-11-26（第十七輪）**：
+  - **頁面 render 斷言機制**（`src/ai_ledger.py`）：新增 `RenderAssertionError`、
+    `check_page_numbers(payload)`、`assert_no_broken_numbers(page_html)`。
+    - `check_page_numbers()` 在**建頁之前**檢查每一個即將印出的數值：
+      **必要欄位**（揭露表第 8 條的市值分布、metrics 的核心欄位、live 段、rolling 視窗）
+      缺值 → 直接 `raise`；**允許缺值的欄位**（基準未知、年化無法計算）→ 只擋 NaN／空字串。
+    - `assert_no_broken_numbers()` 在**建頁之後**掃描 HTML：19 個型態
+      （`>None<`、`None 倍`、`None%`、`>NaN<`、`nan%`、`>Infinity<` …）。
+      樣式刻意寫窄——CSS 裡的 `fill:none` 不能誤判。
+    - 理由：這是**公開頁面**，而揭露表的唯一工作就是「被相信」。
+      一個「None 倍」不只是難看，會讓整頁其他數字一起被懷疑。
+    - **離線自檢通過**（`_render_assert_selftest.py`）：35 個欄位、19 個型態、
+      包含「把這次真的發生的 bug（`payload['walter']` → `payload['walter_account']`）
+      重現一次，確認它現在會讓整頁 fail」。
+    - **真實 payload 驗證通過**（`_render_check2.py`，2026-11-25 payload）：
+      **揭露表 render 斷言：35 欄位、19 個型態、0 通過**；
+      頁面第 8 條＝434.3 倍／386 個部位／100% 前 10%／66.1% 前 10 名／91.5% 前 50 名，
+      HTML 掃描 0 個壞值。
+  - **報告順序固定成三段式**（每一組結果都照這個順序，不許把對照組寫在前面）：
+    1. **vs 市場**（曝險配對超額）→ 有沒有 edge 的主指標
+    2. **vs 同池隨機**（中位／最好／最差）→ 排序有沒有資訊的輔助指標
+    3. **vs 存款**（同期）→ 值不值得的門檻
+    → 一個 −63% 的對照組會讓 +15% 看起來像天大的成果；
+   　實際上它可能只是換手燒錢，所以順序不能顛倒。
 - 未動：`src/danger_signals.py`、`src/danger_track.py`（它們的基準本來就是日報酬）。
 - `scripts/_debug/` 內的掃描與驗證腳本（gitignored）。`public/` 沒有被本機改寫，
   由今晚的 nightly 重新認證後才會更新。

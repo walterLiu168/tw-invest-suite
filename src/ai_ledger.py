@@ -1424,6 +1424,117 @@ def _num(value, dash='—') -> str:
     return f'{value:,}'
 
 
+class RenderAssertionError(RuntimeError):
+    """A number the public page cannot show.
+
+    The page has to fail rather than print a broken value.  A public page
+    that shows "None 倍" does not only look wrong - it makes every other
+    number on it unbelievable, and the disclosure table is the one part of
+    the page whose whole job is to be trusted.
+    """
+
+
+BROKEN_NUMBER_PATTERNS = (
+    '>None<', '>none<', '>NaN<', '>nan<', '>Infinity<', '>inf<', '>-inf<',
+    'None%', 'None 倍', 'None 元', 'None pp', 'None 天', 'None 檔',
+    'None 個', 'None 筆', 'None 個部位', 'NaN%', 'nan%', 'Infinity%',
+)
+
+
+def _is_broken_number(value) -> bool:
+    """True when a value must not reach the page."""
+    if value is None:
+        return True
+    if isinstance(value, float) and value != value:      # NaN
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
+
+
+def check_page_numbers(payload: dict) -> list[str]:
+    """Every number the page is about to print, checked BEFORE it is built.
+
+    Two tiers:
+      * REQUIRED - the value must exist.  A missing one means the measurement
+        was never made, and printing it as 'None 倍' would be a broken public
+        page (this is exactly the bug that put 'None 倍' in the disclosure
+        table once).
+      * ALLOWED-NONE - the value may legitimately be unknown (an unknown
+        benchmark, an annualised return below -100%), but it must never be
+        NaN or an empty string.  The page prints '—' for those.
+
+    Returns the names of the checked fields (the RESP file quotes the count).
+    Raises RenderAssertionError on the first broken one.
+    """
+    required: dict[str, object] = {}
+    optional: dict[str, object] = {}
+    total = payload.get('metrics') or {}
+    live = payload.get('live_metrics') or {}
+    rolling = payload.get('rolling') or {}
+    cap = (payload.get('walter_account') or {}).get('market_cap_profile') or {}
+    shadow = (payload.get('shadow_track') or {}).get('market_cap_profile') or {}
+    rand = (payload.get('shadow_track') or {}).get('random_cap_profile') or {}
+
+    # the headline numbers the page always shows
+    for key in ('net_return', 'excess_vs_savings', 'savings_period_return',
+                'max_drawdown', 'final_equity', 'sessions', 'positions'):
+        required[f'metrics.{key}'] = total.get(key)
+    for key in ('benchmark_return', 'excess', 'annualised_net_return'):
+        optional[f'metrics.{key}'] = total.get(key)
+    # the forward (live) segment
+    if live:
+        for key in ('net_return', 'max_drawdown', 'sessions'):
+            required[f'live_metrics.{key}'] = live.get(key)
+        for key in ('benchmark_return', 'excess'):
+            optional[f'live_metrics.{key}'] = live.get(key)
+    # the R9 rolling window
+    if rolling:
+        for key in ('window', 'periods', 'passed', 'pass_rate', 'latest_net',
+                    'latest_max_drawdown', 'latest_mdd_tolerance'):
+            required[f'rolling.{key}'] = rolling.get(key)
+        for key in ('latest_excess', 'latest_bench'):
+            optional[f'rolling.{key}'] = rolling.get(key)
+    # disclosure 8: the market cap profile of what the account holds
+    for key in ('days_with_positions', 'positions_measured', 'universe_median_size',
+                'median_cap_ratio', 'held_in_top10pct', 'held_in_top10_names',
+                'held_in_top50_names'):
+        required[f'walter_account.market_cap_profile.{key}'] = cap.get(key)
+    for key in ('median_cap_ratio', 'held_in_top10_names'):
+        required[f'shadow_track.market_cap_profile.{key}'] = shadow.get(key)
+    for key in ('median_cap_ratio', 'held_in_top10_names'):
+        required[f'shadow_track.random_cap_profile.{key}'] = rand.get(key)
+
+    checked = []
+    for name, value in required.items():
+        checked.append(name)
+        if _is_broken_number(value):
+            raise RenderAssertionError(
+                f'{name} is {value!r} - the page must not print it')
+    for name, value in optional.items():
+        checked.append(name)
+        if value is not None and _is_broken_number(value):
+            raise RenderAssertionError(
+                f'{name} is {value!r} - the page must not print it')
+    return checked
+
+
+def assert_no_broken_numbers(page_html: str) -> int:
+    """Fail the page if a broken number reached the HTML.
+
+    The patterns are deliberately narrow: 'none' also appears in the CSS
+    (fill:none), so only number-shaped places are checked.  Returns the
+    number of patterns checked.
+    """
+    for pattern in BROKEN_NUMBER_PATTERNS:
+        if pattern in page_html:
+            i = page_html.find(pattern)
+            raise RenderAssertionError(
+                f'broken number {pattern!r} at offset {i}: '
+                f'{page_html[max(0, i - 140):i + 140]!r}')
+    return len(BROKEN_NUMBER_PATTERNS)
+
+
 def _pp(value, digits=2, dash='—') -> str:
     if value is None:
         return dash
@@ -1437,6 +1548,11 @@ def _dir(value) -> str:
 
 
 def render_html(payload: dict) -> str:
+    # The page is public and the disclosure table is the one part of it whose
+    # whole job is to be trusted: a broken number must fail the build, not be
+    # printed.  Both checks run here - the payload's numbers before the page
+    # is built, the rendered text after.
+    check_page_numbers(payload)
     total = payload.get('metrics') or {}
     live = payload.get('live_metrics') or {}
     positions = payload.get('positions') or {}
@@ -1821,7 +1937,7 @@ def render_html(payload: dict) -> str:
             f'<td class="num">{_pct(block.get("avg_effective_rate"), 3)}</td>'
             f'<td class="num">{_pct(block.get("max_effective_rate"), 3)}</td></tr>')
 
-    return f"""<!DOCTYPE html>
+    page = f"""<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
@@ -2038,6 +2154,8 @@ th.rowhead {{ color:var(--muted); font-weight:500; }}
 </body>
 </html>
 """
+    assert_no_broken_numbers(page)
+    return page
 
 
 def main() -> int:
