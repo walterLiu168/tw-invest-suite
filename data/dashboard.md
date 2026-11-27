@@ -1,22 +1,22 @@
 # tw-invest-suite Daily Dashboard
-**Generated**: 2026-11-27T09:07:45
+**Generated**: 2026-11-27T15:31:07
 **OVERALL**: 🟡 WARNING
 
 **Data date**: 2026-11-26
 **DB picks**: 24 active; run_id=131
 **OHLCV coverage**: 1963 rows ／ 1963 tickers
-**Nightly**: 69980286ae3841a4887312a7a92db529
+**Nightly**: 993c7a7fc56e4136a23c31cddd22ce53
 **Optional degraded**: 0
 **Publication**: verified ／ data_date=2026-11-26
-**Verified at**: 2026-11-27T09:07:24.030805
-**Published commit**: f618651afed71d27135c4be630a59f8decf8211e
+**Verified at**: 2026-11-27T15:30:46.351126
+**Published commit**: c581e37448ee4f8550a13254f38ef5edcbdf4478
 
 ## Action items
 - 🟡 28 個股資料不完整，頁面已標示；fresh=1946 ／ rendered=1974
-- 🟡 tw-invest-suite-daily-report: rc=1；該次執行已被 69980286 的成功認證取代（認證開始於 2026-11-27T02:00:03）
-- 🟡 tw-invest-suite-health-check: rc=1；該次執行已被 69980286 的成功認證取代（認證開始於 2026-11-27T02:00:03）
-- 🟡 tw-invest-suite-marker-watchdog: rc=1；該次執行已被 69980286 的成功認證取代（認證開始於 2026-11-27T02:00:03）
-- 🟡 tw-invest-suite-publish: rc=1；該次執行已被 69980286 的成功認證取代（認證開始於 2026-11-27T02:00:03）
+- 🟡 tw-invest-suite-daily-report: rc=1；該次執行已被 993c7a7f 的成功認證取代（認證開始於 2026-11-27T14:41:57）
+- 🟡 tw-invest-suite-health-check: rc=1；該次執行已被 993c7a7f 的成功認證取代（認證開始於 2026-11-27T14:41:57）
+- 🟡 tw-invest-suite-marker-watchdog: rc=1；該次執行已被 993c7a7f 的成功認證取代（認證開始於 2026-11-27T14:41:57）
+- 🟡 tw-invest-suite-publish: rc=1；該次執行已被 993c7a7f 的成功認證取代（認證開始於 2026-11-27T14:41:57）
 
 ## Cron results
 | Task | State | LastRun | RC |
